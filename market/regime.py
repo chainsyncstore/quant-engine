@@ -85,7 +85,7 @@ class RegimeClassifier:
                     
             return MarketRegime.NEUTRAL
             
-        except Exception as e:
+        except Exception:
             # Fallback
             return MarketRegime.UNKNOWN
 

@@ -1,5 +1,4 @@
-from typing import List, Dict, Optional
-import math
+from typing import Dict, List
 from hypotheses.base import Hypothesis, TradeIntent, IntentType
 from portfolio.weighting import WeightingStrategy
 from storage.repositories import EvaluationRepository
@@ -48,11 +47,11 @@ class Ensemble:
         self.update_weights()
 
     def aggregate_signal(
-        self, 
-        intents: Dict[str, TradeIntent], 
-        current_allocations: Dict[str, float], # Not used for signal gen in simple version
+        self,
+        intents: Dict[str, TradeIntent],
+        current_allocations: Dict[str, float],
         total_capital: float
-    ) -> Optional[TradeIntent]:
+    ) -> float:
         """
         Aggregates individual intents into a single net MetaTradeIntent.
         
@@ -80,18 +79,21 @@ class Ensemble:
         for h in self.hypotheses:
             hid = h.hypothesis_id
             weight = self.weights.get(hid, 0.0)
-            
-            # If hypothesis has an intent this bar, use it.
-            # But wait, what if it holds a position and has NO intent (Hold)?
-            # The Ensemble needs to know the INTENDED STATE of each hypothesis.
-            # But usually `on_bar` only emits changes. 
-            
-            # Dual-Track Architecture solves this!
-            # The Shadow Simulator knows the state of H1.
-            # If H1 is LONG, and emits NO intents, it stays LONG.
-            # So we query the SHADOW SIMULATOR for the current state?
-            # Yes, `MetaPortfolioEngine` has access to shadow states.
-            
-            pass 
-            
-        return 0.0 # Placeholder, logic moves to Engine or requires state input
+            if weight == 0:
+                continue
+
+            intent = intents.get(hid)
+            if not intent:
+                continue
+
+            direction = 0.0
+            if intent.type == IntentType.BUY:
+                direction = 1.0
+            elif intent.type == IntentType.SELL:
+                direction = -1.0
+            elif intent.type == IntentType.CLOSE:
+                direction = 0.0
+
+            net_exposure += weight * direction * intent.size
+
+        return float(net_exposure)

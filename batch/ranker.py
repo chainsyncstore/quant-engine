@@ -1,6 +1,6 @@
-from typing import List, Dict
+from typing import List
 import math
-from .models import AggregatedHypothesisResult, RankedHypothesis, GuardrailStatus
+from batch.models import AggregatedHypothesisResult, RankedHypothesis, GuardrailStatus
 
 def _min_max_scale(values: List[float]) -> List[float]:
     min_val = min(values)
@@ -28,6 +28,9 @@ def rank_hypotheses(batch_id: str, results: List[AggregatedHypothesisResult]) ->
                 oos_sharpe=r.oos_sharpe,
                 oos_mean_return=r.oos_mean_return,
                 oos_max_drawdown=r.oos_max_drawdown,
+                oos_alpha=r.oos_alpha,
+                oos_beta=r.oos_beta,
+                oos_ir=r.oos_ir,
                 decay_flag=r.decay_detected,
                 guardrail_status=GuardrailStatus.FAIL
             ) for r in results

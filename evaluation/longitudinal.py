@@ -1,9 +1,9 @@
+import json
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from batch.models import RankedHypothesis, GuardrailStatus
 from evaluation.policy import ResearchPolicy
-from evaluation.metrics import EvaluationMetrics
 from orchestrator.run_evaluation import _run_single_pass
 from promotion.decay import DecayRule
 from promotion.models import HypothesisStatus
@@ -72,10 +72,9 @@ class LongitudinalTracker:
             hypothesis_details = self.repo.get_hypothesis_details(hid)
             params = {}
             if hypothesis_details and 'parameters_json' in hypothesis_details:
-                import json
                 try:
                     params = json.loads(hypothesis_details['parameters_json'])
-                except:
+                except json.JSONDecodeError:
                     logger.error(f"Failed to load params for {hid}")
 
             hypothesis_cls = get_hypothesis(hid)
@@ -105,13 +104,13 @@ class LongitudinalTracker:
                 research_score=0.0,
                 rank=0,
                 oos_sharpe=metrics.get('sharpe_ratio', 0.0),
-                oos_mean_return=metrics.get('mean_return_per_trade', 0.0), # Note: Policy checks return_pct total usually, but rule checks per trade?
-                                                                         # AbsolutePerformanceRule: oos_mean_return (which usually is per trade or CAGR?)
-                                                                         # Looking at AbsolutePerformanceRule: "Return {h.oos_mean_return:.2f}%" (Looks like total or annual?)
-                                                                         # Let's look at metrics.py/Batch...
+                oos_mean_return=metrics.get('mean_return_per_trade', 0.0),
                 oos_max_drawdown=metrics.get('max_drawdown', 0.0),
-                decay_flag=False, # We could use separate logic for this
-                guardrail_status=GuardrailStatus.PASS # Assumed unless we check
+                oos_alpha=metrics.get('alpha', 0.0),
+                oos_beta=metrics.get('beta', 0.0),
+                oos_ir=metrics.get('information_ratio', 0.0),
+                decay_flag=False,
+                guardrail_status=GuardrailStatus.PASS
             )
             
             passed, reason = self.decay_rule.evaluate(pseudo_ranked, self.policy)

@@ -1,8 +1,7 @@
 
-import pandas as pd
 import numpy as np
-from typing import List, Dict, Any
-from .models import AggregatedHypothesisResult, GuardrailStatus
+from typing import Dict, Any
+from batch.models import AggregatedHypothesisResult, GuardrailStatus
 
 def aggregate_results(hypothesis_id: str, run_output: Dict[str, Any]) -> AggregatedHypothesisResult:
     """
@@ -23,6 +22,9 @@ def aggregate_results(hypothesis_id: str, run_output: Dict[str, Any]) -> Aggrega
             oos_median_return=0.0,
             oos_sharpe=0.0,
             oos_max_drawdown=0.0,
+            oos_alpha=0.0,
+            oos_beta=0.0,
+            oos_ir=0.0,
             profit_factor=0.0,
             profitable_window_ratio=0.0,
             regime_coverage_count=0,

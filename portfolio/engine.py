@@ -1,17 +1,15 @@
 import logging
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import Dict, List, Optional
 
 from data.schemas import Bar
-from hypotheses.base import TradeIntent, IntentType, Hypothesis
-from hypotheses.registry import get_hypothesis
+from hypotheses.base import TradeIntent, Hypothesis
 from execution.simulator import ExecutionSimulator
 from execution.cost_model import CostModel
 from state.market_state import MarketState
 from state.position_state import PositionState
 from evaluation.policy import ResearchPolicy
 from portfolio.models import PortfolioState, PortfolioAllocation
-from portfolio.risk import RiskRule, MaxDrawdownRule
+from portfolio.risk import RiskRule
 from clock.clock import Clock
 
 logger = logging.getLogger(__name__)
@@ -25,12 +23,12 @@ class PortfolioEngine:
         hypotheses: List[Hypothesis],
         initial_capital: float,
         policy: ResearchPolicy,
-        risk_rules: List[RiskRule] = None
+        risk_rules: Optional[List[RiskRule]] = None
     ):
         self.hypotheses = hypotheses
         self.initial_capital = initial_capital
         self.policy = policy
-        self.risk_rules = risk_rules or []
+        self.risk_rules = list(risk_rules) if risk_rules else []
         
         # State Initialization
         capital_per_hypothesis = initial_capital / len(hypotheses) if hypotheses else 0
@@ -78,8 +76,6 @@ class PortfolioEngine:
                     intents[h.hypothesis_id] = intent
 
             # 2. Risk Checks & Execution
-            current_portfolio_value = 0.0
-            allocations_update = {}
             
             # Calculate current portfolio stats for risk checks (using PREVIOUS bar's state or Current Open?)
             # We use current bar open for execution, so state is technically "Pre-Bar Execution"

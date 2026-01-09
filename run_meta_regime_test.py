@@ -20,14 +20,12 @@ sys.path.insert(0, '.')
 import sqlite3
 import random
 from datetime import datetime, timedelta
-import pandas as pd
 
 from hypotheses.registry import get_hypothesis
 from portfolio.meta_engine import MetaPortfolioEngine
 from portfolio.ensemble import Ensemble
 from portfolio.weighting import RobustnessWeighting
 from storage.repositories import EvaluationRepository
-from config.settings import get_settings
 from data.schemas import Bar
 from promotion.models import HypothesisStatus
 
@@ -116,7 +114,7 @@ def inject_faked_promotions(repo: EvaluationRepository, hypotheses: list):
         repo.store_hypothesis_status(
             hypothesis_id=hid,
             status="PROMOTED",
-            rationale="Simulated Promotion",
+            rationale=["Simulated Promotion"],
             policy_id="TEST_POLICY"
         )
 

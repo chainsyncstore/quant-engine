@@ -1,10 +1,9 @@
 import logging
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 from data.schemas import Bar
 from hypotheses.base import TradeIntent, IntentType
-from execution.simulator import ExecutionSimulator
+from execution.simulator import ExecutionSimulator, CompletedTrade
 from execution.cost_model import CostModel, CostSide
 from state.market_state import MarketState
 from state.position_state import PositionState, PositionSide
@@ -12,8 +11,12 @@ from portfolio.models import PortfolioState, PortfolioAllocation
 from portfolio.ensemble import Ensemble
 from portfolio.risk import RiskRule
 from clock.clock import Clock
+from execution_live.order_models import ExecutionIntent, IntentAction
+from engine.decision_queue import QueuedDecision
 
 logger = logging.getLogger(__name__)
+
+ExecutionIntentSink = Callable[[ExecutionIntent], None]
 
 class MetaExecutionSimulator(ExecutionSimulator):
     """
@@ -24,10 +27,10 @@ class MetaExecutionSimulator(ExecutionSimulator):
         self,
         side: PositionSide,
         execution_bar: Bar,
-        decision: object, # QueuedDecision
+        decision: QueuedDecision,
         position_state: PositionState,
         size: float
-    ) -> Optional[object]:
+    ) -> Optional[CompletedTrade]:
         # Size here is treated as UNITS
         target_units = size
         if target_units <= 0:
@@ -63,8 +66,6 @@ class MetaExecutionSimulator(ExecutionSimulator):
         
         self._available_capital -= required_capital
         
-        from execution.simulator import CompletedTrade
-        
         trade = CompletedTrade(
             trade_type="ENTRY",
             side=side.value,
@@ -89,14 +90,18 @@ class MetaPortfolioEngine:
         ensemble: Ensemble,
         initial_capital: float,
         cost_model: CostModel,
-        risk_rules: List[RiskRule] = None,
-        decay_check_interval: int = 0
+        risk_rules: Optional[List[RiskRule]] = None,
+        decay_check_interval: int = 0,
+        symbol: str = "SYNTHETIC",
+        execution_intent_sink: Optional[ExecutionIntentSink] = None,
     ):
         self.ensemble = ensemble
         self.initial_capital = initial_capital
         self.cost_model = cost_model
-        self.risk_rules = risk_rules or []
+        self.risk_rules = list(risk_rules) if risk_rules else []
         self.decay_check_interval = decay_check_interval
+        self.symbol = symbol
+        self._execution_intent_sink = execution_intent_sink
         
         # 1. Shadow Track Initialization
         # We give each shadow sim a hypothetical capital (e.g. 1M) just to track % returns and positions accurately.
@@ -197,129 +202,97 @@ class MetaPortfolioEngine:
                 
                 net_exposure_target += (weight * sign)
             
-            # 4. Determine Meta-Turn
-            # If Target != Current Meta Exposure, we need to trade.
-            
-            current_meta_exposure = 0.0
-            if self.meta_position_state.has_position:
-                pos = self.meta_position_state.position
-                sign = 1.0 if pos.side == PositionSide.LONG else -1.0
-                # Exposure is relative to Capital?
-                # In this simplified model, we treat the Meta Simulator as a single instrument trader
-                # scaling position size by Target Exposure * Capital.
-                
-                # Check current size relative to capital?
-                # This is tricky because price fluctuates.
-                # Let's track "Target Size in Units".
-                pass
-            
-            # IMPLEMENTATION SHORTCUT for C3 MVP:
-            # Instead of continuous rebalancing (high transaction costs), 
-            # we execute logic:
-            # - Calculate desired position size in units: 
-            #   (NetExposure * CurrentEquity) / Price
-            
-            curr_equity = self.meta_simulator.get_total_capital(bar.open, self.meta_position_state)
-            target_value = net_exposure_target * curr_equity
-            target_units = int(target_value / bar.open) # Integer shares
-            
-            current_units = 0
-            if self.meta_position_state.has_position:
-                pos = self.meta_position_state.position
-                current_units = pos.size if pos.side == PositionSide.LONG else -pos.size
-            
-            diff_units = target_units - current_units
-            
-            meta_intent = None
-            if diff_units > 0:
-                # Buy
-                meta_intent = TradeIntent(type=IntentType.BUY, size=abs(diff_units)) # Size is usually ratio? 
-                # Wait, ExecutionSimulator uses logic: "Size=1.0" means ???
-                # Simulator _execute_entry uses: position_size = capital_to_deploy / effective_price
-                # It assumes intent.size is meaningless? Or wait.
-                
-                # Let's check Simulator._execute_entry again.
-                # `position_size = capital_to_deploy / effective_price`
-                # And `capital_to_deploy = self._available_capital`
-                # The simulator implementation I viewed earlier was VERY simple: ALWAYS ALL IN.
-                
-                # CRITICAL: The Standard ExecutionSimulator is "All In".
-                # It is NOT suitable for partial Meta-Portfolio rebalancing.
-                # I need a "TargetPositionSimulator" or modify current one.
-                
-                pass 
-                
-            # Determine target value and units
+            # Determine target meta exposure measured in units
             curr_equity = self.meta_simulator.get_total_capital(bar.open, self.meta_position_state)
             target_value = abs(net_exposure_target) * curr_equity
-            
-            # Floor to integer units (shares)
-            target_units = 0
-            if bar.open > 0:
-                target_units = int(target_value / bar.open)
-                
-            # Determine target side
-            target_side = PositionSide.LONG if net_exposure_target > 0 else PositionSide.SHORT
-            if target_units == 0:
-                target_side = None # Flat
+            target_units = float(int(target_value / bar.open)) if bar.open > 0 else 0.0
 
-            # Current State
-            current_units = 0
+            target_side = None
+            if target_units > 0:
+                target_side = PositionSide.LONG if net_exposure_target > 0 else PositionSide.SHORT
+
             current_side = None
+            current_units: float = 0.0
             if self.meta_position_state.has_position:
                 pos = self.meta_position_state.position
                 current_side = pos.side
                 current_units = pos.size
-            
+
             # Rebalancing Logic (Close & Re-Open Strategy)
             decisions = []
-            
+            emitted_intents: List[ExecutionIntent] = []
+
             # Case 1: Switch Side or Go Flat
             if current_side and (current_side != target_side or target_units == 0):
-                # Close existing
+                size_to_close = abs(current_units)
                 decisions.append(QueuedDecision(
                     intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
                     decision_timestamp=bar.timestamp,
                     decision_bar_index=bar_idx
                 ))
+                if size_to_close > 0:
+                    emitted_intents.append(
+                        self._build_execution_intent(
+                            action=IntentAction.CLOSE,
+                            quantity=size_to_close,
+                            bar=bar,
+                            bar_idx=bar_idx,
+                            metadata={"reason": "side_change_or_flat"}
+                        )
+                    )
                 current_units = 0
                 current_side = None
-            
+
             # Case 2: Size Change (Same Side)
-            if current_side == target_side and current_side is not None:
-                if current_units != target_units:
-                    # Close & Reopen (Simplest safe implementation)
-                    decisions.append(QueuedDecision(
-                        intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
-                        decision_timestamp=bar.timestamp,
-                        decision_bar_index=bar_idx
-                    ))
-                    current_units = 0
-            
-            # Case 3: Open Target (if not already there)
-            if target_units > 0 and current_units == 0:
-                intent_type = IntentType.BUY if target_side == PositionSide.LONG else IntentType.SELL
-                # Note: SELL intent usually means Short Entry in this engine, check Simulator
-                # Simulator: BUY -> LONG, SELL -> SHORT. Correct.
-                
+            if current_side == target_side and current_side is not None and current_units != target_units:
+                size_to_close = abs(current_units)
                 decisions.append(QueuedDecision(
-                    intent=TradeIntent(type=intent_type, size=target_units), # Size is UNITS for MetaSim
+                    intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
                     decision_timestamp=bar.timestamp,
                     decision_bar_index=bar_idx
                 ))
-            
+                if size_to_close > 0:
+                    emitted_intents.append(
+                        self._build_execution_intent(
+                            action=IntentAction.CLOSE,
+                            quantity=size_to_close,
+                            bar=bar,
+                            bar_idx=bar_idx,
+                            metadata={"reason": "resize"}
+                        )
+                    )
+                current_units = 0
+                current_side = None
+
+            # Case 3: Open Target (if not already there)
+            if target_side and target_units > 0 and current_units == 0:
+                intent_type = IntentType.BUY if target_side == PositionSide.LONG else IntentType.SELL
+                decisions.append(QueuedDecision(
+                    intent=TradeIntent(type=intent_type, size=target_units),  # Size is UNITS for MetaSim
+                    decision_timestamp=bar.timestamp,
+                    decision_bar_index=bar_idx
+                ))
+                emitted_intents.append(
+                    self._build_execution_intent(
+                        action=IntentAction.BUY if intent_type == IntentType.BUY else IntentAction.SELL,
+                        quantity=target_units,
+                        bar=bar,
+                        bar_idx=bar_idx,
+                        metadata={"reason": "target_entry"}
+                    )
+                )
+
             # Execute Meta Decisions
             if decisions:
                 self.meta_simulator.execute_decisions(decisions, bar, self.meta_position_state)
-                
-            # --- C. Snapshot ---
-            # Create snapshot...
-            snapshot = self._create_snapshot(bar, peak_equity)
-            history.append(snapshot)
-            
+                self._publish_execution_intents(emitted_intents)
+
             # Update peak equity
+            snapshot = self._create_snapshot(bar, peak_equity)
             if snapshot.total_capital > peak_equity:
                 peak_equity = snapshot.total_capital
+
+            history.append(snapshot)
                 
             # Update Shadow Equity Curves
             for hid, alloc in snapshot.allocations.items():
@@ -327,6 +300,33 @@ class MetaPortfolioEngine:
                     shadow_equity_curves[hid].append(alloc.allocated_capital)
 
         return history
+
+    def _publish_execution_intents(self, intents: List[ExecutionIntent]) -> None:
+        if not intents or not self._execution_intent_sink:
+            return
+
+        for intent in intents:
+            self._execution_intent_sink(intent)
+
+    def _build_execution_intent(
+        self,
+        action: IntentAction,
+        quantity: float,
+        bar: Bar,
+        bar_idx: int,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExecutionIntent:
+        return ExecutionIntent(
+            symbol=self.symbol,
+            action=action,
+            quantity=float(quantity),
+            timestamp=bar.timestamp,
+            reference_price=bar.open,
+            metadata={
+                "bar_index": bar_idx,
+                **(metadata or {}),
+            }
+        )
 
     def _check_decay(self, equity_curves: Dict[str, List[float]]):
         """
@@ -358,22 +358,22 @@ class MetaPortfolioEngine:
 
     def _create_snapshot(self, bar: Bar, peak_equity: float) -> PortfolioState:
         # 1. Shadow Allocations (Virtual)
-        allocations = {}
+        allocations: Dict[str, PortfolioAllocation] = {}
         for hid, sim in self.shadow_simulators.items():
             pos_state = self.shadow_position_states[hid]
             cap = sim.get_total_capital(bar.close, pos_state)
             unreal = pos_state.get_unrealized_pnl(bar.close) if pos_state.has_position else 0.0
             allocations[hid] = PortfolioAllocation(
                 hypothesis_id=hid,
-                allocated_capital=cap,
+                allocated_capital=float(cap),
                 current_position=pos_state.position if pos_state.has_position else None,
-                unrealized_pnl=unreal,
-                realized_pnl=cap - sim._initial_capital - unreal # Approx
+                unrealized_pnl=float(unreal),
+                realized_pnl=float(cap - sim._initial_capital - unreal)
             )
             
         # 2. Meta Portfolio (Real)
-        total_cap = self.meta_simulator.get_total_capital(bar.close, self.meta_position_state)
-        total_cash = self.meta_simulator.get_available_capital()
+        total_cap = float(self.meta_simulator.get_total_capital(bar.close, self.meta_position_state))
+        total_cash = float(self.meta_simulator.get_available_capital())
         total_unreal = 0.0
         if self.meta_position_state.has_position:
             total_unreal = self.meta_position_state.get_unrealized_pnl(bar.close)
@@ -389,10 +389,10 @@ class MetaPortfolioEngine:
         # We can stuff meta position info into a special "META" allocation key?
         allocations["META_PORTFOLIO"] = PortfolioAllocation(
             hypothesis_id="META",
-            allocated_capital=total_cap,
+            allocated_capital=float(total_cap),
             current_position=self.meta_position_state.position if self.meta_position_state.has_position else None,
-            unrealized_pnl=total_unreal,
-            realized_pnl=realized
+            unrealized_pnl=float(total_unreal),
+            realized_pnl=float(realized)
         )
 
         return PortfolioState(

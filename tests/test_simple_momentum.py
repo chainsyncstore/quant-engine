@@ -1,5 +1,4 @@
 """Quick test to verify simple_momentum generates trades."""
-import pytest
 from datetime import datetime, timedelta
 from hypotheses.examples.simple_momentum import SimpleMomentumHypothesis
 from state.market_state import MarketState

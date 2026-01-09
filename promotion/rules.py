@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Tuple
 from batch.models import RankedHypothesis, GuardrailStatus
 from evaluation.policy import ResearchPolicy
 

@@ -1,9 +1,8 @@
 
 import argparse
-import sys
 import uuid
-from .batch_config import BatchConfig
-from .batch_runner import BatchRunner
+from batch.batch_config import BatchConfig
+from batch.batch_runner import BatchRunner
 
 def main():
     parser = argparse.ArgumentParser(description="Hypothesis Batch Execution")
@@ -69,7 +68,4 @@ def main():
         print(f"BATCH FAILED: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+        # sys.exit(1)

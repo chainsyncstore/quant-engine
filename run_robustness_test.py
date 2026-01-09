@@ -17,11 +17,11 @@ from datetime import datetime, timedelta
 import random
 
 from hypotheses.registry import list_hypotheses, get_hypothesis
-from state.market_state import MarketState
-from state.position_state import PositionState
-from clock.clock import Clock
-from data.schemas import Bar
 from hypotheses.base import IntentType
+from data.schemas import Bar
+from clock.clock import Clock
+from state.market_state import MarketState
+from state.position_state import PositionState, PositionSide
 
 # Config
 NUM_BARS = 200
@@ -104,7 +104,8 @@ def run_hypothesis(hypothesis_id: str, bars: list) -> dict:
         
         try:
             intent = h.on_bar(ms, ps, clock)
-        except:
+        except Exception as err:
+            print(f"    WARN: {hypothesis_id} failed at {bar.timestamp}: {err}")
             continue
         
         if intent:
@@ -112,8 +113,11 @@ def run_hypothesis(hypothesis_id: str, bars: list) -> dict:
                 entries += 1
                 entry_price = bar.close
                 ps.open_position(
-                    side='LONG', entry_price=bar.close, size=100,
-                    entry_timestamp=bar.timestamp, entry_capital=10000.0
+                    side=PositionSide.LONG,
+                    entry_price=bar.close,
+                    size=100,
+                    entry_timestamp=bar.timestamp,
+                    entry_capital=10000.0
                 )
             elif intent.type == IntentType.CLOSE and ps.has_position:
                 exits += 1
@@ -170,7 +174,6 @@ def main():
     regimes = ["random", "bull", "bear", "choppy"]
     
     # Collect results
-    all_results = {}
     promotion_counts = {hid: 0 for hid in list_hypotheses()}
     scenario_count = 0
     
@@ -216,21 +219,21 @@ def main():
     # Check 2: always_long should never pass (no trades)
     always_long_rate = promotion_counts["always_long"] / scenario_count
     if always_long_rate == 0:
-        print(f"✓ PASS: always_long never promoted (expected - no exits)")
+        print("✓ PASS: always_long never promoted (expected - no exits)")
     else:
         print(f"⚠ WARN: always_long promoted {always_long_rate:.0%} - unexpected")
     
     # Check 3: At least one strategy should sometimes pass (not all scenarios rejected)
     any_promoted = any(c > 0 for c in promotion_counts.values())
     if any_promoted:
-        print(f"✓ PASS: At least one hypothesis survives some scenarios")
+        print("✓ PASS: At least one hypothesis survives some scenarios")
     else:
-        print(f"⚠ WARN: All hypotheses rejected in all scenarios - thresholds too strict?")
+        print("⚠ WARN: All hypotheses rejected in all scenarios - thresholds too strict?")
     
     # Check 4: No strategy should pass 100% (overfitting)
     perfect = [hid for hid, c in promotion_counts.items() if c == scenario_count and hid != "always_long"]
     if not perfect:
-        print(f"✓ PASS: No hypothesis promoted 100% (no overfitting)")
+        print("✓ PASS: No hypothesis promoted 100% (no overfitting)")
     else:
         print(f"⚠ WARN: {perfect} promoted 100% - possible overfit")
     

@@ -7,10 +7,10 @@ Enforces ResearchPolicy for all executions.
 
 import argparse
 import sys
-import pandas as pd
 from datetime import datetime
-from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
+
+import pandas as pd
 
 from clock.clock import Clock
 from config.settings import get_settings, Settings
@@ -34,6 +34,13 @@ from evaluation.walk_forward import WalkForwardConfig, WalkForwardGenerator, Dec
 from analysis.regime import RegimeClassifier, MarketRegime
 from evaluation.guardrails import ResearchGuardrails
 from evaluation.policy import ResearchPolicy, EvaluationMode
+
+
+def _to_datetime(value: Union[datetime, pd.Timestamp]) -> datetime:
+    """Convert pandas Timestamp or datetime to datetime."""
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    return value
 
 
 def _run_single_pass(
@@ -231,11 +238,13 @@ def run_evaluation(
     hypothesis = hypothesis_class()
     
     # 2. Load Data
-    if verbose: print("\n[Data Loading]")
+    if verbose:
+        print("\n[Data Loading]")
     
     if preloaded_bars:
          bars = preloaded_bars
-         if verbose: print(f"  Using preloaded data ({len(bars)} bars)")
+         if verbose:
+             print(f"  Using preloaded data ({len(bars)} bars)")
     elif use_synthetic:
         bars = MarketDataLoader.create_synthetic_data(
             symbol=symbol,
@@ -279,7 +288,8 @@ def run_evaluation(
     
     if policy.evaluation_mode == EvaluationMode.SINGLE_PASS:
         # --- STANDARD SINGLE PASS ---
-        if verbose: print("\n[Execution] Running Single Pass...")
+        if verbose:
+            print("\n[Execution] Running Single Pass...")
         
         result = _run_single_pass(
             hypothesis=hypothesis,
@@ -301,7 +311,8 @@ def run_evaluation(
 
     elif policy.evaluation_mode == EvaluationMode.WALK_FORWARD:
         # --- WALK-FORWARD LOOP ---
-        if verbose: print(f"\n[Execution] Walk-Forward ({policy.train_window_bars}/{policy.test_window_bars})...")
+        if verbose:
+            print(f"\n[Execution] Walk-Forward ({policy.train_window_bars}/{policy.test_window_bars})...")
         
         # Create generator
         df = pd.DataFrame([vars(b) for b in bars]) 
@@ -326,14 +337,15 @@ def run_evaluation(
             # --- TRAIN (In-Sample) ---
             train_bars = [b for b in bars if train_win.start_timestamp <= b.timestamp <= train_win.end_timestamp]
             
-            if verbose: print(f"  Training ({len(train_bars)} bars)...")
+            if verbose:
+                print(f"  Training ({len(train_bars)} bars)...")
             train_res = _run_single_pass(
                 hypothesis, train_bars, policy, settings, symbol, repo,
                 window_metadata={
                     "window_index": train_win.window_index,
                     "window_type": "TRAIN",
-                    "window_start": train_win.start_timestamp.to_pydatetime(),
-                    "window_end": train_win.end_timestamp.to_pydatetime()
+                    "window_start": _to_datetime(train_win.start_timestamp),
+                    "window_end": _to_datetime(train_win.end_timestamp)
                 },
                 regime_classifier=regime_classifier,
                 verbose=False,
@@ -343,7 +355,8 @@ def run_evaluation(
             # --- TEST (Out-of-Sample) ---
             test_bars = [b for b in bars if test_win.start_timestamp <= b.timestamp <= test_win.end_timestamp]
             
-            if verbose: print(f"  Testing ({len(test_bars)} bars)...")
+            if verbose:
+                print(f"  Testing ({len(test_bars)} bars)...")
             
             # Run test pass 
             test_res = _run_single_pass(
@@ -356,7 +369,8 @@ def run_evaluation(
             
             # --- Decay Analysis ---
             decay = decay_tracker.analyze_decay(train_res["metrics"], test_res["metrics"])
-            if verbose: print(f"  Result: {decay.result_tag} (Sharpe Change: {decay.sharpe_change:.2f})")
+            if verbose:
+                print(f"  Result: {decay.result_tag} (Sharpe Change: {decay.sharpe_change:.2f})")
             
             # Store Test Result
             if repo:
@@ -364,8 +378,8 @@ def run_evaluation(
                     hypothesis_id=hypothesis.hypothesis_id,
                     parameters=hypothesis.parameters,
                     market_symbol=symbol,
-                    test_start_timestamp=test_win.start_timestamp.to_pydatetime(),
-                    test_end_timestamp=test_win.end_timestamp.to_pydatetime(),
+                    test_start_timestamp=_to_datetime(test_win.start_timestamp),
+                    test_end_timestamp=_to_datetime(test_win.end_timestamp),
                     metrics=test_res["metrics"],
                     benchmark_metrics={"benchmark_return_pct": 0}, 
                     assumed_costs_bps=policy.transaction_cost_bps + policy.slippage_bps,
@@ -374,8 +388,8 @@ def run_evaluation(
                     bars_processed=len(test_bars),
                     result_tag=decay.result_tag,
                     window_index=test_win.window_index,
-                    window_start=test_win.start_timestamp.to_pydatetime(),
-                    window_end=test_win.end_timestamp.to_pydatetime(),
+                    window_start=_to_datetime(test_win.start_timestamp),
+                    window_end=_to_datetime(test_win.end_timestamp),
                     window_type="TEST",
                     market_regime=test_res["market_regime"],
                     sample_type="OUT_OF_SAMPLE",
@@ -389,7 +403,7 @@ def run_evaluation(
             if test_res["market_regime"]:
                 try:
                     regimes_encountered.add(MarketRegime(test_res["market_regime"]))
-                except:
+                except ValueError:
                     pass
             
             window_results.append({
@@ -456,7 +470,3 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

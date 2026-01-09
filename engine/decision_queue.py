@@ -4,9 +4,9 @@ Decision queue management.
 Buffers trade intents to enforce execution delays (preventing look-ahead bias).
 """
 
-from typing import List, Optional
+from typing import List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from hypotheses.base import TradeIntent
 

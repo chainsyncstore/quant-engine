@@ -22,6 +22,7 @@ class Bar(BaseModel):
     low: float = Field(gt=0.0)
     close: float = Field(gt=0.0)
     volume: float = Field(ge=0.0)
+    symbol: str | None = Field(default=None, description="Optional market symbol")
     
     @model_validator(mode='after')
     def validate_prices(self) -> 'Bar':

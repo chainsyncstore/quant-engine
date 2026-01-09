@@ -173,6 +173,7 @@ class PositionState:
         
         closed_position = self._position
         self._position = None
+        assert closed_position is not None  # mypy: guarded by has_position check
         return closed_position
     
     def get_unrealized_pnl(self, current_price: float) -> float:

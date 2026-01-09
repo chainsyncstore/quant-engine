@@ -1,8 +1,6 @@
 """Tests for regime classification."""
-import pytest
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
 from analysis.regime import RegimeClassifier, MarketRegime
 

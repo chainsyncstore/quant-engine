@@ -1,4 +1,3 @@
-from unittest.mock import MagicMock
 from batch.models import RankedHypothesis, GuardrailStatus
 from evaluation.policy import ResearchPolicy, EvaluationMode
 from promotion.evaluator import PromotionEvaluator

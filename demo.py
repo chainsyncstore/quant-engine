@@ -4,7 +4,6 @@ Quick demo script to test the system without pytest.
 Run this after installing dependencies.
 """
 
-from datetime import datetime
 from orchestrator.run_evaluation import run_evaluation
 
 def main():
@@ -25,14 +24,14 @@ def main():
     print("=" * 70)
     print(f"Evaluation ID: {result['evaluation_id']}")
     print(f"Database: {result['db_path']}")
-    print(f"\nMetrics:")
+    print("\nMetrics:")
     for key, value in result['metrics'].items():
         if isinstance(value, float):
             print(f"  {key}: {value:.2f}")
         else:
             print(f"  {key}: {value}")
     
-    print(f"\nBenchmark:")
+    print("\nBenchmark:")
     print(f"  Buy & Hold Return: {result['benchmark_metrics']['benchmark_return_pct']:.2f}%")
     print(f"  Alpha: {result['metrics']['total_return'] - result['benchmark_metrics']['benchmark_return_pct']:.2f}%")
 

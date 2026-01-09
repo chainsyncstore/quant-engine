@@ -2,7 +2,6 @@
 Tests for the main ReplayEngine.
 """
 
-import pytest
 from datetime import datetime
 
 from clock.clock import Clock
@@ -56,7 +55,7 @@ def test_no_look_ahead_market_state():
         "TEST", datetime(2020, 1, 1), 10, 100.0, seed=42
     )
     
-    from hypotheses.base import Hypothesis, TradeIntent
+    from hypotheses.base import Hypothesis
     
     class PeekCheckHypothesis(Hypothesis):
         def __init__(self):

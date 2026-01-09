@@ -5,6 +5,7 @@ Computes performance metrics from completed trades.
 """
 
 import numpy as np
+import pandas as pd
 from typing import List, Optional
 
 from execution.simulator import CompletedTrade
@@ -40,7 +41,7 @@ class EvaluationMetrics:
         self._final_capital = final_capital
         self._equity_curve = equity_curve if equity_curve else []
         self._benchmark_curve = benchmark_curve if benchmark_curve else []
-        self._sample_type = None
+        self._sample_type: Optional[str] = None
 
     def beta(self) -> float:
         """Calculate Beta relative to benchmark."""
@@ -190,8 +191,8 @@ class EvaluationMetrics:
         if not returns:
             return 0.0
         
-        mean_return = np.mean(returns)
-        std_return = np.std(returns, ddof=1)
+        mean_return = float(np.mean(returns))
+        std_return = float(np.std(returns, ddof=1))
         
         if std_return == 0:
             return 0.0
@@ -221,10 +222,11 @@ class EvaluationMetrics:
                 equity_curve.append(equity)
         
         # Calculate drawdown
-        peak = equity_curve[0]
+        peak = float(equity_curve[0])
         max_dd = 0.0
         
-        for value in equity_curve:
+        for raw_value in equity_curve:
+            value = float(raw_value)
             if value > peak:
                 peak = value
             
@@ -320,7 +322,7 @@ class EvaluationMetrics:
         if not durations:
             return 0.0
         
-        return np.mean(durations)
+        return float(np.mean(durations))
     
     def to_dict(self) -> dict:
         """

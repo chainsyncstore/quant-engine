@@ -1,14 +1,10 @@
 import argparse
 import logging
-from datetime import datetime
-from typing import List
 
 from config.settings import get_settings
 from config.policies import get_policy
 from storage.repositories import EvaluationRepository
 from orchestrator.run_evaluation import run_evaluation
-from promotion.evaluator import PromotionEvaluator
-from promotion.rules import AbsolutePerformanceRule, RobustnessRule
 from promotion.models import HypothesisStatus
 
 logging.basicConfig(
@@ -81,7 +77,12 @@ def main():
                 status = HypothesisStatus.PROMOTED if promoted else HypothesisStatus.REJECTED
                 reason = f"Sharpe={sharpe:.2f}, Return={total_return:.1f}%, DD={max_dd:.1f}%, Trades={total_trades}"
                 
-                repo.store_hypothesis_status(hid, status.value, reason, policy_id=policy.policy_id)
+                repo.store_hypothesis_status(
+                    hid,
+                    status.value,
+                    policy_id=policy.policy_id,
+                    rationale=[reason]
+                )
                 
                 status_str = "✓ PROMOTED" if promoted else "✗ REJECTED"
                 logger.info(f"{hid}: {status_str} ({reason})")
@@ -89,6 +90,3 @@ def main():
                 logger.warning(f"{hid}: No evaluation found, skipping promotion")
             
     logger.info("\n=== Batch Complete ===")
-
-if __name__ == "__main__":
-    main()

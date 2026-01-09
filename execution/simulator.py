@@ -5,7 +5,7 @@ Handles trade execution, cost application, and PnL tracking.
 """
 
 from typing import List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from data.schemas import Bar
 from engine.decision_queue import QueuedDecision
@@ -264,7 +264,7 @@ class ExecutionSimulator:
         """
         if position_state.has_position:
             unrealized_pnl = position_state.get_unrealized_pnl(current_price)
-            position = position_state.get_position()
+            position = position_state.position
             return self._available_capital + position.entry_capital + unrealized_pnl
         
         return self._available_capital

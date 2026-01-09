@@ -1,13 +1,10 @@
 import pytest
-import os
 from datetime import datetime, timedelta
 from portfolio.meta_engine import MetaPortfolioEngine
 from portfolio.ensemble import Ensemble
 from portfolio.weighting import EqualWeighting
 from hypotheses.base import Hypothesis, TradeIntent, IntentType
-from state.market_state import MarketState
-from state.position_state import PositionState, PositionSide
-from clock.clock import Clock
+from state.position_state import PositionSide
 from data.schemas import Bar
 from execution.cost_model import CostModel
 from storage.repositories import EvaluationRepository
@@ -36,7 +33,6 @@ class ShortMock(Hypothesis):
 
 @pytest.fixture
 def mock_repo(tmp_path):
-    import sqlite3
     db_path = tmp_path / "test_meta.db"
     return EvaluationRepository(str(db_path))
 

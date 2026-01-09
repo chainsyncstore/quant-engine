@@ -9,10 +9,11 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from execution.simulator import CompletedTrade
 from evaluation.policy import ResearchPolicy
+from portfolio.models import PortfolioState
 
 class EvaluationRepository:
     """
@@ -233,7 +234,10 @@ class EvaluationRepository:
                 )
             )
             conn.commit()
-            return cursor.lastrowid
+            last_row_id = cursor.lastrowid
+            if last_row_id is None:
+                raise RuntimeError("Failed to insert evaluation row.")
+            return int(last_row_id)
     
     def store_trades(
         self,
@@ -303,7 +307,7 @@ class EvaluationRepository:
             List of evaluation records as dictionaries
         """
         query = "SELECT * FROM evaluations WHERE 1=1"
-        params = []
+        params: List[Any] = []
         
         if hypothesis_id:
             query += " AND hypothesis_id = ?"
@@ -456,7 +460,7 @@ class EvaluationRepository:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def store_portfolio_evaluation(self, state: 'PortfolioState', portfolio_tag: str, policy_id: str) -> None:
+    def store_portfolio_evaluation(self, state: PortfolioState, portfolio_tag: str, policy_id: str) -> None:
         """
         Store a portfolio state snapshot.
         

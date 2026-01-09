@@ -1,5 +1,4 @@
-from typing import Protocol, List, Tuple
-from abc import abstractmethod
+from typing import Protocol, Tuple
 from hypotheses.base import TradeIntent, IntentType
 from portfolio.models import PortfolioState, PortfolioAllocation
 

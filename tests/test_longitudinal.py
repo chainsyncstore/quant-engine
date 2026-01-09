@@ -1,15 +1,10 @@
 
 import pytest
-import sqlite3
-import json
 from datetime import datetime, timedelta
 from typing import List
-from pathlib import Path
 
-from execution.simulator import CompletedTrade
 from evaluation.longitudinal import LongitudinalTracker
 from evaluation.policy import ResearchPolicy
-from evaluation.metrics import EvaluationMetrics
 from storage.repositories import EvaluationRepository
 from promotion.models import HypothesisStatus
 from config.settings import Settings
@@ -134,7 +129,12 @@ def test_longitudinal_decay_check_maintained(repo, policy, settings, monkeypatch
         policy_id=policy.policy_id
     )
     
-    repo.store_hypothesis_status(hid, HypothesisStatus.PROMOTED.value, policy_id=policy.policy_id)
+    repo.store_hypothesis_status(
+        hid,
+        HypothesisStatus.PROMOTED.value,
+        policy_id=policy.policy_id,
+        rationale=["Initial promotion"]
+    )
     
     # Write New Data to CSV for MarketLoader (since tracker loads from CSV)
     # Price goes UP -> Good Sharpe
@@ -195,7 +195,12 @@ def test_longitudinal_decay_check_decayed(repo, policy, settings, monkeypatch, t
         bars_processed=10,
         policy_id=policy.policy_id
     )
-    repo.store_hypothesis_status(hid, HypothesisStatus.PROMOTED.value, policy_id=policy.policy_id)
+    repo.store_hypothesis_status(
+        hid,
+        HypothesisStatus.PROMOTED.value,
+        policy_id=policy.policy_id,
+        rationale=["Initial promotion"]
+    )
     
     # Write New Data causing DECAY
     # Price Choppy/Down -> Bad Sharpe

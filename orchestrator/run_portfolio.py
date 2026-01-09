@@ -1,7 +1,5 @@
 import argparse
 import logging
-from datetime import datetime
-from typing import List
 
 from config.settings import get_settings
 from config.policies import get_policy
@@ -51,15 +49,15 @@ def main():
     logger.info(f"Found {len(promoted_ids)} promoted hypotheses: {promoted_ids}")
     
     # 2. Instantiate Hypotheses
+    import json
     hypotheses = []
     for hid in promoted_ids:
         details = repo.get_hypothesis_details(hid)
         params = {}
         if details and 'parameters_json' in details:
-            import json
             try:
                 params = json.loads(details['parameters_json'])
-            except:
+            except json.JSONDecodeError:
                 logger.error(f"Failed to load params for {hid}")
         
         h_cls = get_hypothesis(hid)
@@ -105,6 +103,3 @@ def main():
     logger.info(f"Final Capital: ${final.total_capital:,.2f}")
     logger.info(f"Return: {((final.total_capital - args.capital) / args.capital * 100):.2f}%")
     logger.info(f"Max Drawdown: {final.drawdown_pct:.2f}%")
-
-if __name__ == "__main__":
-    main()

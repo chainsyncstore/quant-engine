@@ -6,7 +6,6 @@ import sys
 import subprocess
 import sqlite3
 import os
-from pathlib import Path
 
 def test_walk_forward_integration():
     # Setup

@@ -31,12 +31,29 @@ pip install -e ".[dev]"
 ### Running an Evaluation
 
 ```bash
-python -m orchestrator.run_evaluation \
+# Preferred wrapper (thin CLI that calls orchestrator.run_evaluation.main)
+python scripts/run_evaluation.py \
     --hypothesis always_long \
+    --policy WF_V1 \
     --data-path data/sample_market_data.csv \
     --symbol SAMPLE \
     --start-date 2020-01-01 \
     --end-date 2023-12-31
+
+# Direct module execution is still available if you prefer:
+# python -m orchestrator.run_evaluation ...
+```
+
+### Other CLI Entry Points
+
+All operational CLIs now live under `scripts/` as thin wrappers around their respective package modules:
+
+```bash
+python scripts/run_batch.py --help         # orchestrator.run_batch
+python scripts/run_meta.py --help          # orchestrator.run_meta
+python scripts/run_portfolio.py --help     # orchestrator.run_portfolio
+python scripts/check_decay.py --help       # orchestrator.check_decay
+python scripts/run_batch_runner.py --help  # batch.run_batch (legacy batch runner)
 ```
 
 ### Creating a Custom Hypothesis

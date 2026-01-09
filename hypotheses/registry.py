@@ -8,6 +8,12 @@ Prevents dynamic imports and ensures all hypotheses are explicitly registered.
 from typing import Dict, Type
 
 from hypotheses.base import Hypothesis
+from hypotheses.examples.always_long import AlwaysLongHypothesis
+from hypotheses.examples.mean_reversion import MeanReversionHypothesis
+from hypotheses.examples.simple_momentum import SimpleMomentumHypothesis
+from hypotheses.examples.volatility_breakout import VolatilityBreakoutHypothesis
+from hypotheses.examples.time_exit import TimeExitHypothesis
+from hypotheses.examples.counter_trend import CounterTrendHypothesis
 
 
 class HypothesisRegistry:
@@ -90,15 +96,6 @@ class HypothesisRegistry:
 # Global registry instance
 registry = HypothesisRegistry()
 
-
-# Import and register all available hypotheses
-# Add new hypotheses here to make them available
-from hypotheses.examples.always_long import AlwaysLongHypothesis
-from hypotheses.examples.mean_reversion import MeanReversionHypothesis
-from hypotheses.examples.simple_momentum import SimpleMomentumHypothesis
-from hypotheses.examples.volatility_breakout import VolatilityBreakoutHypothesis
-from hypotheses.examples.time_exit import TimeExitHypothesis
-from hypotheses.examples.counter_trend import CounterTrendHypothesis
 
 registry.register(AlwaysLongHypothesis)
 registry.register(MeanReversionHypothesis)

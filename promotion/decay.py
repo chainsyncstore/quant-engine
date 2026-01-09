@@ -1,7 +1,7 @@
 from typing import Tuple
-from batch.models import RankedHypothesis, GuardrailStatus
+from batch.models import RankedHypothesis
 from evaluation.policy import ResearchPolicy
-from .rules import PromotionRule
+from promotion.rules import PromotionRule
 
 class DecayRule(PromotionRule):
     """
@@ -19,13 +19,6 @@ class DecayRule(PromotionRule):
         # 2. Check Sharpe Decay (if enabled)
         # We can also check against absolute minimums for staying active.
         # e.g. if Sharpe drops below 0.5 (even if it was 2.0), it's bad.
-        
-        min_sharpe_maintenance = policy.promotion_min_sharpe * 0.8 # e.g. Allow 20% drop from entry bar? 
-                                                                   # Or just strict hard floor?
-                                                                   # PRD says "Track post-promotion decay".
-                                                                   # Let's use a configurable threshold if available, else hardcode relative to Policy.
-                                                                   
-        # For now, let's say if it fails the original promotion criteria significantly.
         
         if sharpe < (policy.promotion_min_sharpe * 0.75):
              passed = False

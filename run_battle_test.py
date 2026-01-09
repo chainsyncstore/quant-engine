@@ -12,7 +12,7 @@ import random
 
 from hypotheses.registry import list_hypotheses, get_hypothesis
 from state.market_state import MarketState
-from state.position_state import PositionState
+from state.position_state import PositionState, PositionSide
 from clock.clock import Clock
 from data.schemas import Bar
 from hypotheses.base import IntentType
@@ -78,7 +78,7 @@ def run_hypothesis(hypothesis_id: str, bars: list) -> dict:
         
         try:
             intent = h.on_bar(ms, ps, clock)
-        except Exception as e:
+        except Exception:
             # Some hypotheses may fail on early bars
             continue
         
@@ -87,7 +87,7 @@ def run_hypothesis(hypothesis_id: str, bars: list) -> dict:
                 entries += 1
                 entry_price = bar.close
                 ps.open_position(
-                    side='LONG',
+                    side=PositionSide.LONG,
                     entry_price=bar.close,
                     size=100,
                     entry_timestamp=bar.timestamp,

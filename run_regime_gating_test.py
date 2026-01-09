@@ -17,17 +17,13 @@ sys.path.insert(0, '.')
 import sqlite3
 import random
 from datetime import datetime, timedelta
-import pandas as pd
 
 from hypotheses.registry import get_hypothesis
 from portfolio.meta_engine import MetaPortfolioEngine
 from portfolio.ensemble import Ensemble
 from portfolio.weighting import EqualWeighting
 from storage.repositories import EvaluationRepository
-from state.position_state import PositionState
 from data.schemas import Bar
-from promotion.models import HypothesisStatus
-from market.regime import MarketRegime
 from execution.cost_model import CostModel
 
 DB_PATH = "results/test_regime_gating.db"
@@ -87,7 +83,13 @@ def generate_bars() -> list:
 
 def inject_promotion(repo, hid):
     repo.store_hypothesis(hid, {}, "Test")
-    repo.store_hypothesis_status(hid, "PROMOTED", "Test", "TEST_POLICY")
+    repo.store_hypothesis_status(
+        hid,
+        "PROMOTED",
+        "Test",
+        "TEST_POLICY",
+        rationale=["Injected promotion"]
+    )
 
 def main():
     print("="*80)
@@ -119,7 +121,6 @@ def main():
     
     warmup_end = 200
     bull_end = 300
-    chop_end = 500
     
     cap_start = history[warmup_end].total_capital
     cap_bull_end = history[bull_end].total_capital
@@ -162,7 +163,7 @@ def main():
             try:
                 adx_series = classifier._calculate_adx(df)
                 adx = adx_series.iloc[-1] if not adx_series.empty else 0.0
-            except:
+            except (KeyError, ValueError, ZeroDivisionError):
                 adx = 0.0
             
             print(f"Bar {i}: Regime={regime}, ADX={adx:.2f}, Price={bar.close:.2f}")

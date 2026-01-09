@@ -4,13 +4,18 @@ Replay engine - main event loop.
 Owns control flow and orchestrates the bar-by-bar replay process.
 """
 
-from typing import List
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
 
 from clock.clock import Clock
 from data.bar_iterator import BarIterator
-from data.schemas import Bar
 from engine.decision_queue import DecisionQueue
-from hypotheses.base import Hypothesis, IntentType
+from hypotheses.base import Hypothesis
+
+if TYPE_CHECKING:
+    from state.market_state import MarketState
+    from state.position_state import PositionState
 
 
 class ReplayEngine:
@@ -35,8 +40,8 @@ class ReplayEngine:
         bar_iterator: BarIterator,
         clock: Clock,
         decision_queue: DecisionQueue,
-        market_state: "MarketState" = None,
-        position_state: "PositionState" = None,
+        market_state: Optional["MarketState"] = None,
+        position_state: Optional["PositionState"] = None,
         execution_delay_bars: int = 1
     ):
         """

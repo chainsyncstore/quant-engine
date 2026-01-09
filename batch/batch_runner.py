@@ -5,15 +5,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from config.settings import get_settings
-from config.policies import register_policy
 from storage.repositories import EvaluationRepository
 from orchestrator.run_evaluation import run_evaluation
-from evaluation.policy import ResearchPolicy, EvaluationMode
+from evaluation.policy import ResearchPolicy
 from data.market_loader import MarketDataLoader
-from .batch_config import BatchConfig
-from .models import AggregatedHypothesisResult, RankedHypothesis, GuardrailStatus
-from .aggregation import aggregate_results
-from .ranker import rank_hypotheses
+from batch.batch_config import BatchConfig
+from batch.models import AggregatedHypothesisResult, RankedHypothesis, GuardrailStatus
+from batch.aggregation import aggregate_results
+from batch.ranker import rank_hypotheses
 from promotion.evaluator import PromotionEvaluator
 
 class BatchRunner:
@@ -89,9 +88,17 @@ class BatchRunner:
                 # Treat as failed
                 aggregated_results.append(AggregatedHypothesisResult(
                     hypothesis_id=hypothesis_id,
-                    oos_mean_return=0, oos_median_return=0, oos_sharpe=0, 
-                    oos_max_drawdown=0, profit_factor=0, profitable_window_ratio=0,
-                    regime_coverage_count=0, decay_detected=False,
+                    oos_mean_return=0.0,
+                    oos_median_return=0.0,
+                    oos_sharpe=0.0,
+                    oos_max_drawdown=0.0,
+                    oos_alpha=0.0,
+                    oos_beta=0.0,
+                    oos_ir=0.0,
+                    profit_factor=0.0,
+                    profitable_window_ratio=0.0,
+                    regime_coverage_count=0,
+                    decay_detected=False,
                     guardrail_status=GuardrailStatus.FAIL
                 ))
 

@@ -7,7 +7,6 @@ import sys
 sys.path.insert(0, '.')
 
 from promotion.evaluator import PromotionEvaluator, HypothesisStatus
-from promotion.models import PromotionDecision
 from batch.models import RankedHypothesis, GuardrailStatus
 from evaluation.policy import ResearchPolicy, EvaluationMode
 

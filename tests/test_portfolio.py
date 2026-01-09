@@ -1,8 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
-from portfolio.models import PortfolioState
 from portfolio.engine import PortfolioEngine
 from portfolio.risk import MaxDrawdownRule
 from hypotheses.base import Hypothesis, TradeIntent, IntentType
@@ -11,8 +10,6 @@ from state.position_state import PositionState
 from clock.clock import Clock
 from data.schemas import Bar
 from evaluation.policy import ResearchPolicy
-from config.settings import Settings
-from storage.repositories import EvaluationRepository
 
 # --- Mocks ---
 
@@ -177,7 +174,7 @@ def test_max_drawdown_rule(policy):
     
     # Check if LateEntry has a position
     final_state = res[-1]
-    late_alloc = final_state.allocations["late"]
+    _ = final_state.allocations["late"]
     
     # Should be None/Empty because blocked
     # Actually, at 70, H1 is 35k. Total 85k. Peak 100k. DD = 15%.

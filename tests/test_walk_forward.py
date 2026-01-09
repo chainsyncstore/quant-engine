@@ -1,9 +1,8 @@
 """Tests for walk-forward evaluation module."""
-import pytest
 import pandas as pd
 from datetime import datetime, timedelta
 
-from evaluation.walk_forward import WalkForwardConfig, WalkForwardGenerator, EvaluationWindow
+from evaluation.walk_forward import WalkForwardConfig, WalkForwardGenerator
 
 
 def test_walk_forward_generation():

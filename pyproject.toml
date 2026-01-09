@@ -33,4 +33,29 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["config*", "data*", "clock*", "state*", "hypotheses*", "engine*", "execution*", "evaluation*", "storage*", "orchestrator*"]
+include = [
+    "analysis*",
+    "batch*",
+    "clock*",
+    "config*",
+    "data*",
+    "engine*",
+    "evaluation*",
+    "execution*",
+    "execution_live*",
+    "hypotheses*",
+    "market*",
+    "orchestrator*",
+    "portfolio*",
+    "promotion*",
+    "state*",
+    "storage*",
+]
+
+[tool.mypy]
+exclude = '''
+(?x)(
+    analysis/regime\.py
+  | promotion/models\.py
+)
+'''

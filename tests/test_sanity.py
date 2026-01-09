@@ -7,11 +7,11 @@ Tests:
 - Basic metrics calculation
 """
 
-import pytest
 from datetime import datetime
 
+import pytest
+
 from clock.clock import Clock
-from config.settings import Settings
 from data.bar_iterator import BarIterator
 from data.market_loader import MarketDataLoader
 from engine.decision_queue import DecisionQueue

@@ -1,8 +1,14 @@
 from typing import List
 from batch.models import RankedHypothesis
 from evaluation.policy import ResearchPolicy
-from .models import PromotionDecision, HypothesisStatus
-from .rules import AbsolutePerformanceRule, RobustnessRule, RelativeStandingRule, BenchmarkFilterRule, PromotionRule
+from promotion.models import PromotionDecision, HypothesisStatus
+from promotion.rules import (
+    AbsolutePerformanceRule,
+    RobustnessRule,
+    RelativeStandingRule,
+    BenchmarkFilterRule,
+    PromotionRule,
+)
 
 class PromotionEvaluator:
     def __init__(self, policy: ResearchPolicy, batch_id: str):

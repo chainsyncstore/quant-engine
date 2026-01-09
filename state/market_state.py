@@ -9,6 +9,8 @@ from collections import deque
 from datetime import datetime
 from typing import List, Optional
 
+import pandas as pd
+
 from data.schemas import Bar
 
 
@@ -166,7 +168,7 @@ class MarketState:
         """
         return self.current_bar().timestamp
     
-    def to_dataframe(self, n: int | None = None) -> "pd.DataFrame":
+    def to_dataframe(self, n: int | None = None) -> pd.DataFrame:
         """
         Convert history to pandas DataFrame.
         
@@ -176,8 +178,6 @@ class MarketState:
         Returns:
             DataFrame with columns [open, high, low, close, volume] and datetime index.
         """
-        import pandas as pd
-        
         # Get history
         bars = self.get_bars(n)
         

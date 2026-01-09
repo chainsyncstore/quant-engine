@@ -1,5 +1,4 @@
 import argparse
-import sys
 import logging
 from config.settings import get_settings
 from config.policies import get_policy
@@ -36,6 +35,3 @@ def main():
         print(f"  Reason: {res['reason']}")
         print(f"  New Metrics: Sharpe={res['new_metrics'].get('sharpe_ratio'):.2f}, Return={res['new_metrics'].get('total_return'):.2f}%")
         print("-" * 30)
-
-if __name__ == "__main__":
-    main()

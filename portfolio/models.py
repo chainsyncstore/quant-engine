@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, Optional
-from pydantic import BaseModel, Field, ConfigDict
-from state.position_state import Position, PositionSide
+from pydantic import BaseModel, ConfigDict
+from state.position_state import Position
 
 class PortfolioAllocation(BaseModel):
     """Allocation detail for a single hypothesis."""

@@ -1,5 +1,4 @@
 
-import pytest
 from batch.ranker import rank_hypotheses
 from batch.models import AggregatedHypothesisResult, GuardrailStatus
 

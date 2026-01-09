@@ -1,10 +1,8 @@
 
 import pytest
 import sqlite3
-import os
 from batch.batch_runner import BatchRunner
 from batch.batch_config import BatchConfig
-from batch.models import GuardrailStatus
 
 @pytest.fixture
 def temp_db(tmp_path):
@@ -39,7 +37,6 @@ def setup_policy():
 
 def test_batch_execution_e2e(temp_db, setup_policy):
     # Setup Config
-    from hypotheses.examples.always_long import AlwaysLongHypothesis
     
     config = BatchConfig(
         batch_id="test_batch_001",
@@ -80,11 +77,6 @@ def test_batch_execution_e2e(temp_db, setup_policy):
     assert len(evals) > 0
 
 def test_batch_execution_with_promotion(temp_db, setup_policy):
-    try:
-        from hypotheses.examples.always_long import AlwaysLongHypothesis
-    except ImportError:
-        pass
-        
     # Create a batch config
     config = BatchConfig(
         batch_id="promo_batch",
@@ -98,7 +90,7 @@ def test_batch_execution_with_promotion(temp_db, setup_policy):
     
     runner = BatchRunner(config, db_path=temp_db)
     # Run WITH promotion
-    rankings = runner.run(promote=True)
+    runner.run(promote=True)
     
     conn = sqlite3.connect(temp_db)
     conn.row_factory = sqlite3.Row

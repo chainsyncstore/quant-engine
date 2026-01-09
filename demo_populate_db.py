@@ -5,11 +5,12 @@ Runs evaluation, promotion, portfolio simulation, and meta simulation.
 import sys
 sys.path.insert(0, '.')
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from storage.repositories import EvaluationRepository
 from config.settings import get_settings
 from config.policies import get_policy
 from promotion.models import HypothesisStatus
+from portfolio.models import PortfolioAllocation, PortfolioState
 
 # Get settings
 settings = get_settings()
@@ -63,14 +64,13 @@ print("\n3. Storing promotion decision...")
 repo.store_hypothesis_status(
     hypothesis_id="simple_momentum",
     status=HypothesisStatus.PROMOTED.value,
-    rationale="Passed all thresholds",
+    rationale=["Passed all thresholds"],
     policy_id=policy.policy_id
 )
 print("   Status: PROMOTED")
 
 # 4. Store portfolio evaluation 
 print("\n4. Storing portfolio evaluation...")
-from portfolio.models import PortfolioState, PortfolioAllocation
 
 snapshot = PortfolioState(
     timestamp=datetime(2023, 12, 31),

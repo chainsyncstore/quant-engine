@@ -1,6 +1,5 @@
 import argparse
 import logging
-from datetime import datetime
 
 from config.settings import get_settings
 from config.policies import get_policy
@@ -13,6 +12,9 @@ from data.market_loader import MarketDataLoader
 from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
 from execution.cost_model import CostModel
+from execution_live import ExecutionEventLogger, PaperExecutionAdapter
+from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck
+from execution_live.service import PaperExecutionService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +31,9 @@ def main():
     parser.add_argument("--max-drawdown", type=float, default=0.20, help="Max Drawdown Limit")
     parser.add_argument("--weighting", default="equal", choices=["equal", "robustness"], help="Weighting strategy")
     parser.add_argument("--tag", default="META_RUN", help="Meta Run Tag")
+    parser.add_argument("--paper", action="store_true", help="Enable paper execution boundary")
+    parser.add_argument("--paper-log", default=None, help="Optional path to append execution events as JSON lines")
+    parser.add_argument("--paper-max-notional", type=float, default=0.0, help="Max notional per order for paper execution (0 disables check)")
     
     args = parser.parse_args()
     
@@ -50,15 +55,15 @@ def main():
 
     logger.info(f"Found {len(promoted_ids)} promoted hypotheses: {promoted_ids}")
     
+    import json
     hypotheses = []
     for hid in promoted_ids:
         details = repo.get_hypothesis_details(hid)
         params = {}
         if details and 'parameters_json' in details:
-            import json
             try:
                 params = json.loads(details['parameters_json'])
-            except:
+            except json.JSONDecodeError:
                 logger.error(f"Failed to load params for {hid}")
         
         h_cls = get_hypothesis(hid)
@@ -94,11 +99,48 @@ def main():
         MaxDrawdownRule(max_drawdown_pct=args.max_drawdown)
     ]
     
+    paper_adapter = None
+    execution_sink = None
+    
+    if args.paper:
+        logger.info("Paper execution enabled.")
+        event_logger = ExecutionEventLogger(persist_path=args.paper_log)
+        adapter_risk_checks = [CashAvailabilityCheck()]
+        if args.paper_max_notional > 0:
+            adapter_risk_checks.append(NotionalLimitCheck(args.paper_max_notional))
+        
+        paper_adapter = PaperExecutionAdapter(
+            cost_model=cost_model,
+            initial_equity=args.capital,
+            risk_checks=adapter_risk_checks,
+            event_logger=event_logger,
+        )
+        paper_service = PaperExecutionService(paper_adapter)
+        
+        def execution_sink(intent):
+            logger.info(
+                "ExecutionIntent -> symbol=%s action=%s qty=%.2f bar=%s",
+                intent.symbol,
+                intent.action.value,
+                intent.quantity,
+                intent.metadata.get("bar_index"),
+            )
+            report = paper_service.handle_intent(intent)
+            logger.info(
+                "ExecutionReport <- order=%s status=%s filled=%.2f msg=%s",
+                report.order_id,
+                report.status.value,
+                report.filled_quantity,
+                report.message or "",
+            )
+    
     engine = MetaPortfolioEngine(
         ensemble=ensemble,
         initial_capital=args.capital,
         cost_model=cost_model,
-        risk_rules=risk_rules
+        risk_rules=risk_rules,
+        symbol=args.symbol,
+        execution_intent_sink=execution_sink,
     )
     
     # 5. Run
@@ -114,6 +156,13 @@ def main():
     logger.info(f"Final Capital: ${final.total_capital:,.2f}")
     logger.info(f"Return: {((final.total_capital - args.capital) / args.capital * 100):.2f}%")
     logger.info(f"Max Drawdown: {final.drawdown_pct:.2f}%")
-
-if __name__ == "__main__":
-    main()
+    
+    if paper_adapter:
+        account = paper_adapter.get_account_state()
+        logger.info("--- Paper Execution Account ---")
+        logger.info(
+            "Equity: %.2f | Cash: %.2f | Positions: %d",
+            account.equity,
+            account.cash,
+            len(account.positions),
+        )

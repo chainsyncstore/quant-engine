@@ -5,8 +5,8 @@ Prevents overfitting by enforcing strict temporal separation between learning an
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Iterator, List, Tuple, Literal
+from datetime import datetime
+from typing import Iterator, Tuple, Literal, cast
 
 import pandas as pd
 
@@ -147,7 +147,7 @@ class DecayTracker:
         
         # Determine tag
         # DECAY logic: Significant drop in Sharpe
-        tag = "PASS"
+        tag: Literal["PASS", "FAIL", "DECAY"] = "PASS"
         
         # If IS Sharpe was positive and OS Sharpe drops by more than X%
         if is_sharpe > 0:
@@ -163,5 +163,5 @@ class DecayTracker:
             sharpe_change=sharpe_change,
             win_rate_change=win_rate_change,
             drawdown_change=drawdown_change,
-            result_tag=tag
+            result_tag=cast(Literal["PASS", "FAIL", "DECAY"], tag)
         )
