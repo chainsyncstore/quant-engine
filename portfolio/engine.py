@@ -94,6 +94,9 @@ class PortfolioEngine:
                     dummy_allocation = PortfolioAllocation(
                         hypothesis_id=hid,
                         allocated_capital=sim.get_total_capital(bar.open, pos_state), # Approx
+                        available_capital=sim.get_available_capital(),
+                        symbol=bar.symbol,
+                        reference_price=bar.open,
                         current_position=pos_state.position if pos_state.has_position else None,
                     )
                     
@@ -110,6 +113,7 @@ class PortfolioEngine:
                             break
                     
                     if allowed:
+                        self._notify_trade_approved(intent, dummy_allocation, current_portfolio_snapshot)
                         # Convert Intent to QueuedDecision (Immediate execution in this simple engine)
                         # We need to bridge the gap: Simulator takes QueuedDecision
                         from engine.decision_queue import QueuedDecision
@@ -151,7 +155,8 @@ class PortfolioEngine:
             
             cap = sim.get_total_capital(bar.close, pos_state) # Valuate at Close
             total_cap += cap
-            total_cash += sim.get_available_capital()
+            available_cap = sim.get_available_capital()
+            total_cash += available_cap
             
             # PnL logic in simulator is a bit hidden in trades list. 
             # We assume initial_capital per sim + pnl = current cap.
@@ -169,6 +174,9 @@ class PortfolioEngine:
             allocations[hid] = PortfolioAllocation(
                 hypothesis_id=hid,
                 allocated_capital=cap,
+                available_capital=available_cap,
+                symbol=bar.symbol,
+                reference_price=bar.close,
                 current_position=pos_state.position if pos_state.has_position else None,
                 unrealized_pnl=unreal,
                 realized_pnl=current_real
@@ -187,3 +195,14 @@ class PortfolioEngine:
             total_unrealized_pnl=total_unreal,
             drawdown_pct=drawdown
         )
+
+    def _notify_trade_approved(
+        self,
+        intent: TradeIntent,
+        allocation: PortfolioAllocation,
+        portfolio_state: PortfolioState,
+    ) -> None:
+        for rule in self.risk_rules:
+            callback = getattr(rule, "on_trade_allowed", None)
+            if callable(callback):
+                callback(intent, allocation, portfolio_state)

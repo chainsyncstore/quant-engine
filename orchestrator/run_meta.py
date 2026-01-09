@@ -3,17 +3,18 @@ import logging
 
 from config.settings import get_settings
 from config.policies import get_policy
+from config.execution_policies import get_execution_policy
 from storage.repositories import EvaluationRepository
 from portfolio.meta_engine import MetaPortfolioEngine
 from portfolio.ensemble import Ensemble
 from portfolio.weighting import EqualWeighting, RobustnessWeighting
-from portfolio.risk import MaxDrawdownRule
+from portfolio.risk import MaxDrawdownRule, ExecutionPolicyRule
 from data.market_loader import MarketDataLoader
 from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
 from execution.cost_model import CostModel
 from execution_live import ExecutionEventLogger, PaperExecutionAdapter
-from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck
+from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck, ExecutionPolicyCheck
 from execution_live.service import PaperExecutionService
 
 logging.basicConfig(
@@ -34,14 +35,21 @@ def main():
     parser.add_argument("--paper", action="store_true", help="Enable paper execution boundary")
     parser.add_argument("--paper-log", default=None, help="Optional path to append execution events as JSON lines")
     parser.add_argument("--paper-max-notional", type=float, default=0.0, help="Max notional per order for paper execution (0 disables check)")
+    parser.add_argument("--execution-policy", default="RESEARCH", help="Execution policy ID to enforce")
     
     args = parser.parse_args()
     
     settings = get_settings()
     repo = EvaluationRepository(settings.database_path)
     policy = get_policy(args.policy)
+    execution_policy = get_execution_policy(args.execution_policy)
     
-    logger.info(f"Starting Meta-Strategy Simulation for policy {policy.policy_id} on {args.symbol}")
+    logger.info(
+        "Starting Meta-Strategy Simulation for policy %s on %s with execution policy %s",
+        policy.policy_id,
+        args.symbol,
+        execution_policy.label,
+    )
     
     # 1. Fetch Hypotheses
     promoted_ids = repo.get_hypotheses_by_status(
@@ -96,7 +104,8 @@ def main():
     )
     
     risk_rules = [
-        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown)
+        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
+        ExecutionPolicyRule(execution_policy)
     ]
     
     paper_adapter = None
@@ -105,7 +114,16 @@ def main():
     if args.paper:
         logger.info("Paper execution enabled.")
         event_logger = ExecutionEventLogger(persist_path=args.paper_log)
-        adapter_risk_checks = [CashAvailabilityCheck()]
+        event_logger.log(
+            "execution_policy_loaded",
+            {
+                "policy_id": execution_policy.policy_id,
+                "label": execution_policy.label,
+                "config": execution_policy.serialize(),
+            },
+        )
+
+        adapter_risk_checks = [CashAvailabilityCheck(), ExecutionPolicyCheck(execution_policy)]
         if args.paper_max_notional > 0:
             adapter_risk_checks.append(NotionalLimitCheck(args.paper_max_notional))
         

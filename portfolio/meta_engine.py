@@ -16,6 +16,8 @@ from engine.decision_queue import QueuedDecision
 
 logger = logging.getLogger(__name__)
 
+META_ALLOCATION_KEY = "META_PORTFOLIO"
+
 ExecutionIntentSink = Callable[[ExecutionIntent], None]
 
 class MetaExecutionSimulator(ExecutionSimulator):

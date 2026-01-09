@@ -235,6 +235,23 @@ class PaperExecutionAdapter(ExecutionAdapter):
         for check in self._risk_checks:
             ok, reason = check.evaluate(intent, account_state)
             if not ok:
+                payload = {
+                    "check": check.__class__.__name__,
+                    "reason": reason,
+                    "intent": {
+                        "symbol": intent.symbol,
+                        "action": intent.action.value,
+                        "quantity": intent.quantity,
+                        "timestamp": intent.timestamp.isoformat(),
+                    },
+                }
+                policy_label = getattr(check, "policy_label", None)
+                if policy_label:
+                    payload["policy_label"] = policy_label
+                snapshot_fn = getattr(check, "policy_snapshot", None)
+                if callable(snapshot_fn):
+                    payload["policy"] = snapshot_fn()
+                self._logger.log("risk_check_rejected", payload)
                 return False, reason
         return True, "Approved"
 

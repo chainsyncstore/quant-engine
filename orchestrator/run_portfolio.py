@@ -3,9 +3,10 @@ import logging
 
 from config.settings import get_settings
 from config.policies import get_policy
+from config.execution_policies import get_execution_policy
 from storage.repositories import EvaluationRepository
 from portfolio.engine import PortfolioEngine
-from portfolio.risk import MaxDrawdownRule
+from portfolio.risk import MaxDrawdownRule, ExecutionPolicyRule
 from data.market_loader import MarketDataLoader
 from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
@@ -26,6 +27,7 @@ def main():
     parser.add_argument("--synthetic-bars", type=int, default=252, help="Number of synthetic bars")
     parser.add_argument("--capital", type=float, default=100000.0, help="Initial Capital")
     parser.add_argument("--max-drawdown", type=float, default=0.20, help="Max Drawdown Limit")
+    parser.add_argument("--execution-policy", default="RESEARCH", help="Execution policy ID to enforce")
     parser.add_argument("--tag", default="MANUAL_RUN", help="Portfolio Tag")
     
     args = parser.parse_args()
@@ -33,8 +35,14 @@ def main():
     settings = get_settings()
     repo = EvaluationRepository(settings.database_path)
     policy = get_policy(args.policy)
+    execution_policy = get_execution_policy(args.execution_policy)
     
-    logger.info(f"Starting Portfolio Simulation for {policy.policy_id} on {args.symbol}")
+    logger.info(
+        "Starting Portfolio Simulation for %s on %s with execution policy %s",
+        policy.policy_id,
+        args.symbol,
+        execution_policy.label,
+    )
     
     # 1. Fetch PROMOTED Hypotheses
     promoted_ids = repo.get_hypotheses_by_status(
@@ -79,7 +87,8 @@ def main():
     
     # 4. Initialize Engine
     risk_rules = [
-        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown)
+        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
+        ExecutionPolicyRule(execution_policy)
     ]
     
     engine = PortfolioEngine(
