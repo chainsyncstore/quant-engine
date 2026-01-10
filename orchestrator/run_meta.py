@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+import pandas as pd
+
 from config.competition_flags import COMPETITION_MODE
 from config.settings import get_settings
 from config.policies import get_policy
@@ -27,6 +29,39 @@ from execution_live.events import COMPETITION_PROFILE_LOADED
 from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck, ExecutionPolicyCheck
 from execution_live.service import PaperExecutionService
 
+
+def filter_new_bars(df: pd.DataFrame, last_seen_ts: datetime | None):
+    """
+    Idempotent guard to drop bars that have already been processed.
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    if last_seen_ts is None:
+        return df
+    return df[df["timestamp"] > last_seen_ts]
+
+
+def _load_last_seen_timestamp(state_path: Path) -> datetime | None:
+    if not state_path.exists():
+        return None
+
+    try:
+        raw = state_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return None
+        return datetime.fromisoformat(raw)
+    except Exception as exc:
+        logger.warning("Failed to parse last_seen state file %s: %s", state_path, exc)
+        return None
+
+
+def _persist_last_seen_timestamp(state_path: Path, timestamp: datetime) -> None:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(timestamp.isoformat(), encoding="utf-8")
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -47,6 +82,11 @@ def main():
     parser.add_argument("--paper-log", default=None, help="Optional path to append execution events as JSON lines")
     parser.add_argument("--paper-max-notional", type=float, default=0.0, help="Max notional per order for paper execution (0 disables check)")
     parser.add_argument("--execution-policy", default="RESEARCH", help="Execution policy ID to enforce")
+    parser.add_argument(
+        "--state-path",
+        default=None,
+        help="Optional path to persist last processed bar timestamp (defaults to <data-path>.state)",
+    )
     
     args = parser.parse_args()
     
@@ -127,10 +167,19 @@ def main():
     
     logger.info(f"Initial Weights: {ensemble.weights}")
     
-    # 3. Load Data
-    bars = MarketDataLoader.load_from_csv(args.data_path, symbol=args.symbol)
+    # 3. Load Data (only process new bars)
+    csv_df = pd.read_csv(args.data_path)
+    state_path = Path(args.state_path) if args.state_path else Path(args.data_path).with_suffix(".state")
+    last_seen_ts = _load_last_seen_timestamp(state_path)
+    new_rows = filter_new_bars(csv_df, last_seen_ts)
+
+    if new_rows.empty:
+        logger.info("No new bars detected in %s (last_seen=%s)", args.data_path, last_seen_ts)
+        return
+
+    bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
     if not bars:
-        logger.error("No market data found.")
+        logger.error("No market data found after filtering new bars.")
         return
         
     # 4. Init Engine
@@ -224,10 +273,17 @@ def main():
     # 5. Run
     history = engine.run(bars)
     
-    # 6. Store
+    # 6. Store + persist progress
     logger.info(f"Simulation complete. Storing {len(history)} portfolio snapshots...")
     for state in history:
         repo.store_portfolio_evaluation(state, args.tag, policy.policy_id)
+
+    latest_bar_ts = pd.to_datetime(new_rows["timestamp"]).max()
+    if isinstance(latest_bar_ts, pd.Timestamp):
+        latest_bar_ts = latest_bar_ts.to_pydatetime()
+    if latest_bar_ts:
+        _persist_last_seen_timestamp(state_path, latest_bar_ts)
+        logger.info("Persisted last_seen timestamp %s to %s", latest_bar_ts, state_path)
         
     final = history[-1]
     logger.info("--- Meta Portfolio Result ---")

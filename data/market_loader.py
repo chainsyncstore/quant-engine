@@ -27,8 +27,10 @@ class MarketDataLoader:
     - volume (float)
     """
     
-    @staticmethod
-    def load_from_csv(file_path: str | Path, symbol: str | None = None) -> List[Bar]:
+    REQUIRED_COLUMNS = {'timestamp', 'open', 'high', 'low', 'close', 'volume'}
+
+    @classmethod
+    def load_from_csv(cls, file_path: str | Path, symbol: str | None = None) -> List[Bar]:
         """
         Load market data from a CSV file.
         
@@ -48,46 +50,69 @@ class MarketDataLoader:
         if not file_path.exists():
             raise FileNotFoundError(f"Market data file not found: {file_path}")
         
-        # Load CSV
         df = pd.read_csv(file_path)
-        
-        # Validate required columns
-        required_cols = {'timestamp', 'open', 'high', 'low', 'close', 'volume'}
-        missing_cols = required_cols - set(df.columns)
-        
+        return cls.load_from_dataframe(df, symbol=symbol)
+
+    @classmethod
+    def load_from_dataframe(cls, df: pd.DataFrame, symbol: str | None = None) -> List[Bar]:
+        """
+        Load market data from an in-memory dataframe.
+
+        Args:
+            df: DataFrame containing OHLCV data
+            symbol: Optional symbol/ticker to attach to bars
+        """
+        prepared_df = cls._prepare_dataframe(df)
+        bars = cls._dataframe_to_bars(prepared_df, symbol)
+
+        if not bars:
+            raise ValueError("No valid bars found in dataframe")
+
+        return bars
+
+    @classmethod
+    def _prepare_dataframe(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """Validate and normalize a dataframe prior to conversion."""
+        missing_cols = cls.REQUIRED_COLUMNS - set(df.columns)
+
         if missing_cols:
             raise ValueError(
-                f"Missing required columns in CSV: {missing_cols}. "
+                f"Missing required columns in data: {missing_cols}. "
                 f"Found columns: {list(df.columns)}"
             )
-        
-        # Parse timestamps
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        
-        # Sort by timestamp to ensure chronological order
-        df = df.sort_values('timestamp').reset_index(drop=True)
-        
-        # Check for duplicates
-        duplicate_count = df['timestamp'].duplicated().sum()
+
+        normalized = df.copy()
+        normalized['timestamp'] = pd.to_datetime(normalized['timestamp'])
+        normalized = normalized.sort_values('timestamp').reset_index(drop=True)
+
+        duplicate_count = normalized['timestamp'].duplicated().sum()
         if duplicate_count > 0:
             raise ValueError(
                 f"Found {duplicate_count} duplicate timestamps in data. "
                 "Each bar must have a unique timestamp."
             )
-        
-        # Convert to Bar objects
+
+        return normalized
+
+    @staticmethod
+    def _dataframe_to_bars(df: pd.DataFrame, symbol: str | None) -> List[Bar]:
+        """Convert a validated dataframe into Bar objects."""
         bars: List[Bar] = []
-        
+
         for idx, row in df.iterrows():
             try:
+                timestamp = row['timestamp']
+                if hasattr(timestamp, 'to_pydatetime'):
+                    timestamp = timestamp.to_pydatetime()
+
                 bar = Bar(
-                    timestamp=row['timestamp'].to_pydatetime(),
+                    timestamp=timestamp,
                     open=float(row['open']),
                     high=float(row['high']),
                     low=float(row['low']),
                     close=float(row['close']),
                     volume=float(row['volume']),
-                    symbol=symbol
+                    symbol=symbol or row.get('symbol')
                 )
                 bars.append(bar)
             except Exception as e:
