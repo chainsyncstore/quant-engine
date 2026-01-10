@@ -4,7 +4,11 @@
 #property strict
 
 #include <Trade/Trade.mqh>
-#include <stdlib/JSON.mqh>
+#include <stdlib\JSON.mqh>
+
+#ifndef ERR_FILE_ALREADY_EXISTS
+#define ERR_FILE_ALREADY_EXISTS 5004
+#endif
 
 input string InpIntentRoot = "execution_intents";
 input int    InpPollSeconds = 1;
@@ -14,6 +18,9 @@ string g_root;
 string g_pending;
 string g_done;
 string g_failed;
+
+CJAVal* RequireNode(CJAVal &root, const string key, const string context);
+double ExtractOptionalDouble(CJAVal *node);
 
 int OnInit()
   {
@@ -73,8 +80,9 @@ void ProcessPending()
   {
    string mask = g_pending + "*.json";
    string file_name;
-   int attributes;
-   int handle = FileFindFirst(mask, file_name, attributes);
+   string attributes;
+
+   long handle = FileFindFirst(mask, file_name);
    if(handle == INVALID_HANDLE)
       return;
 
@@ -83,7 +91,7 @@ void ProcessPending()
       bool completed = HandleIntentFile(file_name);
       FinalizeIntent(file_name, completed);
      }
-   while(FileFindNext(handle, file_name, attributes));
+   while(FileFindNext(handle, file_name));
 
    FileFindClose(handle);
   }
@@ -92,7 +100,7 @@ void FinalizeIntent(const string file_name, const bool succeeded)
   {
    const string target = succeeded ? g_done : g_failed;
    ResetLastError();
-   if(FileMove(g_pending + file_name, target + file_name))
+   if(FileMove(g_pending + file_name, 0, target + file_name, 0))
       return;
 
    int err = GetLastError();
@@ -135,7 +143,7 @@ bool HandleIntentFile(const string file_name)
 
    string symbol = intent["symbol"].ToStr();
    string side   = intent["side"].ToStr();
-   double quantity = intent["quantity"].ToDouble();
+   double quantity = intent["quantity"].ToDbl();
    double sl = ExtractOptionalDouble(intent["stop_loss"]);
    double tp = ExtractOptionalDouble(intent["take_profit"]);
    string tif = intent["time_in_force"].ToStr();
@@ -173,9 +181,24 @@ bool HandleIntentFile(const string file_name)
    return false;
   }
 
-double ExtractOptionalDouble(CJAVal &node)
+CJAVal* RequireNode(CJAVal &root, const string key, const string context)
   {
-   if(node.Type() == JSON_TYPE_NUMBER)
-      return node.ToDouble();
+   CJAVal *node = root.FindKey(key);
+   if(node == NULL || node.type == jtUNDEF)
+     {
+      PrintFormat("intent_missing_field | context=%s key=%s", context, key);
+      return NULL;
+     }
+   return node;
+  }
+
+double ExtractOptionalDouble(CJAVal *node)
+  {
+   if(node == NULL)
+      return 0.0;
+   if(node.type == jtINT || node.type == jtDBL)
+      return node.ToDbl();
+   if(node.type == jtSTR)
+      return StringToDouble(node.ToStr());
    return 0.0;
   }

@@ -1,6 +1,8 @@
 import argparse
 import logging
+from typing import Callable, Optional
 
+from config.competition_flags import COMPETITION_MODE
 from config.settings import get_settings
 from config.policies import get_policy
 from config.execution_policies import get_execution_policy
@@ -8,12 +10,18 @@ from storage.repositories import EvaluationRepository
 from portfolio.meta_engine import MetaPortfolioEngine
 from portfolio.ensemble import Ensemble
 from portfolio.weighting import EqualWeighting, RobustnessWeighting
-from portfolio.risk import MaxDrawdownRule, ExecutionPolicyRule
+from portfolio.risk import (
+    ExecutionPolicyRule,
+    LossStreakGuard,
+    MaxDrawdownRule,
+    TradeThrottle,
+)
 from data.market_loader import MarketDataLoader
 from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
 from execution.cost_model import CostModel
 from execution_live import ExecutionEventLogger, PaperExecutionAdapter
+from execution_live.events import COMPETITION_PROFILE_LOADED
 from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck, ExecutionPolicyCheck
 from execution_live.service import PaperExecutionService
 
@@ -42,7 +50,26 @@ def main():
     settings = get_settings()
     repo = EvaluationRepository(settings.database_path)
     policy = get_policy(args.policy)
-    execution_policy = get_execution_policy(args.execution_policy)
+
+    execution_policy_id = args.execution_policy
+    if COMPETITION_MODE:
+        logger.info(
+            "COMPETITION_MODE enabled. Overriding requested execution policy %s with COMPETITION_5PERCENTERS",
+            execution_policy_id,
+        )
+        execution_policy_id = "COMPETITION_5PERCENTERS"
+    execution_policy = get_execution_policy(execution_policy_id)
+
+    telemetry_hook: Optional[Callable[[str, dict], None]] = None
+    if COMPETITION_MODE:
+        def _emit_competition_event(event_type: str, payload: dict) -> None:
+            logger.info(
+                "competition_telemetry | event=%s payload=%s",
+                event_type,
+                payload,
+            )
+
+        telemetry_hook = _emit_competition_event
     
     logger.info(
         "Starting Meta-Strategy Simulation for policy %s on %s with execution policy %s",
@@ -103,13 +130,9 @@ def main():
         slippage_bps=policy.slippage_bps
     )
     
-    risk_rules = [
-        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
-        ExecutionPolicyRule(execution_policy)
-    ]
-    
     paper_adapter = None
     execution_sink = None
+    event_logger: Optional[ExecutionEventLogger] = None
     
     if args.paper:
         logger.info("Paper execution enabled.")
@@ -122,6 +145,16 @@ def main():
                 "config": execution_policy.serialize(),
             },
         )
+        if COMPETITION_MODE:
+            telemetry_hook = event_logger.log
+            event_logger.log(
+                COMPETITION_PROFILE_LOADED,
+                {
+                    "policy_id": execution_policy.policy_id,
+                    "label": execution_policy.label,
+                    "tag": args.tag,
+                },
+            )
 
         adapter_risk_checks = [CashAvailabilityCheck(), ExecutionPolicyCheck(execution_policy)]
         if args.paper_max_notional > 0:
@@ -151,6 +184,22 @@ def main():
                 report.filled_quantity,
                 report.message or "",
             )
+    elif telemetry_hook and COMPETITION_MODE:
+        telemetry_hook(
+            COMPETITION_PROFILE_LOADED,
+            {
+                "policy_id": execution_policy.policy_id,
+                "label": execution_policy.label,
+                "tag": args.tag,
+            },
+        )
+
+    risk_rules = [
+        MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
+        TradeThrottle(telemetry_hook=telemetry_hook),
+        LossStreakGuard(telemetry_hook=telemetry_hook),
+        ExecutionPolicyRule(execution_policy),
+    ]
     
     engine = MetaPortfolioEngine(
         ensemble=ensemble,

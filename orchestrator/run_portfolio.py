@@ -1,15 +1,22 @@
 import argparse
 import logging
 
+from config.competition_flags import COMPETITION_MODE
 from config.settings import get_settings
 from config.policies import get_policy
 from config.execution_policies import get_execution_policy
 from storage.repositories import EvaluationRepository
 from portfolio.engine import PortfolioEngine
-from portfolio.risk import MaxDrawdownRule, ExecutionPolicyRule
+from portfolio.risk import (
+    ExecutionPolicyRule,
+    LossStreakGuard,
+    MaxDrawdownRule,
+    TradeThrottle,
+)
 from data.market_loader import MarketDataLoader
 from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
+from execution_live.events import COMPETITION_PROFILE_LOADED
 
 # Configure logging
 logging.basicConfig(
@@ -35,7 +42,24 @@ def main():
     settings = get_settings()
     repo = EvaluationRepository(settings.database_path)
     policy = get_policy(args.policy)
-    execution_policy = get_execution_policy(args.execution_policy)
+    execution_policy_id = args.execution_policy
+    if COMPETITION_MODE:
+        logger.info(
+            "COMPETITION_MODE enabled. Overriding requested execution policy %s with COMPETITION_5PERCENTERS",
+            execution_policy_id,
+        )
+        execution_policy_id = "COMPETITION_5PERCENTERS"
+    execution_policy = get_execution_policy(execution_policy_id)
+
+    telemetry_hook = None
+    if COMPETITION_MODE:
+        def _log_competition_event(event_type: str, payload: dict) -> None:
+            logger.info(
+                "competition_telemetry | event=%s payload=%s",
+                event_type,
+                payload,
+            )
+        telemetry_hook = _log_competition_event
     
     logger.info(
         "Starting Portfolio Simulation for %s on %s with execution policy %s",
@@ -88,8 +112,19 @@ def main():
     # 4. Initialize Engine
     risk_rules = [
         MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
-        ExecutionPolicyRule(execution_policy)
+        TradeThrottle(telemetry_hook=telemetry_hook),
+        LossStreakGuard(telemetry_hook=telemetry_hook),
+        ExecutionPolicyRule(execution_policy),
     ]
+    if COMPETITION_MODE and telemetry_hook:
+        telemetry_hook(
+            COMPETITION_PROFILE_LOADED,
+            {
+                "policy_id": execution_policy.policy_id,
+                "label": execution_policy.label,
+                "tag": args.tag,
+            },
+        )
     
     engine = PortfolioEngine(
         hypotheses=hypotheses,

@@ -119,7 +119,7 @@ class ExecutionPolicyGuard:
         return self.policy.serialize()
 
     def label(self) -> str:
-        return self.policy.label
+        return self.policy.label or self.policy.policy_id
 
     def _is_forced_flat(self, current_time: time) -> bool:
         window = self.policy.forced_flat_window_utc

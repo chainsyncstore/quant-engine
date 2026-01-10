@@ -1,0 +1,1 @@
+COMPETITION_MODE: bool = False
