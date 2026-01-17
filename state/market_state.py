@@ -95,6 +95,27 @@ class MarketState:
         """
         return self.get_bars()
     
+    def recent_bars(self, n: int) -> List[Bar]:
+        """
+        Get the last n bars including the current bar.
+        
+        Args:
+            n: Number of bars to retrieve
+            
+        Returns:
+            List of bars in chronological order (oldest first), including current bar
+        """
+        if n <= 0:
+            return []
+        
+        # Get historical bars + current bar
+        all_bars = list(self._bars)
+        if self._current_bar is not None:
+            all_bars.append(self._current_bar)
+        
+        # Return last n bars
+        return all_bars[-n:] if len(all_bars) >= n else all_bars
+    
     def get_bar(self, index: int) -> Bar | None:
         """
         Get a specific historical bar by index.

@@ -19,9 +19,10 @@ from portfolio.risk import (
 from portfolio.risk_scaling import RiskTierResolver
 from clock.clock import Clock
 from config.execution_flags import EXECUTION_ENABLED
+from config.competition_flags import COMPETITION_MODE
 from execution_live.order_models import ExecutionIntent, IntentAction
 from engine.decision_queue import QueuedDecision
-from market.regime import RegimeClassifier
+from market.regime import RegimeClassifier, RegimeConfidence
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ class MetaPortfolioEngine:
         risk_tier_resolver: Optional[RiskTierResolver] = None,
         telemetry: Optional[Callable[[str, dict], None]] = None,
         explain_decisions: bool = False,
+        rotation_symbols: Optional[List[str]] = None,
     ):
         self.ensemble = ensemble
         self.initial_capital = initial_capital
@@ -122,6 +124,10 @@ class MetaPortfolioEngine:
         self.telemetry = telemetry
         self.explain_decisions = explain_decisions
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        
+        # Crypto rotation for competition mode
+        self.rotation_symbols = rotation_symbols or []
+        self.active_symbol_index = 0
         
         # 1. Shadow Track Initialization
         # We give each shadow sim a hypothetical capital (e.g. 1M) just to track % returns and positions accurately.
@@ -145,6 +151,12 @@ class MetaPortfolioEngine:
         # Must be large enough for Regime Detection (SMA200 requires >200 bars)
         self.market_state = MarketState(lookback_window=300)
         self.regime_classifier = RegimeClassifier()
+        
+        # Per-symbol market states for multi-symbol rotation
+        self._symbol_market_states: Dict[str, MarketState] = {}
+        if self.rotation_symbols:
+            for sym in self.rotation_symbols:
+                self._symbol_market_states[sym] = MarketState(lookback_window=300)
 
     def run(self, bars: List[Bar]) -> List[PortfolioState]:
         history: List[PortfolioState] = []
@@ -154,8 +166,22 @@ class MetaPortfolioEngine:
         shadow_equity_curves: Dict[str, List[float]] = {h.hypothesis_id: [] for h in self.ensemble.hypotheses}
         
         for bar_idx, bar in enumerate(bars):
+            # Multi-symbol: update the correct symbol's market state
+            bar_symbol = getattr(bar, 'symbol', None)
+            if bar_symbol and bar_symbol in self._symbol_market_states:
+                self._symbol_market_states[bar_symbol].update(bar)
+            
+            # In competition mode with rotation, skip bars for other symbols
+            if COMPETITION_MODE and self.rotation_symbols and bar_symbol:
+                if bar_symbol != self.symbol:
+                    continue  # Skip this bar, it's for a different symbol
+            
             self.clock.set_time(bar.timestamp)
-            self.market_state.update(bar)
+            # Use per-symbol market state if available, else shared
+            if self.symbol in self._symbol_market_states:
+                self.market_state = self._symbol_market_states[self.symbol]
+            else:
+                self.market_state.update(bar)
             if self.explain_decisions:
                 self.logger.info(
                     "bar_evaluated | ts=%s | hypotheses=%s",
@@ -199,6 +225,48 @@ class MetaPortfolioEngine:
 
             pre_trade_snapshot = self._create_snapshot(bar, peak_equity)
 
+            # --- Deterministic Exit Check (Competition Mode) ---
+            if COMPETITION_MODE and self.meta_position_state.has_position:
+                exit_now, exit_reason = self._should_exit(self.meta_position_state.position, bar)
+                if exit_now:
+                    pos = self.meta_position_state.position
+                    close_intent = TradeIntent(type=IntentType.CLOSE, size=1.0)
+                    close_decision = QueuedDecision(
+                        intent=close_intent,
+                        decision_timestamp=bar.timestamp,
+                        decision_bar_index=bar_idx
+                    )
+                    self.meta_simulator.execute_decisions([close_decision], bar, self.meta_position_state)
+                    
+                    exec_intent = self._build_execution_intent(
+                        action=IntentAction.CLOSE,
+                        quantity=pos.size,
+                        bar=bar,
+                        bar_idx=bar_idx,
+                        metadata={"reason": exit_reason},
+                    )
+                    self._publish_execution_intents([exec_intent])
+                    
+                    logger.info(
+                        "[COMPETITION] Deterministic exit | reason=%s | pnl_pct=%.4f",
+                        exit_reason,
+                        (bar.close - pos.entry_price) / pos.entry_price,
+                    )
+                    
+                    # Rotate symbol after exit
+                    if self.rotation_symbols:
+                        self.symbol = self._next_symbol()
+                    
+                    # Skip rest of decision loop for this bar
+                    snapshot = self._create_snapshot(bar, peak_equity)
+                    if snapshot.total_capital > peak_equity:
+                        peak_equity = snapshot.total_capital
+                    history.append(snapshot)
+                    for hid, alloc in snapshot.allocations.items():
+                        if hid != "META_PORTFOLIO":
+                            shadow_equity_curves[hid].append(alloc.allocated_capital)
+                    continue
+
             # --- B. Meta Track Execution ---
             
             # 3. Calculate Target Net Exposure
@@ -212,8 +280,9 @@ class MetaPortfolioEngine:
             for h in self.ensemble.hypotheses:
                 hid = h.hypothesis_id
             
-                # Check Regime
-                if h.allowed_regimes and current_regime not in h.allowed_regimes:
+                # Check Regime - bypass in competition mode for UNKNOWN confidence
+                regime_bypass = COMPETITION_MODE and regime_confidence == RegimeConfidence.UNKNOWN
+                if h.allowed_regimes and current_regime not in h.allowed_regimes and not regime_bypass:
                     self._emit_decision_block_event(
                         reason="regime_unfavorable",
                         bar=bar,
@@ -226,15 +295,33 @@ class MetaPortfolioEngine:
                     )
                     continue
                 
+                if regime_bypass:
+                    logger.info(
+                        "[COMPETITION] Regime bypass active | hypothesis=%s regime_confidence=%s",
+                        hid,
+                        regime_confidence.value,
+                    )
+                
                 weight = self.ensemble.weights.get(hid, 0.0)
-                pos_state = self.shadow_position_states[hid]
-            
+                
+                # COMPETITION FIX: Use current bar's signal directly instead of shadow position
+                # This bypasses the stateless shadow tracking issue across process invocations
                 sign = 0.0
-                if pos_state.has_position:
-                    if pos_state.position.side == PositionSide.LONG:
+                if hid in shadow_intents:
+                    intent = shadow_intents[hid]
+                    if intent.type == IntentType.BUY:
                         sign = 1.0
-                    else:
+                    elif intent.type == IntentType.SELL:
                         sign = -1.0
+                    # CLOSE intents don't contribute to exposure
+                else:
+                    # Fallback: check shadow position for multi-bar holds
+                    pos_state = self.shadow_position_states[hid]
+                    if pos_state.has_position:
+                        if pos_state.position.side == PositionSide.LONG:
+                            sign = 1.0
+                        else:
+                            sign = -1.0
             
                 net_exposure_target += (weight * sign)
         
@@ -247,7 +334,8 @@ class MetaPortfolioEngine:
             max_notional = curr_equity * self.risk_tier_resolver.max_leverage
             if target_value > max_notional:
                 target_value = max_notional
-            target_units = float(int(target_value / bar.open)) if bar.open > 0 else 0.0
+            # For high-priced assets like crypto, allow fractional units
+            target_units = round(target_value / bar.open, 4) if bar.open > 0 else 0.0
 
             if target_units == 0 and exposure_ratio > 0 and risk_fraction == 0:
                 self._emit_decision_block_event(
@@ -322,6 +410,9 @@ class MetaPortfolioEngine:
                     ):
                         current_units = 0
                         current_side = None
+                        # Rotate symbol after close in competition mode
+                        if COMPETITION_MODE and self.rotation_symbols:
+                            self.symbol = self._next_symbol()
 
                 # Case 2: Size Change (Same Side)
                 if current_side == target_side and current_side is not None and current_units != target_units:
@@ -337,6 +428,9 @@ class MetaPortfolioEngine:
                     ):
                         current_units = 0
                         current_side = None
+                        # Rotate symbol after close in competition mode
+                        if COMPETITION_MODE and self.rotation_symbols:
+                            self.symbol = self._next_symbol()
 
                 # Case 3: Open Target (if not already there)
                 if target_side and target_units > 0 and current_units == 0:
@@ -395,6 +489,17 @@ class MetaPortfolioEngine:
         bar_idx: int,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExecutionIntent:
+        # Crypto vs Forex minimum sizing (0.01 lot minimum for both)
+        # Forex: 0.01 lots = 1000 units, Crypto: 0.01 lots = 0.01 BTC/ETH
+        is_crypto = self.symbol and self.symbol.upper() in ("BTCUSD", "ETHUSD", "BTCUSDT", "ETHUSDT")
+        MIN_UNITS = 0.01 if is_crypto else 1_000.0
+        if 0 < quantity < MIN_UNITS:
+            logger.info(
+                "Quantity %.6f below min units %.6f; bumping to maintain parity",
+                quantity,
+                MIN_UNITS,
+            )
+            quantity = MIN_UNITS
         base_metadata = {"bar_index": bar_idx}
         if metadata:
             base_metadata.update(metadata)
@@ -526,6 +631,34 @@ class MetaPortfolioEngine:
             )
             return False
         return True
+
+    def _next_symbol(self) -> str:
+        """Rotate to the next symbol in the rotation pool."""
+        if not self.rotation_symbols:
+            return self.symbol
+        self.active_symbol_index = (self.active_symbol_index + 1) % len(self.rotation_symbols)
+        new_symbol = self.rotation_symbols[self.active_symbol_index]
+        logger.info("[COMPETITION] Symbol rotation: %s -> %s", self.symbol, new_symbol)
+        return new_symbol
+
+    def _should_exit(self, position, bar: Bar) -> tuple[bool, Optional[str]]:
+        """
+        Deterministic exit layer for competition mode.
+        Returns (should_exit, reason) tuple.
+        """
+        if position is None:
+            return False, None
+        
+        pnl_pct = (bar.close - position.entry_price) / position.entry_price
+        if position.side == PositionSide.SHORT:
+            pnl_pct = -pnl_pct
+
+        if pnl_pct >= 0.01:
+            return True, "take_profit"
+        if pnl_pct <= -0.006:
+            return True, "stop_loss"
+
+        return False, None
 
     def _map_risk_rule_reason(self, rule: RiskRule) -> str:
         if isinstance(rule, MaxDrawdownRule):

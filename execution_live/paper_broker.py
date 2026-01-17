@@ -203,7 +203,7 @@ class PaperExecutionAdapter(ExecutionAdapter):
             else (position.entry_price - effective_price) * position.size
         )
 
-        self._cash = position.entry_capital + realized_pnl
+        self._cash += position.entry_capital + realized_pnl
         self._last_prices[intent.symbol] = base_price
         position_state.close_position()
 

@@ -31,9 +31,9 @@ class RiskTierResolver:
         max_leverage: float = 30.0,
     ) -> None:
         self._tiers = tiers or {
-            RegimeConfidence.LOW: RiskTier(label="LOW", risk_fraction=0.0025),
-            RegimeConfidence.MEDIUM: RiskTier(label="MEDIUM", risk_fraction=0.0050),
-            RegimeConfidence.HIGH: RiskTier(label="HIGH", risk_fraction=0.01),
+            RegimeConfidence.LOW: RiskTier(label="LOW", risk_fraction=0.03),       # 3%
+            RegimeConfidence.MEDIUM: RiskTier(label="MEDIUM", risk_fraction=0.05), # 5%
+            RegimeConfidence.HIGH: RiskTier(label="HIGH", risk_fraction=0.08),     # 8%
         }
         self.max_leverage = max(1.0, max_leverage)
 

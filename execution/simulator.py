@@ -219,7 +219,7 @@ class ExecutionSimulator:
         duration_days = duration.total_seconds() / (24 * 3600)
         
         # Update capital
-        self._available_capital = position.entry_capital + realized_pnl
+        self._available_capital += position.entry_capital + realized_pnl
         
         # Close position
         closed_position = position_state.close_position()

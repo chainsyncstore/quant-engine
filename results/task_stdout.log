@@ -1113,3 +1113,1320 @@ AttributeError: 'SimpleMomentumHypothesis' object has no attribute 'name'
 2026-01-14 19:32:03,749 - __main__ - INFO - Final Capital: $9,999.98
 2026-01-14 19:32:03,749 - __main__ - INFO - Return: -0.00%
 2026-01-14 19:32:03,749 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-16 22:00:46,621 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:00:46,621 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:00:46,622 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:00:46,623 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:00:46,624 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:00:46,624 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:00:46,625 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:00:46,625 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:00:46,637 - data.market_loader - WARNING - Dropped 4 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:00:46,638 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:00:46,639 - __main__ - INFO - Paper execution enabled.
+2026-01-16 22:00:46,640 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD
+2026-01-16 22:00:46,641 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:00:46,641 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:00:46,641 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:00:46,641 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:00:46,642 - __main__ - INFO - Simulation complete. Storing 4 portfolio snapshots...
+2026-01-16 22:00:46,692 - __main__ - INFO - Persisted last_seen timestamp 2026-01-16 22:55:00 to results\live_crypto_state.json
+2026-01-16 22:00:46,692 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-16 22:00:46,693 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-16 22:00:46,693 - __main__ - INFO - Return: 0.00%
+2026-01-16 22:00:46,693 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-16 22:00:46,693 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-16 22:00:46,693 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-16 22:02:05,421 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:02:05,422 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:02:05,423 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:02:05,423 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:02:05,424 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:02:05,425 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:02:05,426 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:02:05,426 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:02:05,435 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv (last_seen=2026-01-16 22:55:00)
+2026-01-16 22:07:04,001 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:07:04,002 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:07:04,003 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:07:04,003 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:07:04,004 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:07:04,005 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:07:04,005 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:07:04,005 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:07:04,016 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:07:04,017 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:07:04,017 - __main__ - INFO - Paper execution enabled.
+2026-01-16 22:07:04,019 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD
+2026-01-16 22:07:04,019 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:07:04,019 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:07:04,019 - __main__ - INFO - Simulation complete. Storing 2 portfolio snapshots...
+2026-01-16 22:07:04,045 - __main__ - INFO - Persisted last_seen timestamp 2026-01-16 23:00:00 to results\live_crypto_state.json
+2026-01-16 22:07:04,045 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-16 22:07:04,045 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-16 22:07:04,045 - __main__ - INFO - Return: 0.00%
+2026-01-16 22:07:04,045 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-16 22:07:04,045 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-16 22:07:04,045 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-16 22:12:03,986 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:12:03,986 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:12:03,987 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:12:03,987 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:12:03,988 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:12:03,989 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:12:03,990 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:12:03,990 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:12:04,000 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:12:04,001 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:12:04,002 - __main__ - INFO - Paper execution enabled.
+2026-01-16 22:12:04,003 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD
+2026-01-16 22:12:04,003 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:12:04,004 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:12:04,004 - __main__ - INFO - Simulation complete. Storing 2 portfolio snapshots...
+2026-01-16 22:12:04,036 - __main__ - INFO - Persisted last_seen timestamp 2026-01-16 23:05:00 to results\live_crypto_state.json
+2026-01-16 22:12:04,036 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-16 22:12:04,036 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-16 22:12:04,036 - __main__ - INFO - Return: 0.00%
+2026-01-16 22:12:04,036 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-16 22:12:04,036 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-16 22:12:04,036 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-16 22:17:04,121 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:17:04,121 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:17:04,122 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:17:04,122 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:17:04,123 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:17:04,124 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:17:04,125 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:17:04,125 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:17:04,136 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:17:04,137 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:17:04,138 - __main__ - INFO - Paper execution enabled.
+2026-01-16 22:17:04,139 - __main__ - INFO - [COMPETITION] Rotating from BTCUSD to ETHUSD
+2026-01-16 22:17:04,139 - __main__ - INFO - [COMPETITION] Active symbol: ETHUSD
+2026-01-16 22:17:04,140 - __main__ - INFO - Simulation complete. Storing 0 portfolio snapshots...
+2026-01-16 22:17:04,141 - __main__ - INFO - Persisted last_seen timestamp 2026-01-16 23:10:00 to results\live_crypto_state.json
+2026-01-16 22:17:04,141 - __main__ - WARNING - No portfolio snapshots generated - no bars matched current symbol
+2026-01-16 22:22:04,466 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:22:04,466 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:22:04,468 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:22:04,468 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:22:04,469 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:22:04,470 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:22:04,471 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:22:04,471 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:22:04,490 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:22:04,493 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:22:04,494 - __main__ - INFO - Paper execution enabled.
+2026-01-16 22:22:04,495 - __main__ - INFO - [COMPETITION] Rotating from BTCUSD to ETHUSD
+2026-01-16 22:22:04,495 - __main__ - INFO - [COMPETITION] Active symbol: ETHUSD
+2026-01-16 22:22:04,496 - __main__ - INFO - Simulation complete. Storing 0 portfolio snapshots...
+2026-01-16 22:22:04,497 - __main__ - INFO - Persisted last_seen timestamp 2026-01-16 23:15:00 to results\live_crypto_state.json
+2026-01-16 22:22:04,497 - __main__ - WARNING - No portfolio snapshots generated - no bars matched current symbol
+2026-01-16 22:27:04,029 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:27:04,029 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:27:04,030 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:27:04,030 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:27:04,031 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:27:04,032 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:27:04,033 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:27:04,033 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:27:04,049 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:27:04,050 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:27:04,050 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:32:04,035 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:32:04,035 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:32:04,036 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:32:04,037 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:32:04,037 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:32:04,038 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:32:04,039 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:32:04,039 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:32:04,052 - data.market_loader - WARNING - Dropped 4 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:32:04,053 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:32:04,053 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:37:04,093 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:37:04,093 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:37:04,094 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:37:04,094 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:37:04,095 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:37:04,096 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:37:04,096 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:37:04,097 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:37:04,107 - data.market_loader - WARNING - Dropped 6 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:37:04,109 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:37:04,109 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:42:04,080 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:42:04,080 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:42:04,081 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:42:04,081 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:42:04,082 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:42:04,083 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:42:04,084 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:42:04,084 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:42:04,095 - data.market_loader - WARNING - Dropped 8 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:42:04,097 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:42:04,097 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:47:04,064 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:47:04,064 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:47:04,065 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:47:04,066 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:47:04,066 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:47:04,067 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:47:04,068 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:47:04,068 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:47:04,080 - data.market_loader - WARNING - Dropped 10 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:47:04,081 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:47:04,082 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:52:04,134 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:52:04,134 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:52:04,135 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:52:04,135 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:52:04,136 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:52:04,137 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:52:04,138 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:52:04,138 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:52:04,149 - data.market_loader - WARNING - Dropped 12 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:52:04,151 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:52:04,151 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 22:57:07,571 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 22:57:07,571 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 22:57:07,573 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 22:57:07,573 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 22:57:07,574 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 22:57:07,574 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 22:57:07,575 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 22:57:07,575 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 22:57:07,599 - data.market_loader - WARNING - Dropped 12 duplicate timestamp rows (multi-symbol)
+2026-01-16 22:57:07,601 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 22:57:07,601 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:02:04,131 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:02:04,131 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:02:04,133 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:02:04,133 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:02:04,134 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:02:04,134 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:02:04,135 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:02:04,135 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:02:04,147 - data.market_loader - WARNING - Dropped 12 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:02:04,149 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:02:04,149 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:07:04,171 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:07:04,172 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:07:04,173 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:07:04,173 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:07:04,174 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:07:04,174 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:07:04,175 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:07:04,175 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:07:04,187 - data.market_loader - WARNING - Dropped 14 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:07:04,189 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:07:04,190 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:12:04,164 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:12:04,164 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:12:04,166 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:12:04,166 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:12:04,167 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:12:04,167 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:12:04,168 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:12:04,168 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:12:04,179 - data.market_loader - WARNING - Dropped 16 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:12:04,182 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:12:04,182 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:17:04,169 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:17:04,169 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:17:04,170 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:17:04,170 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:17:04,171 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:17:04,172 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:17:04,173 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:17:04,173 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:17:04,184 - data.market_loader - WARNING - Dropped 18 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:17:04,187 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:17:04,187 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:22:04,217 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:22:04,217 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:22:04,218 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:22:04,218 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:22:04,219 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:22:04,220 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:22:04,221 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:22:04,221 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:22:04,234 - data.market_loader - WARNING - Dropped 20 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:22:04,237 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:22:04,237 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:27:04,162 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:27:04,162 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:27:04,164 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:27:04,164 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:27:04,165 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:27:04,165 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:27:04,166 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:27:04,166 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:27:04,178 - data.market_loader - WARNING - Dropped 22 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:27:04,181 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:27:04,182 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:32:04,244 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:32:04,244 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:32:04,245 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:32:04,245 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:32:04,246 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:32:04,247 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:32:04,248 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:32:04,249 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:32:04,260 - data.market_loader - WARNING - Dropped 24 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:32:04,263 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:32:04,263 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:37:04,141 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:37:04,141 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:37:04,142 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:37:04,142 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:37:04,143 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:37:04,144 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:37:04,144 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:37:04,144 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:37:04,187 - data.market_loader - WARNING - Dropped 26 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:37:04,190 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:37:04,190 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:42:04,644 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:42:04,644 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:42:04,645 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:42:04,645 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:42:04,646 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:42:04,647 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:42:04,648 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:42:04,648 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:42:04,659 - data.market_loader - WARNING - Dropped 28 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:42:04,663 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:42:04,663 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:47:04,183 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:47:04,183 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:47:04,184 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:47:04,184 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:47:04,185 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:47:04,186 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:47:04,186 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:47:04,187 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:47:04,199 - data.market_loader - WARNING - Dropped 30 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:47:04,202 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:47:04,203 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:52:04,607 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:52:04,608 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:52:04,609 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:52:04,609 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:52:04,610 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:52:04,611 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:52:04,611 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:52:04,611 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:52:04,624 - data.market_loader - WARNING - Dropped 32 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:52:04,628 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:52:04,628 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-16 23:57:04,487 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-16 23:57:04,487 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-16 23:57:04,488 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-16 23:57:04,488 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-16 23:57:04,489 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-16 23:57:04,490 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-16 23:57:04,491 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-16 23:57:04,491 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-16 23:57:04,503 - data.market_loader - WARNING - Dropped 34 duplicate timestamp rows (multi-symbol)
+2026-01-16 23:57:04,507 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-16 23:57:04,507 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:02:04,201 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:02:04,201 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:02:04,203 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:02:04,203 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:02:04,204 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:02:04,204 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:02:04,205 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:02:04,205 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:02:04,218 - data.market_loader - WARNING - Dropped 36 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:02:04,222 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:02:04,222 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:07:04,204 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:07:04,204 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:07:04,205 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:07:04,206 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:07:04,207 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:07:04,207 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:07:04,208 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:07:04,208 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:07:04,220 - data.market_loader - WARNING - Dropped 38 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:07:04,224 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:07:04,224 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:12:04,646 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:12:04,646 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:12:04,648 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:12:04,648 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:12:04,649 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:12:04,649 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:12:04,650 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:12:04,650 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:12:04,663 - data.market_loader - WARNING - Dropped 40 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:12:04,667 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:12:04,667 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:17:04,236 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:17:04,237 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:17:04,238 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:17:04,238 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:17:04,239 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:17:04,240 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:17:04,240 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:17:04,241 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:17:04,254 - data.market_loader - WARNING - Dropped 42 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:17:04,258 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:17:04,259 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:22:04,420 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:22:04,420 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:22:04,421 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:22:04,422 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:22:04,422 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:22:04,423 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:22:04,424 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:22:04,424 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:22:04,436 - data.market_loader - WARNING - Dropped 44 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:22:04,440 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:22:04,440 - __main__ - INFO - Paper execution enabled.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 461, in main
+    best_symbol, signal_score = explore_best_symbol(
+                                ~~~~~~~~~~~~~~~~~~~^
+        hypotheses=hypotheses,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        adapter=paper_adapter,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 103, in explore_best_symbol
+    from market.state import MarketState
+ModuleNotFoundError: No module named 'market.state'
+2026-01-17 00:27:05,127 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:27:05,127 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:27:05,129 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:27:05,129 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,130 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:27:05,131 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:27:05,132 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:27:05,132 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:27:05,175 - data.market_loader - WARNING - Dropped 46 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:27:05,180 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:27:05,180 - __main__ - INFO - Paper execution enabled.
+2026-01-17 00:27:05,187 - data.market_loader - WARNING - Dropped 36 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:27:05,198 - data.market_loader - WARNING - Dropped 36 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:27:05,204 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 00:27:05,204 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 00:27:05,204 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,205 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,205 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,206 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,206 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,206 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,207 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,207 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,207 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,208 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,208 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,208 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:27:05,209 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 582, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\orchestrator\run_meta.py", line 546, in main
+    history = engine.run(bars)
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\portfolio\meta_engine.py", line 204, in run
+    intent = h.on_bar(
+        self.market_state,
+        self.shadow_position_states[h.hypothesis_id],
+        self.clock
+    )
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\hypotheses\base.py", line 64, in wrapped
+    intent = original_on_bar(self, market_state, position_state, clock)
+  File "C:\Users\HP\Downloads\hypothesis-research-engine\hypotheses\competition\rsi_extreme_reversal.py", line 83, in on_bar
+    bars = market_state.recent_bars(required_bars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MarketState' object has no attribute 'recent_bars'
+2026-01-17 00:32:04,567 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:32:04,568 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:32:04,569 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:32:04,569 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,570 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:32:04,571 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:32:04,572 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:32:04,572 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:32:04,595 - data.market_loader - WARNING - Dropped 48 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:32:04,600 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:32:04,601 - __main__ - INFO - Paper execution enabled.
+2026-01-17 00:32:04,608 - data.market_loader - WARNING - Dropped 37 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:32:04,618 - data.market_loader - WARNING - Dropped 37 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:32:04,621 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 00:32:04,621 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 00:32:04,622 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,622 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,622 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,622 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,622 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,623 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,623 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,623 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,623 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,623 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,624 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,624 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,624 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,625 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,625 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,625 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,626 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,626 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,627 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,627 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:15:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,627 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,627 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:15:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,628 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,628 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,628 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,629 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,629 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:25:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,630 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,630 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:30:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,631 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,631 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:30:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,632 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,632 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:35:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,632 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,633 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:35:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,633 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,633 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:40:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,633 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,633 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:40:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,634 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,634 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:45:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,634 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,634 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:45:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,634 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,635 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:50:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,635 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,635 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:50:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,635 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,635 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:55:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,636 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,636 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T00:55:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,636 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,636 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:00:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,637 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,637 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:00:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,637 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,637 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:05:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,637 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,638 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:05:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,638 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,638 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:10:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,638 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,638 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:10:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,639 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,639 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:15:00 | direction=LONG | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,639 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,639 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:15:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,640 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,640 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:20:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,640 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,640 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:20:00 | direction=SHORT | confidence=0.7000 | size=0.7000
+2026-01-17 00:32:04,640 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,641 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:25:00 | direction=LONG | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,641 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:32:04,641 - hypotheses.base.CryptoMomentumBreakout - INFO - hypothesis_signal | name=crypto_momentum_breakout | ts=2026-01-17T01:25:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 00:32:04,641 - __main__ - INFO - Simulation complete. Storing 48 portfolio snapshots...
+2026-01-17 00:32:05,353 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 01:25:00 to results\live_crypto_state.json
+2026-01-17 00:32:05,353 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 00:32:05,353 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 00:32:05,353 - __main__ - INFO - Return: 0.00%
+2026-01-17 00:32:05,354 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 00:32:05,354 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 00:32:05,354 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 00:37:04,420 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:37:04,420 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:37:04,422 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:37:04,422 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:37:04,423 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:37:04,424 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:37:04,424 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:37:04,425 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:37:04,437 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:37:04,438 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:37:04,438 - __main__ - INFO - Paper execution enabled.
+2026-01-17 00:37:04,444 - data.market_loader - WARNING - Dropped 38 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:37:04,452 - data.market_loader - WARNING - Dropped 38 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:37:04,456 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 00:37:04,457 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 00:37:04,458 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:37:04,459 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:37:04,459 - __main__ - INFO - Simulation complete. Storing 2 portfolio snapshots...
+2026-01-17 00:37:04,489 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 01:30:00 to results\live_crypto_state.json
+2026-01-17 00:37:04,489 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 00:37:04,490 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 00:37:04,490 - __main__ - INFO - Return: 0.00%
+2026-01-17 00:37:04,490 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 00:37:04,490 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 00:37:04,490 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 00:42:05,013 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:42:05,013 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:42:05,015 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:42:05,015 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:42:05,017 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:42:05,018 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:42:05,019 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:42:05,019 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:42:05,032 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv (last_seen=2026-01-17 01:35:00)
+2026-01-17 00:47:07,178 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:47:07,179 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:47:07,182 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:47:07,182 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:47:07,183 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:47:07,186 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:47:07,191 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:47:07,191 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:47:07,245 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv (last_seen=2026-01-17 01:40:00)
+2026-01-17 00:52:06,131 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:52:06,131 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:52:06,133 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:52:06,133 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:52:06,134 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:52:06,136 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:52:06,137 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:52:06,137 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:52:06,172 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:52:06,175 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 00:52:06,176 - __main__ - INFO - Paper execution enabled.
+2026-01-17 00:52:06,184 - data.market_loader - WARNING - Dropped 41 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:52:06,194 - data.market_loader - WARNING - Dropped 41 duplicate timestamp rows (multi-symbol)
+2026-01-17 00:52:06,199 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 00:52:06,199 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 00:52:06,199 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:52:06,199 - portfolio.meta_engine - INFO - [SIZING] equity=10000.00 exposure=0.0000 risk_frac=0.0300 target_val=0.00 price=95400.00 => units=0.000000
+2026-01-17 00:52:06,200 - __main__ - INFO - Simulation complete. Storing 1 portfolio snapshots...
+2026-01-17 00:52:06,213 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 01:45:00 to results\live_crypto_state.json
+2026-01-17 00:52:06,214 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 00:52:06,214 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 00:52:06,215 - __main__ - INFO - Return: 0.00%
+2026-01-17 00:52:06,215 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 00:52:06,215 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 00:52:06,216 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 00:57:06,144 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 00:57:06,145 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 00:57:06,150 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 00:57:06,150 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 00:57:06,153 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 00:57:06,157 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 00:57:06,160 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 00:57:06,160 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 00:57:06,194 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv (last_seen=2026-01-17 01:50:00)
+2026-01-17 01:02:05,643 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:02:05,644 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:02:05,648 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:02:05,649 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:02:05,653 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:02:05,659 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:02:05,662 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:02:05,663 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:02:05,727 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:02:05,732 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:02:05,733 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:02:05,749 - data.market_loader - WARNING - Dropped 43 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:02:05,778 - data.market_loader - WARNING - Dropped 43 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:02:05,799 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 01:02:05,800 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 01:02:05,800 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:02:05,800 - __main__ - INFO - Simulation complete. Storing 1 portfolio snapshots...
+2026-01-17 01:02:05,827 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 01:55:00 to results\live_crypto_state.json
+2026-01-17 01:02:05,828 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:02:05,828 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 01:02:05,828 - __main__ - INFO - Return: 0.00%
+2026-01-17 01:02:05,828 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 01:02:05,829 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 01:02:05,829 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:07:05,187 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:07:05,188 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:07:05,192 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:07:05,192 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:07:05,194 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:07:05,197 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:07:05,199 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:07:05,199 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:07:05,287 - data.market_loader - WARNING - Dropped 2 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:07:05,294 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:07:05,294 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:07:05,315 - data.market_loader - WARNING - Dropped 44 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:07:05,338 - data.market_loader - WARNING - Dropped 44 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:07:05,354 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 01:07:05,355 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 01:07:05,355 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:07:05,356 - __main__ - INFO - Simulation complete. Storing 1 portfolio snapshots...
+2026-01-17 01:07:05,378 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 02:00:00 to results\live_crypto_state.json
+2026-01-17 01:07:05,379 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:07:05,379 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 01:07:05,379 - __main__ - INFO - Return: 0.00%
+2026-01-17 01:07:05,379 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 01:07:05,379 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 01:07:05,379 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:12:06,539 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:12:06,540 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:12:06,543 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:12:06,544 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:12:06,546 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:12:06,549 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:12:06,551 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:12:06,552 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:12:06,588 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv (last_seen=2026-01-17 02:05:00)
+2026-01-17 01:17:05,111 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:17:05,111 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:17:05,116 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:17:05,116 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,118 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:17:05,120 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:17:05,122 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:17:05,122 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:17:05,179 - data.market_loader - WARNING - Dropped 26 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:17:05,187 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:17:05,187 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:17:05,203 - data.market_loader - WARNING - Dropped 46 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:17:05,229 - data.market_loader - WARNING - Dropped 46 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:17:05,245 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 01:17:05,245 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 01:17:05,246 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,247 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,247 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,248 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,248 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,249 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,250 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,251 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,251 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,252 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,252 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,252 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,253 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,253 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:17:05,254 - __main__ - INFO - Simulation complete. Storing 14 portfolio snapshots...
+2026-01-17 01:17:05,524 - __main__ - INFO - Persisted last_seen timestamp 2026-01-17 02:10:00 to results\live_crypto_state.json
+2026-01-17 01:17:05,525 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:17:05,525 - __main__ - INFO - Final Capital: $10,000.00
+2026-01-17 01:17:05,525 - __main__ - INFO - Return: 0.00%
+2026-01-17 01:17:05,526 - __main__ - INFO - Max Drawdown: 0.00%
+2026-01-17 01:17:05,526 - __main__ - INFO - --- Paper Execution Account ---
+2026-01-17 01:17:05,526 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:22:06,207 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:22:06,208 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:22:06,214 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:22:06,214 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,216 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:22:06,219 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:22:06,223 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:22:06,223 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:22:06,254 - data.market_loader - WARNING - Dropped 94 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:22:06,269 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:22:06,270 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:22:06,290 - data.market_loader - WARNING - Dropped 47 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:22:06,320 - data.market_loader - WARNING - Dropped 47 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:22:06,341 - __main__ - INFO - [EXPLORE] No actionable signals on any symbol, defaulting to BTCUSD
+2026-01-17 01:22:06,341 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.00)
+2026-01-17 01:22:06,342 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,343 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,343 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,344 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,344 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,344 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,345 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,345 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,345 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 22:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,346 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,346 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,346 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,347 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,347 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,348 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,348 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,349 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,350 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,351 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,352 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-16T23:45:00 | direction=SHORT | confidence=0.6000 | size=0.6000
+2026-01-17 01:22:06,353 - portfolio.meta_engine - INFO - Quantity 0.001000 below min units 0.010000; bumping to maintain parity
+2026-01-17 01:22:06,354 - __main__ - INFO - ExecutionIntent -> symbol=BTCUSD action=SELL qty=0.010000 bar=18
+2026-01-17 01:22:06,355 - __main__ - INFO - ExecutionReport <- order=PAPER-1 status=FILLED filled=0.01 msg=
+2026-01-17 01:22:06,356 - __main__ - INFO - trade_executed | symbol=BTCUSD action=SELL qty=0.01 price=95386.94757 order_id=PAPER-1
+2026-01-17 01:22:06,356 - __main__ - INFO - MT5 lot size 0.0000 below min, using min lot 0.01
+2026-01-17 01:22:06,391 - __main__ - INFO - MT5 intent written | id=82321904-e50e-4c3a-9953-38f6f0be9d43 side=SELL lots=0.01
+2026-01-17 01:22:06,392 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-16 23:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,393 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-16T23:50:00 | direction=SHORT | confidence=1.0000 | size=1.0000
+2026-01-17 01:22:06,394 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,395 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,396 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,397 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,399 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,400 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,401 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,404 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,405 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,407 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,409 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 00:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,411 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,413 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,414 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,415 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,416 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,418 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,420 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,421 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,422 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,423 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,425 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,426 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,428 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,429 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,432 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,433 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:22:06,435 - __main__ - INFO - Processed 47 bars...
+2026-01-17 01:22:07,367 - __main__ - INFO - Equity: 9999.05 | Cash: 9046.13 | Positions: 1
+2026-01-17 01:22:07,369 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:22:07,370 - __main__ - INFO - Equity: 9999.05 | Cash: 9046.13 | Positions: 1
+2026-01-17 01:27:05,763 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:27:05,763 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:27:05,766 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:27:05,766 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:27:05,769 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:27:05,771 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:27:05,773 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:27:05,773 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:27:05,809 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv
+2026-01-17 01:32:05,871 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:32:05,872 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:32:05,876 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:32:05,876 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:05,879 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:32:05,881 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:32:05,884 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:32:05,884 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:32:05,923 - data.market_loader - WARNING - Dropped 26 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:32:05,931 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:32:05,933 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:32:05,963 - data.market_loader - WARNING - Dropped 49 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:32:05,984 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:25:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:32:05,985 - __main__ - INFO - [EXPLORE] BTCUSD: BUY signal from rsi_extreme_reversal (size=0.60)
+2026-01-17 01:32:05,995 - data.market_loader - WARNING - Dropped 49 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:32:06,014 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:25:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:32:06,014 - __main__ - INFO - [EXPLORE] ETHUSD: BUY signal from rsi_extreme_reversal (size=0.60)
+2026-01-17 01:32:06,014 - __main__ - INFO - [EXPLORE] Best symbol: BTCUSD (score=0.60)
+2026-01-17 01:32:06,014 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.60)
+2026-01-17 01:32:06,015 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,016 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,017 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,018 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,019 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,019 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,019 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,020 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,020 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,021 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,021 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,021 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,022 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,022 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:32:06,023 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:25:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:32:06,023 - portfolio.meta_engine - INFO - Quantity 0.001000 below min units 0.010000; bumping to maintain parity
+2026-01-17 01:32:06,024 - __main__ - INFO - Processed 14 bars...
+2026-01-17 01:32:06,326 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:32:06,326 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:32:06,327 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:37:05,095 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:37:05,096 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:37:05,099 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:37:05,099 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,101 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:37:05,103 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:37:05,105 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:37:05,105 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:37:05,142 - data.market_loader - WARNING - Dropped 26 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:37:05,149 - __main__ - INFO - Live MT5 execution enabled. Intent dir: C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents
+2026-01-17 01:37:05,150 - __main__ - INFO - Paper execution enabled.
+2026-01-17 01:37:05,171 - data.market_loader - WARNING - Dropped 50 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:37:05,186 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:30:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:37:05,186 - __main__ - INFO - [EXPLORE] BTCUSD: BUY signal from rsi_extreme_reversal (size=0.60)
+2026-01-17 01:37:05,195 - data.market_loader - WARNING - Dropped 50 duplicate timestamp rows (multi-symbol)
+2026-01-17 01:37:05,209 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:30:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:37:05,210 - __main__ - INFO - [EXPLORE] ETHUSD: BUY signal from rsi_extreme_reversal (size=0.60)
+2026-01-17 01:37:05,210 - __main__ - INFO - [EXPLORE] Best symbol: BTCUSD (score=0.60)
+2026-01-17 01:37:05,210 - __main__ - INFO - [COMPETITION] Active symbol: BTCUSD (signal_score=0.60)
+2026-01-17 01:37:05,211 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,211 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,212 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:35:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,212 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:40:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,212 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:45:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,213 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:50:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,213 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 01:55:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,213 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:00:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,214 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:05:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,215 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:10:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,215 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:15:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,216 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:20:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,216 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:25:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,217 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:25:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:37:05,217 - portfolio.meta_engine - INFO - Quantity 0.001000 below min units 0.010000; bumping to maintain parity
+2026-01-17 01:37:05,218 - portfolio.meta_engine.MetaPortfolioEngine - INFO - bar_evaluated | ts=2026-01-17 02:30:00 | hypotheses=['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:37:05,218 - hypotheses.base.RSIExtremeReversal - INFO - hypothesis_signal | name=rsi_extreme_reversal | ts=2026-01-17T02:30:00 | direction=LONG | confidence=0.6000 | size=0.6000
+2026-01-17 01:37:05,219 - __main__ - INFO - Processed 14 bars...
+2026-01-17 01:37:05,506 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:37:05,506 - __main__ - INFO - --- Meta Portfolio Result ---
+2026-01-17 01:37:05,506 - __main__ - INFO - Equity: 10000.00 | Cash: 10000.00 | Positions: 0
+2026-01-17 01:42:05,227 - __main__ - INFO - COMPETITION_MODE enabled. Overriding requested execution policy RESEARCH with COMPETITION_5PERCENTERS
+2026-01-17 01:42:05,228 - __main__ - INFO - Starting Meta-Strategy Simulation for policy WF_V1 on BTCUSD with execution policy COMPETITION_5PERCENTERS
+2026-01-17 01:42:05,233 - __main__ - INFO - [COMPETITION] Filtering to aggressive hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault'] (dropped: ['simple_momentum', 'always_long', 'mean_reversion_exhaustion'])
+2026-01-17 01:42:05,233 - __main__ - INFO - Found 3 promoted hypotheses: ['crypto_momentum_breakout', 'rsi_extreme_reversal', 'volatility_expansion_assault']
+2026-01-17 01:42:05,235 - __main__ - INFO - hypothesis_init | name=crypto_momentum_breakout | explain_decisions=True
+2026-01-17 01:42:05,237 - __main__ - INFO - hypothesis_init | name=rsi_extreme_reversal | explain_decisions=True
+2026-01-17 01:42:05,238 - __main__ - INFO - hypothesis_init | name=volatility_expansion_assault | explain_decisions=True
+2026-01-17 01:42:05,239 - __main__ - INFO - Initial Weights: {'crypto_momentum_breakout': 0.3333333333333333, 'rsi_extreme_reversal': 0.3333333333333333, 'volatility_expansion_assault': 0.3333333333333333}
+2026-01-17 01:42:05,264 - __main__ - INFO - No new bars detected in C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\results\live_crypto.csv

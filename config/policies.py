@@ -61,3 +61,25 @@ SINGLE_PASS_V1 = ResearchPolicy(
 
 register_policy(WF_V1)
 register_policy(SINGLE_PASS_V1)
+
+# Competition policy for limited data scenarios (~250 M5 bars)
+COMPETITION_EVAL = ResearchPolicy(
+    policy_id="COMPETITION_EVAL",
+    description="Competition evaluation: Small walk-forward windows for limited live data",
+    evaluation_mode=EvaluationMode.WALK_FORWARD,
+    train_window_bars=100,  # ~8 hours of M5 data
+    test_window_bars=50,    # ~4 hours of M5 data  
+    step_size_bars=50,
+    execution_delay_bars=1,
+    transaction_cost_bps=5.0,
+    slippage_bps=5.0,
+    min_trades=3,           # Relaxed for low-frequency strategies
+    min_regimes=1,
+    max_sharpe_decay=0.75,
+    promotion_min_sharpe=0.0,        # Allow any positive edge
+    promotion_min_profit_factor=1.0, # Break-even or better
+    promotion_min_return_pct=-5.0,   # Allow small losses during eval
+    promotion_max_drawdown=15.0,     # Stricter DD for competition
+    promotion_min_trades=1           # At least 1 trade to show activity
+)
+register_policy(COMPETITION_EVAL)

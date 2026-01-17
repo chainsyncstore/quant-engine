@@ -85,18 +85,42 @@ class MarketDataLoader:
         normalized['timestamp'] = pd.to_datetime(normalized['timestamp'])
         normalized = normalized.sort_values('timestamp').reset_index(drop=True)
 
-        duplicate_count = normalized['timestamp'].duplicated().sum()
-        if duplicate_count > 0:
-            raise ValueError(
-                f"Found {duplicate_count} duplicate timestamps in data. "
-                "Each bar must have a unique timestamp."
-            )
+        # Handle duplicate timestamps - drop duplicates, keeping the last occurrence
+        if 'symbol' in normalized.columns:
+            # For multi-symbol data, drop duplicates within each symbol
+            before_count = len(normalized)
+            normalized = normalized.drop_duplicates(
+                subset=['symbol', 'timestamp'], 
+                keep='last'
+            ).reset_index(drop=True)
+            dropped = before_count - len(normalized)
+            if dropped > 0:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Dropped %d duplicate timestamp rows (multi-symbol)", dropped
+                )
+        else:
+            before_count = len(normalized)
+            normalized = normalized.drop_duplicates(
+                subset=['timestamp'], 
+                keep='last'
+            ).reset_index(drop=True)
+            dropped = before_count - len(normalized)
+            if dropped > 0:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Dropped %d duplicate timestamp rows", dropped
+                )
 
         return normalized
 
     @staticmethod
     def _dataframe_to_bars(df: pd.DataFrame, symbol: str | None) -> List[Bar]:
         """Convert a validated dataframe into Bar objects."""
+        # Filter by symbol if multi-symbol data and symbol is specified
+        if symbol and 'symbol' in df.columns:
+            df = df[df['symbol'] == symbol].reset_index(drop=True)
+        
         bars: List[Bar] = []
 
         for idx, row in df.iterrows():
@@ -120,13 +144,17 @@ class MarketDataLoader:
                     f"Invalid bar data at row {idx}: {e}"
                 ) from e
         
-        # Validate chronological ordering (should already be sorted, but double-check)
-        for i in range(1, len(bars)):
-            if bars[i].timestamp <= bars[i-1].timestamp:
-                raise ValueError(
-                    f"Data is not in chronological order at index {i}: "
-                    f"{bars[i-1].timestamp} -> {bars[i].timestamp}"
-                )
+        # Validate chronological ordering per symbol (multi-symbol data may have same timestamps)
+        symbol_last_ts: dict = {}
+        for i, bar in enumerate(bars):
+            sym = bar.symbol or "__DEFAULT__"
+            if sym in symbol_last_ts:
+                if bar.timestamp < symbol_last_ts[sym]:
+                    raise ValueError(
+                        f"Data for {sym} is not in chronological order at index {i}: "
+                        f"{symbol_last_ts[sym]} -> {bar.timestamp}"
+                    )
+            symbol_last_ts[sym] = bar.timestamp
         
         if not bars:
             raise ValueError("No valid bars found in CSV file")

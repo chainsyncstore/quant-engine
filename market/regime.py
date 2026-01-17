@@ -26,6 +26,7 @@ class RegimeConfidence(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+    UNKNOWN = "UNKNOWN"
 
 class RegimeClassifier:
     """

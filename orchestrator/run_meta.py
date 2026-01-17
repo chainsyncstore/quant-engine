@@ -1,5 +1,6 @@
 import argparse
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -7,6 +8,7 @@ from typing import Callable, Optional
 import pandas as pd
 
 from config.competition_flags import COMPETITION_MODE
+from config.competition_crypto_symbols import CRYPTO_SYMBOLS
 from config.settings import get_settings
 from config.policies import get_policy
 from config.execution_policies import get_execution_policy
@@ -25,23 +27,175 @@ from hypotheses.registry import get_hypothesis
 from promotion.models import HypothesisStatus
 from execution.cost_model import CostModel
 from execution_live import ExecutionEventLogger, PaperExecutionAdapter
+from execution_live.intent_sink import FileIntentSink
+from execution_live.intent_schema import ExecutionIntent as MT5Intent, Side, Mode
 from execution_live.events import COMPETITION_PROFILE_LOADED
+
+# Competition mode symbol rotation pool - use crypto symbols
+COMPETITION_SYMBOL_POOL = CRYPTO_SYMBOLS
 from execution_live.risk_checks import CashAvailabilityCheck, NotionalLimitCheck, ExecutionPolicyCheck
 from execution_live.service import PaperExecutionService
 
 
-def filter_new_bars(df: pd.DataFrame, last_seen_ts: datetime | None):
+def force_close_symbol(adapter: "PaperExecutionAdapter", symbol: str) -> None:
+    """
+    Force close any open position on the specified symbol.
+    Used at startup in competition mode to exit stale positions.
+    """
+    positions = adapter.get_positions()
+    for p in positions:
+        if p.symbol == symbol:
+            from execution_live.order_models import ExecutionIntent, IntentAction
+            from datetime import datetime, timezone
+            close_intent = ExecutionIntent(
+                symbol=symbol,
+                action=IntentAction.CLOSE,
+                quantity=p.quantity,
+                timestamp=datetime.now(timezone.utc),
+                reference_price=p.average_price,
+            )
+            report = adapter.place_order(close_intent)
+            logger.info(
+                "[COMPETITION] Forced close on %s | status=%s qty=%.2f",
+                symbol,
+                report.status.value,
+                p.quantity,
+            )
+
+
+def choose_rotation_symbol(adapter: "PaperExecutionAdapter", current_symbol: str) -> str:
+    """
+    Choose next symbol from rotation pool if no position is open.
+    Rotates to the next symbol in the pool after closing a position.
+    Only 1 position at a time - must close before trading a different pair.
+    """
+    positions = adapter.get_positions()
+    if positions:
+        # Already have a position, stay on current symbol
+        return current_symbol
+
+    # No position - rotate to NEXT symbol in pool (round-robin)
+    if current_symbol in COMPETITION_SYMBOL_POOL:
+        current_idx = COMPETITION_SYMBOL_POOL.index(current_symbol)
+        next_idx = (current_idx + 1) % len(COMPETITION_SYMBOL_POOL)
+        next_symbol = COMPETITION_SYMBOL_POOL[next_idx]
+        if next_symbol != current_symbol:
+            logger.info("[COMPETITION] Rotating from %s to %s", current_symbol, next_symbol)
+        return next_symbol
+    
+    # Current symbol not in pool, start with first
+    logger.info("[COMPETITION] Rotating to %s", COMPETITION_SYMBOL_POOL[0])
+    return COMPETITION_SYMBOL_POOL[0]
+
+
+def explore_best_symbol(
+    hypotheses: list,
+    csv_df: pd.DataFrame,
+    symbol_pool: list,
+    adapter: "PaperExecutionAdapter" = None,
+) -> tuple[str, float]:
+    """
+    Exploratory symbol selection: evaluate ALL symbols and pick the one
+    with the strongest actionable signal.
+    
+    Returns:
+        (best_symbol, signal_strength) where signal_strength > 0 means actionable
+    """
+    from state.market_state import MarketState
+    from hypotheses.base import IntentType
+    
+    # If we have an open position, stay on that symbol
+    if adapter:
+        positions = adapter.get_positions()
+        if positions:
+            return positions[0].symbol, 1.0
+    
+    best_symbol = symbol_pool[0] if symbol_pool else "BTCUSD"
+    best_score = 0.0
+    
+    for symbol in symbol_pool:
+        # Filter bars for this symbol
+        symbol_df = csv_df[csv_df["symbol"] == symbol] if "symbol" in csv_df.columns else csv_df
+        if symbol_df.empty:
+            logger.debug("[EXPLORE] %s: no bars", symbol)
+            continue
+        
+        try:
+            bars = MarketDataLoader.load_from_dataframe(symbol_df, symbol=symbol)
+            if not bars or len(bars) < 15:
+                logger.debug("[EXPLORE] %s: insufficient bars (%d)", symbol, len(bars) if bars else 0)
+                continue
+            
+            # Build market state for this symbol
+            market_state = MarketState(lookback_window=100)
+            for bar in bars:
+                market_state.update(bar)
+            
+            # Evaluate each hypothesis
+            symbol_score = 0.0
+            for h in hypotheses:
+                try:
+                    from state.position_state import PositionState
+                    from clock.clock import Clock
+                    intent = h.on_bar(market_state, PositionState(), Clock())
+                    if intent and intent.type in (IntentType.BUY, IntentType.SELL):
+                        # Actionable signal found
+                        symbol_score += intent.size
+                        logger.info(
+                            "[EXPLORE] %s: %s signal from %s (size=%.2f)",
+                            symbol,
+                            intent.type.value,
+                            getattr(h, 'hypothesis_id', h.__class__.__name__),
+                            intent.size,
+                        )
+                except Exception as e:
+                    logger.debug("[EXPLORE] %s hypothesis error: %s", symbol, e)
+                    continue
+            
+            if symbol_score > best_score:
+                best_score = symbol_score
+                best_symbol = symbol
+                
+        except Exception as e:
+            logger.debug("[EXPLORE] %s load error: %s", symbol, e)
+            continue
+    
+    if best_score > 0:
+        logger.info("[EXPLORE] Best symbol: %s (score=%.2f)", best_symbol, best_score)
+    else:
+        logger.info("[EXPLORE] No actionable signals on any symbol, defaulting to %s", best_symbol)
+    
+    return best_symbol, best_score
+
+
+def filter_new_bars(df: pd.DataFrame, last_seen_ts: datetime | None, lookback_bars: int = 50):
     """
     Idempotent guard to drop bars that have already been processed.
+    Includes lookback_bars of historical context so hypotheses can calculate indicators.
+    
+    Returns: (filtered_df, first_new_bar_index) - index within the filtered df where new bars start
     """
     if df.empty:
-        return df
+        return df, 0
 
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     if last_seen_ts is None:
-        return df
-    return df[df["timestamp"] > last_seen_ts]
+        return df, 0
+    
+    # Find new bars
+    new_mask = df["timestamp"] > last_seen_ts
+    if not new_mask.any():
+        return df[new_mask], 0  # Empty dataframe
+    
+    # Include lookback_bars before the first new bar for hypothesis context
+    first_new_idx = new_mask.idxmax()
+    lookback_start = max(0, first_new_idx - lookback_bars)
+    
+    # Calculate where new bars start in the filtered result
+    first_new_in_result = first_new_idx - lookback_start
+    
+    return df.iloc[lookback_start:].copy(), first_new_in_result
 
 
 def _load_last_seen_timestamp(state_path: Path) -> datetime | None:
@@ -69,6 +223,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 DEBUG_TRACE_PATH = Path("results/run_meta_debug.log")
 
+
+def _write_mt5_intent(sink: "FileIntentSink", intent, policy_id: str) -> None:
+    """Convert internal ExecutionIntent to MT5 format and write to file sink."""
+    import uuid
+    import json
+    from execution_live.order_models import IntentAction
+    
+    side = "BUY" if intent.action == IntentAction.BUY else "SELL"
+    if intent.action == IntentAction.CLOSE:
+        # For CLOSE, we need to determine the opposite side or handle separately
+        # For now, skip CLOSE intents as MT5 handles position closing differently
+        logger.info("Skipping CLOSE intent for MT5 - position management handled by EA")
+        return
+    
+    # Convert units to MT5 lots (1 lot = 100,000 units for forex)
+    # Round to 2 decimal places (0.01 lot minimum for most brokers)
+    LOT_SIZE = 100_000
+    MIN_LOT = 0.01
+    lots = round(intent.quantity / LOT_SIZE, 2)
+    
+    # If system wants to trade but lot size is below minimum, use minimum lot
+    # This ensures we participate in the market when signals fire
+    if lots < MIN_LOT:
+        logger.info("MT5 lot size %.4f below min, using min lot %.2f", lots, MIN_LOT)
+        lots = MIN_LOT
+    
+    mt5_intent = {
+        "intent_id": str(uuid.uuid4()),
+        "timestamp": intent.timestamp.isoformat() if hasattr(intent.timestamp, 'isoformat') else str(intent.timestamp),
+        "symbol": intent.symbol,
+        "side": side,
+        "order_type": "MARKET",
+        "quantity": lots,  # Now in lots, not units
+        "stop_loss": None,
+        "take_profit": None,
+        "time_in_force": "GTC",
+        "policy_hash": policy_id,
+        "mode": "LIVE"
+    }
+    
+    sink.emit(json.dumps(mt5_intent))
+    logger.info("MT5 intent written | id=%s side=%s lots=%.2f", mt5_intent["intent_id"], side, lots)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run meta-strategy simulation.")
     parser.add_argument("--policy", required=True, help="Research Policy ID")
@@ -91,6 +289,27 @@ def main():
         "--explain-decisions",
         action="store_true",
         help="Emit structured reasons when trade decisions are blocked"
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable live MT5 execution via file-based intent sink"
+    )
+    parser.add_argument(
+        "--intent-dir",
+        default=None,
+        help="Directory for MT5 intent files (default: MQL5/Files/execution_intents)"
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Continuous mode: poll for new bars instead of running once"
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=30,
+        help="Seconds between polls in watch mode (default: 30)"
     )
     
     args = parser.parse_args()
@@ -142,6 +361,22 @@ def main():
         logger.warning("No PROMOTED hypotheses found.")
         return
 
+    # Competition mode: filter to aggressive hypotheses only
+    AGGRESSIVE_HYPOTHESES = [
+        "crypto_momentum_breakout",
+        "rsi_extreme_reversal", 
+        "volatility_expansion_assault",
+    ]
+    if COMPETITION_MODE:
+        aggressive_ids = [h for h in promoted_ids if h in AGGRESSIVE_HYPOTHESES]
+        if aggressive_ids:
+            logger.info(
+                "[COMPETITION] Filtering to aggressive hypotheses: %s (dropped: %s)",
+                aggressive_ids,
+                [h for h in promoted_ids if h not in AGGRESSIVE_HYPOTHESES],
+            )
+            promoted_ids = aggressive_ids
+
     logger.info(f"Found {len(promoted_ids)} promoted hypotheses: {promoted_ids}")
     
     import json
@@ -179,20 +414,33 @@ def main():
     
     logger.info(f"Initial Weights: {ensemble.weights}")
     
-    # 3. Load Data (only process new bars)
-    csv_df = pd.read_csv(args.data_path)
+    # 3. Load Data (include lookback for context, track where new bars start)
     state_path = Path(args.state_path) if args.state_path else Path(args.data_path).with_suffix(".state")
-    last_seen_ts = _load_last_seen_timestamp(state_path)
-    new_rows = filter_new_bars(csv_df, last_seen_ts)
+    
+    def process_new_bars():
+        """Process any new bars in the CSV. Returns True if bars were processed."""
+        csv_df = pd.read_csv(args.data_path)
+        last_seen_ts = _load_last_seen_timestamp(state_path)
+        new_rows, first_actionable_idx = filter_new_bars(csv_df, last_seen_ts)
 
-    if new_rows.empty:
-        logger.info("No new bars detected in %s (last_seen=%s)", args.data_path, last_seen_ts)
-        return
+        if new_rows.empty:
+            return False, None, None, 0
 
-    bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
-    if not bars:
-        logger.error("No market data found after filtering new bars.")
-        return
+        bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
+        if not bars:
+            return False, None, None, 0
+        
+        return True, new_rows, bars, first_actionable_idx
+    
+    # Initial check for bars
+    has_bars, new_rows, bars, first_actionable_idx = process_new_bars()
+    
+    if not has_bars:
+        if args.watch:
+            logger.info("Watch mode: No new bars yet, will poll every %ds...", args.poll_interval)
+        else:
+            logger.info("No new bars detected in %s", args.data_path)
+            return
         
     # 4. Init Engine
     cost_model = CostModel(
@@ -203,6 +451,13 @@ def main():
     paper_adapter = None
     execution_sink = None
     event_logger: Optional[ExecutionEventLogger] = None
+    
+    # Initialize live sink early so it's available in paper execution block
+    live_sink = None
+    if args.live:
+        intent_dir = args.intent_dir or r"C:\Users\HP\AppData\Roaming\MetaQuotes\Terminal\10CE948A1DFC9A8C27E56E827008EBD4\MQL5\Files\execution_intents"
+        live_sink = FileIntentSink(intent_dir)
+        logger.info("Live MT5 execution enabled. Intent dir: %s", intent_dir)
     
     if args.paper:
         if args.paper_log:
@@ -240,13 +495,36 @@ def main():
         )
         paper_service = PaperExecutionService(paper_adapter)
         
+        # Competition mode: exploratory multi-symbol evaluation
+        if COMPETITION_MODE:
+            force_close_symbol(paper_adapter, "EURUSD")
+            # Explore ALL symbols and pick the one with best signal
+            csv_df_init = pd.read_csv(args.data_path)
+            best_symbol, signal_score = explore_best_symbol(
+                hypotheses=hypotheses,
+                csv_df=csv_df_init,
+                symbol_pool=COMPETITION_SYMBOL_POOL,
+                adapter=paper_adapter,
+            )
+            args.symbol = best_symbol
+            logger.info("[COMPETITION] Active symbol: %s (signal_score=%.2f)", args.symbol, signal_score)
+        
         def execution_sink(intent):
+            # Skip execution for lookback context bars (already processed)
+            bar_idx = intent.metadata.get("bar_index", 0)
+            if bar_idx < first_actionable_idx:
+                logger.debug(
+                    "Skipping lookback bar %d (first actionable: %d)",
+                    bar_idx, first_actionable_idx
+                )
+                return
+            
             logger.info(
-                "ExecutionIntent -> symbol=%s action=%s qty=%.2f bar=%s",
+                "ExecutionIntent -> symbol=%s action=%s qty=%.6f bar=%s",
                 intent.symbol,
                 intent.action.value,
                 intent.quantity,
-                intent.metadata.get("bar_index"),
+                bar_idx,
             )
             report = paper_service.handle_intent(intent)
             logger.info(
@@ -256,7 +534,39 @@ def main():
                 report.filled_quantity,
                 report.message or "",
             )
-    elif telemetry_hook and COMPETITION_MODE:
+            
+            # Competition logging: trade_executed event
+            if report.status.value == "FILLED":
+                logger.info(
+                    "trade_executed | symbol=%s action=%s qty=%.2f price=%.5f order_id=%s",
+                    intent.symbol,
+                    intent.action.value,
+                    report.filled_quantity,
+                    report.avg_fill_price or 0.0,
+                    report.order_id,
+                )
+            
+            # If --live is also enabled, write intent file for MT5
+            if args.live and live_sink is not None:
+                _write_mt5_intent(live_sink, intent, execution_policy.policy_id)
+    
+    # If only --live (no --paper), create a standalone execution sink
+    if args.live and not args.paper:
+        def execution_sink(intent):
+            # Skip execution for lookback context bars
+            bar_idx = intent.metadata.get("bar_index", 0)
+            if bar_idx < first_actionable_idx:
+                return
+            
+            logger.info(
+                "ExecutionIntent -> MT5 | symbol=%s action=%s qty=%.6f",
+                intent.symbol,
+                intent.action.value,
+                intent.quantity,
+            )
+            _write_mt5_intent(live_sink, intent, execution_policy.policy_id)
+    
+    elif telemetry_hook and COMPETITION_MODE and not args.paper and not args.live:
         telemetry_hook(
             COMPETITION_PROFILE_LOADED,
             {
@@ -273,6 +583,9 @@ def main():
         ExecutionPolicyRule(execution_policy),
     ]
     
+    # Pass crypto rotation symbols in competition mode
+    rotation_symbols = CRYPTO_SYMBOLS if COMPETITION_MODE else []
+    
     engine = MetaPortfolioEngine(
         ensemble=ensemble,
         initial_capital=args.capital,
@@ -282,38 +595,103 @@ def main():
         execution_intent_sink=execution_sink,
         telemetry=telemetry_hook,
         explain_decisions=args.explain_decisions,
+        rotation_symbols=rotation_symbols,
     )
     
-    # 5. Run
-    history = engine.run(bars)
-    
-    # 6. Store + persist progress
-    logger.info(f"Simulation complete. Storing {len(history)} portfolio snapshots...")
-    for state in history:
-        repo.store_portfolio_evaluation(state, args.tag, policy.policy_id)
-
-    latest_bar_ts = pd.to_datetime(new_rows["timestamp"]).max()
-    if isinstance(latest_bar_ts, pd.Timestamp):
-        latest_bar_ts = latest_bar_ts.to_pydatetime()
-    if latest_bar_ts:
-        _persist_last_seen_timestamp(state_path, latest_bar_ts)
-        logger.info("Persisted last_seen timestamp %s to %s", latest_bar_ts, state_path)
+    # 5. Run (with watch loop support)
+    def run_iteration():
+        """Run one iteration of bar processing."""
+        nonlocal has_bars, new_rows, bars, first_actionable_idx
         
-    final = history[-1]
-    logger.info("--- Meta Portfolio Result ---")
-    logger.info(f"Final Capital: ${final.total_capital:,.2f}")
-    logger.info(f"Return: {((final.total_capital - args.capital) / args.capital * 100):.2f}%")
-    logger.info(f"Max Drawdown: {final.drawdown_pct:.2f}%")
+        if not has_bars:
+            return False
+        
+        history = engine.run(bars)
+        
+        # Store + persist progress
+        if history:
+            logger.info(f"Processed {len(history)} bars...")
+            for state in history:
+                repo.store_portfolio_evaluation(state, args.tag, policy.policy_id)
+
+        latest_bar_ts = pd.to_datetime(new_rows["timestamp"]).max()
+        if isinstance(latest_bar_ts, pd.Timestamp):
+            latest_bar_ts = latest_bar_ts.to_pydatetime()
+        if latest_bar_ts:
+            _persist_last_seen_timestamp(state_path, latest_bar_ts)
+            
+        if history:
+            final = history[-1]
+            if paper_adapter:
+                account = paper_adapter.get_account_state()
+                logger.info(
+                    "Equity: %.2f | Cash: %.2f | Positions: %d",
+                    account.equity,
+                    account.cash,
+                    len(account.positions),
+                )
+        return True
     
-    if paper_adapter:
-        account = paper_adapter.get_account_state()
-        logger.info("--- Paper Execution Account ---")
-        logger.info(
-            "Equity: %.2f | Cash: %.2f | Positions: %d",
-            account.equity,
-            account.cash,
-            len(account.positions),
-        )
+    # Watch mode: continuous polling loop
+    if args.watch:
+        logger.info("=" * 50)
+        logger.info("WATCH MODE: Polling every %ds (Ctrl+C to stop)", args.poll_interval)
+        logger.info("=" * 50)
+        
+        try:
+            while True:
+                # Process any available bars
+                if has_bars:
+                    run_iteration()
+                
+                # Wait and poll for new bars
+                time.sleep(args.poll_interval)
+                logger.info("[WATCH] Polling for new bars...")
+                has_bars, new_rows, bars, first_actionable_idx = process_new_bars()
+                
+                if not has_bars:
+                    logger.info("[WATCH] No new bars yet, waiting...")
+                
+                if has_bars:
+                    logger.info("[WATCH] New bars detected, processing...")
+                    # Update engine symbol if needed for rotation
+                    if COMPETITION_MODE and paper_adapter:
+                        csv_df_fresh = pd.read_csv(args.data_path)
+                        best_symbol, signal_score = explore_best_symbol(
+                            hypotheses=hypotheses,
+                            csv_df=csv_df_fresh,
+                            symbol_pool=COMPETITION_SYMBOL_POOL,
+                            adapter=paper_adapter,
+                        )
+                        if best_symbol != engine.symbol:
+                            logger.info("[WATCH] Rotating to %s (score=%.2f)", best_symbol, signal_score)
+                            engine.symbol = best_symbol
+                            args.symbol = best_symbol
+                            # Reload bars for new symbol
+                            bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
+                            
+        except KeyboardInterrupt:
+            logger.info("\n[WATCH] Stopped by user")
+            if paper_adapter:
+                account = paper_adapter.get_account_state()
+                logger.info("Final: Equity=%.2f | Positions=%d", account.equity, len(account.positions))
+    else:
+        # Single run mode
+        run_iteration()
+        
+        if not has_bars:
+            logger.warning("No portfolio snapshots generated - no bars matched current symbol")
+            return
+            
+        logger.info("--- Meta Portfolio Result ---")
+        if paper_adapter:
+            account = paper_adapter.get_account_state()
+            logger.info(
+                "Equity: %.2f | Cash: %.2f | Positions: %d",
+                account.equity,
+                account.cash,
+                len(account.positions),
+            )
 
 
 if __name__ == "__main__":

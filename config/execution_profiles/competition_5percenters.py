@@ -20,10 +20,12 @@ COMPETITION_5PERCENTERS: ExecutionPolicy = ExecutionPolicy(
         "GBPUSD",
         "USDJPY",
         "AUDCAD",
+        "BTCUSD",
+        "ETHUSD",
     ),
-    trading_window_start=time(hour=6),
-    trading_window_end=time(hour=20),
-    forced_flat_time=time(hour=21, minute=30),
+    trading_window_start=None,  # 24/7 crypto trading
+    trading_window_end=None,
+    forced_flat_time=None,  # No forced flat for crypto
     metadata={
         "mode": "competition",
         "firm": "5percenters",

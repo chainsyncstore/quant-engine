@@ -14,6 +14,13 @@ from hypotheses.examples.simple_momentum import SimpleMomentumHypothesis
 from hypotheses.examples.volatility_breakout import VolatilityBreakoutHypothesis
 from hypotheses.examples.time_exit import TimeExitHypothesis
 from hypotheses.examples.counter_trend import CounterTrendHypothesis
+from hypotheses.volatility_breakout import VolatilityExpansionBreakout
+from hypotheses.mean_reversion_exhaustion import MeanReversionExhaustion
+from hypotheses.session_open_impulse import SessionOpenImpulse
+from hypotheses.volatility_compression import VolatilityCompression
+from hypotheses.competition.volatility_expansion_assault import VolatilityExpansionAssault
+from hypotheses.competition.crypto_momentum_breakout import CryptoMomentumBreakout
+from hypotheses.competition.rsi_extreme_reversal import RSIExtremeReversal
 
 
 class HypothesisRegistry:
@@ -103,6 +110,13 @@ registry.register(SimpleMomentumHypothesis)
 registry.register(VolatilityBreakoutHypothesis)
 registry.register(TimeExitHypothesis)
 registry.register(CounterTrendHypothesis)
+registry.register(VolatilityExpansionBreakout)
+registry.register(MeanReversionExhaustion)
+registry.register(SessionOpenImpulse)
+registry.register(VolatilityCompression)
+registry.register(VolatilityExpansionAssault)
+registry.register(CryptoMomentumBreakout)
+registry.register(RSIExtremeReversal)
 
 
 def get_hypothesis(hypothesis_id: str) -> Type[Hypothesis]:
