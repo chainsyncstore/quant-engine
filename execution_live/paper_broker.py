@@ -39,10 +39,12 @@ class PaperExecutionAdapter(ExecutionAdapter):
         initial_equity: float,
         risk_checks: Optional[List[RiskCheck]] = None,
         event_logger: Optional[ExecutionEventLogger] = None,
+        leverage: float = 1.0,
     ):
         self._cost_model = cost_model
         self._initial_equity = initial_equity
         self._cash = initial_equity
+        self._leverage = max(1.0, leverage)  # 1:30 leverage means leverage=30
         self._positions: Dict[str, PositionState] = {}
         self._last_prices: Dict[str, float] = {}
         self._order_seq = 0
@@ -153,13 +155,15 @@ class PaperExecutionAdapter(ExecutionAdapter):
         cost_side = CostSide.BUY if side == PositionSide.LONG else CostSide.SELL
         effective_price = self._cost_model.apply_costs(base_price, cost_side)
         notional = effective_price * intent.quantity
+        # With leverage, only margin is required (notional / leverage)
+        margin_required = notional / self._leverage
 
-        if notional > self._cash:
+        if margin_required > self._cash:
             return ExecutionReport(
                 order_id=order_id,
                 status=OrderStatus.REJECTED,
                 intent=intent,
-                message=f"Insufficient cash. Needed {notional:,.2f}, available {self._cash:,.2f}",
+                message=f"Insufficient margin. Needed {margin_required:,.2f}, available {self._cash:,.2f} (notional={notional:,.2f}, leverage={self._leverage}x)",
             )
 
         position_state.open_position(
@@ -167,10 +171,11 @@ class PaperExecutionAdapter(ExecutionAdapter):
             entry_price=effective_price,
             size=intent.quantity,
             entry_timestamp=intent.timestamp,
-            entry_capital=notional,
+            entry_capital=margin_required,  # Store margin, not notional (for leveraged trading)
         )
 
-        self._cash -= notional
+        # Deduct margin, not full notional
+        self._cash -= margin_required
         self._last_prices[intent.symbol] = base_price
 
         return ExecutionReport(

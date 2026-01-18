@@ -21,6 +21,7 @@ from hypotheses.volatility_compression import VolatilityCompression
 from hypotheses.competition.volatility_expansion_assault import VolatilityExpansionAssault
 from hypotheses.competition.crypto_momentum_breakout import CryptoMomentumBreakout
 from hypotheses.competition.rsi_extreme_reversal import RSIExtremeReversal
+from hypotheses.competition.competition_hail_mary import CompetitionHailMary
 
 
 class HypothesisRegistry:
@@ -117,6 +118,7 @@ registry.register(VolatilityCompression)
 registry.register(VolatilityExpansionAssault)
 registry.register(CryptoMomentumBreakout)
 registry.register(RSIExtremeReversal)
+registry.register(CompetitionHailMary)
 
 
 def get_hypothesis(hypothesis_id: str) -> Type[Hypothesis]:

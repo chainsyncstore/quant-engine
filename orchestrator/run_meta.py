@@ -417,7 +417,7 @@ def main():
     # 3. Load Data (include lookback for context, track where new bars start)
     state_path = Path(args.state_path) if args.state_path else Path(args.data_path).with_suffix(".state")
     
-    def process_new_bars():
+    def process_new_bars(current_symbol: str = None):
         """Process any new bars in the CSV. Returns True if bars were processed."""
         csv_df = pd.read_csv(args.data_path)
         last_seen_ts = _load_last_seen_timestamp(state_path)
@@ -426,9 +426,26 @@ def main():
         if new_rows.empty:
             return False, None, None, 0
 
-        bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
-        if not bars:
-            return False, None, None, 0
+        symbol_to_load = current_symbol or args.symbol
+        
+        # In competition mode, check for bars for ANY symbol in the pool
+        # The symbol selection happens later via explore_best_symbol
+        if COMPETITION_MODE:
+            # Check if any symbol in the pool has new bars
+            has_any_bars = False
+            for sym in COMPETITION_SYMBOL_POOL:
+                sym_bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=sym)
+                if sym_bars:
+                    has_any_bars = True
+                    break
+            if not has_any_bars:
+                return False, None, None, 0
+            # Load bars for current symbol (will be updated after exploration)
+            bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=symbol_to_load)
+        else:
+            bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=symbol_to_load)
+            if not bars:
+                return False, None, None, 0
         
         return True, new_rows, bars, first_actionable_idx
     
@@ -483,7 +500,7 @@ def main():
                 },
             )
 
-        adapter_risk_checks = [CashAvailabilityCheck(), ExecutionPolicyCheck(execution_policy)]
+        adapter_risk_checks = [CashAvailabilityCheck(leverage=30.0), ExecutionPolicyCheck(execution_policy)]
         if args.paper_max_notional > 0:
             adapter_risk_checks.append(NotionalLimitCheck(args.paper_max_notional))
         
@@ -492,6 +509,7 @@ def main():
             initial_equity=args.capital,
             risk_checks=adapter_risk_checks,
             event_logger=event_logger,
+            leverage=30.0,  # 1:30 leverage for crypto trading
         )
         paper_service = PaperExecutionService(paper_adapter)
         
@@ -579,7 +597,7 @@ def main():
     risk_rules = [
         MaxDrawdownRule(max_drawdown_pct=args.max_drawdown),
         TradeThrottle(telemetry_hook=telemetry_hook),
-        LossStreakGuard(telemetry_hook=telemetry_hook),
+        LossStreakGuard(max_losses=5, telemetry_hook=telemetry_hook),  # Allow 5 losses/day for aggressive competition
         ExecutionPolicyRule(execution_policy),
     ]
     
@@ -597,6 +615,16 @@ def main():
         explain_decisions=args.explain_decisions,
         rotation_symbols=rotation_symbols,
     )
+    
+    # Pre-populate all rotation symbols' market states with historical data
+    if COMPETITION_MODE and rotation_symbols:
+        csv_df_full = pd.read_csv(args.data_path)
+        for sym in rotation_symbols:
+            sym_bars = MarketDataLoader.load_from_dataframe(csv_df_full, symbol=sym)
+            if sym_bars and sym in engine._symbol_market_states:
+                for bar in sym_bars:
+                    engine._symbol_market_states[sym].update(bar)
+                logger.info("[INIT] Populated %s market state with %d bars", sym, len(sym_bars))
     
     # 5. Run (with watch loop support)
     def run_iteration():
@@ -647,13 +675,17 @@ def main():
                 # Wait and poll for new bars
                 time.sleep(args.poll_interval)
                 logger.info("[WATCH] Polling for new bars...")
-                has_bars, new_rows, bars, first_actionable_idx = process_new_bars()
+                has_bars, new_rows, bars, first_actionable_idx = process_new_bars(engine.symbol)
                 
                 if not has_bars:
                     logger.info("[WATCH] No new bars yet, waiting...")
                 
                 if has_bars:
                     logger.info("[WATCH] New bars detected, processing...")
+                    # In watch mode, all bars are truly new (engine already has historical context)
+                    # Reset first_actionable_idx to 0 so execution_sink doesn't skip them
+                    first_actionable_idx = 0
+                    
                     # Update engine symbol if needed for rotation
                     if COMPETITION_MODE and paper_adapter:
                         csv_df_fresh = pd.read_csv(args.data_path)
@@ -663,12 +695,38 @@ def main():
                             symbol_pool=COMPETITION_SYMBOL_POOL,
                             adapter=paper_adapter,
                         )
-                        if best_symbol != engine.symbol:
+                        rotating = best_symbol != engine.symbol
+                        if rotating:
                             logger.info("[WATCH] Rotating to %s (score=%.2f)", best_symbol, signal_score)
-                            engine.symbol = best_symbol
-                            args.symbol = best_symbol
-                            # Reload bars for new symbol
-                            bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=args.symbol)
+                        engine.symbol = best_symbol
+                        args.symbol = best_symbol
+                        
+                        # Check if new symbol's market state needs historical data
+                        symbol_state = engine._symbol_market_states.get(best_symbol)
+                        needs_history = symbol_state is None or symbol_state.bar_count() < 25
+                        
+                        if needs_history:
+                            # Load full historical bars for new symbol to populate market state
+                            all_hist_bars = MarketDataLoader.load_from_dataframe(csv_df_fresh, symbol=best_symbol)
+                            if all_hist_bars:
+                                logger.info("[WATCH] Populating %s market state with %d historical bars", best_symbol, len(all_hist_bars))
+                                # Feed historical bars to engine (they won't trigger trades due to clock filter)
+                                for hist_bar in all_hist_bars[:-1]:  # All but the last (new) bar
+                                    if best_symbol in engine._symbol_market_states:
+                                        engine._symbol_market_states[best_symbol].update(hist_bar)
+                        
+                        # Now load only the new bar(s) for actual processing
+                        all_symbol_bars = MarketDataLoader.load_from_dataframe(new_rows, symbol=best_symbol)
+                        current_clock = engine.clock.now() if engine.clock.is_initialized() else None
+                        if current_clock:
+                            bars = [b for b in all_symbol_bars if b.timestamp > current_clock]
+                            logger.info("[WATCH] Loaded %d bars for %s after clock %s", len(bars), best_symbol, current_clock)
+                            if not bars:
+                                logger.info("[WATCH] No forward bars for %s, skipping iteration", best_symbol)
+                                has_bars = False
+                        else:
+                            bars = all_symbol_bars
+                            logger.info("[WATCH] Loaded %d bars for %s (no clock filter)", len(bars), best_symbol)
                             
         except KeyboardInterrupt:
             logger.info("\n[WATCH] Stopped by user")

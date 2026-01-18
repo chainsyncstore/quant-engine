@@ -37,18 +37,23 @@ class NotionalLimitCheck:
 
 
 class CashAvailabilityCheck:
-    """Ensures available cash/buying power is sufficient for the trade."""
+    """Ensures available cash/buying power is sufficient for the trade (with leverage)."""
+
+    def __init__(self, leverage: float = 30.0):
+        self._leverage = max(1.0, leverage)
 
     def evaluate(self, intent: ExecutionIntent, account_state: AccountState) -> Tuple[bool, str]:
         reference_price = intent.reference_price or intent.limit_price
         if reference_price is None:
             return False, "Reference price is required for cash check."
 
-        required = abs(intent.quantity) * reference_price
-        if required > account_state.cash:
-            return False, f"Insufficient cash. Required {required:,.2f}, available {account_state.cash:,.2f}"
+        notional = abs(intent.quantity) * reference_price
+        # With leverage, only margin is required
+        margin_required = notional / self._leverage
+        if margin_required > account_state.cash:
+            return False, f"Insufficient margin. Required {margin_required:,.2f}, available {account_state.cash:,.2f} (notional={notional:,.2f}, leverage={self._leverage}x)"
 
-        return True, "Cash available"
+        return True, "Margin available"
 
 
 class ExecutionPolicyCheck:

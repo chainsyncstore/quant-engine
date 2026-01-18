@@ -96,13 +96,32 @@ def _send_telegram_message(text: str, verify_tls: bool) -> None:
         print(f"[WARN] Failed to send Telegram message: {exc}")
 
 
-def _tail_file(path: Path, poll_seconds: float, beep: bool, telegram: bool, telegram_verify: bool) -> None:
+def _tail_file(
+    path: Path, poll_seconds: float, beep: bool, telegram: bool, telegram_verify: bool, replay_last: int = 0
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     print(f"Watching {path} (Ctrl+C to exit)...")
 
     active_positions: Dict[str, str] = {}
 
     with path.open("a+", encoding="utf-8") as handle:
+        if replay_last > 0:
+            # Replay last N execution_report lines (console only, no telegram/beep)
+            handle.seek(0)
+            all_lines = handle.readlines()
+            exec_lines = [l for l in all_lines if '"execution_report"' in l and '"FILLED"' in l]
+            for line in exec_lines[-replay_last:]:
+                try:
+                    event = json.loads(line.strip())
+                    payload = event.get("payload", {})
+                    alert = _format_alert(payload)
+                    print(f"[REPLAY] {alert}")
+                except:
+                    pass
+            if exec_lines:
+                print("--- End of replay (console only), watching for new signals ---")
+            else:
+                print("--- No previous trades found, watching for new signals ---")
         handle.seek(0, os.SEEK_END)
         while True:
             line = handle.readline()
@@ -171,6 +190,12 @@ def main() -> None:
         action="store_true",
         help="Disable TLS verification for Telegram webhook (use only if cert errors appear)",
     )
+    parser.add_argument(
+        "--replay",
+        type=int,
+        default=0,
+        help="Replay the last N filled trades on startup before watching for new ones",
+    )
 
     args = parser.parse_args()
     log_path = Path(args.log)
@@ -186,6 +211,7 @@ def main() -> None:
             args.beep,
             args.telegram,
             not args.insecure_telegram,
+            args.replay,
         )
     except KeyboardInterrupt:
         print("\nWatcher stopped.")

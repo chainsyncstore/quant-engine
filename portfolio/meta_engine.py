@@ -180,8 +180,8 @@ class MetaPortfolioEngine:
             # Use per-symbol market state if available, else shared
             if self.symbol in self._symbol_market_states:
                 self.market_state = self._symbol_market_states[self.symbol]
-            else:
-                self.market_state.update(bar)
+            # Always update with the new bar
+            self.market_state.update(bar)
             if self.explain_decisions:
                 self.logger.info(
                     "bar_evaluated | ts=%s | hypotheses=%s",
@@ -325,12 +325,21 @@ class MetaPortfolioEngine:
             
                 net_exposure_target += (weight * sign)
         
-            # Determine target meta exposure measured in units using regime-aware risk fractions
+            # Determine target meta exposure measured in units using regime-aware risk fractions + leverage
             curr_equity = self.meta_simulator.get_total_capital(bar.open, self.meta_position_state)
             allocation_view = self._build_meta_allocation(bar, curr_equity)
             exposure_ratio = abs(net_exposure_target)
             risk_fraction = max(0.0, min(1.0, risk_tier.risk_fraction))
-            target_value = curr_equity * exposure_ratio * risk_fraction
+            
+            # LEVERAGE: Apply leverage multiplier to scale position size
+            # effective_leverage = max_leverage * leverage_multiplier (0.0 to 1.0)
+            effective_leverage = self.risk_tier_resolver.max_leverage * risk_tier.leverage_multiplier
+            
+            # Position value = equity × risk_fraction × effective_leverage
+            # e.g., $10k × 0.15 × 20 = $30,000 notional (3x equity)
+            target_value = curr_equity * risk_fraction * effective_leverage * exposure_ratio
+            
+            # Hard cap at max leverage to prevent overexposure
             max_notional = curr_equity * self.risk_tier_resolver.max_leverage
             if target_value > max_notional:
                 target_value = max_notional
@@ -396,44 +405,41 @@ class MetaPortfolioEngine:
                     )
                     return True
 
+                # Track if we rotated symbols this bar (to prevent entry on wrong symbol's price)
+                rotated_this_bar = False
+                
                 # Case 1: Switch Side or Go Flat
+                # In COMPETITION_MODE, skip signal-based exits - only exit via deterministic TP/SL
                 if current_side and (current_side != target_side or target_units == 0):
-                    size_to_close = abs(current_units)
-                    if enqueue_decision(
-                        intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
-                        action=IntentAction.CLOSE,
-                        quantity=size_to_close,
-                        metadata={
-                            "reason": "side_change_or_flat",
-                            **risk_metadata,
-                        },
-                    ):
-                        current_units = 0
-                        current_side = None
-                        # Rotate symbol after close in competition mode
-                        if COMPETITION_MODE and self.rotation_symbols:
-                            self.symbol = self._next_symbol()
+                    if COMPETITION_MODE:
+                        # Hold position until TP/SL is hit - ignore signal changes
+                        pass
+                    else:
+                        size_to_close = abs(current_units)
+                        if enqueue_decision(
+                            intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
+                            action=IntentAction.CLOSE,
+                            quantity=size_to_close,
+                            metadata={
+                                "reason": "side_change_or_flat",
+                                **risk_metadata,
+                            },
+                        ):
+                            current_units = 0
+                            current_side = None
+                            # Rotate symbol after close in competition mode
+                            if self.rotation_symbols:
+                                self.symbol = self._next_symbol()
+                                rotated_this_bar = True
 
-                # Case 2: Size Change (Same Side)
-                if current_side == target_side and current_side is not None and current_units != target_units:
-                    size_to_close = abs(current_units)
-                    if enqueue_decision(
-                        intent=TradeIntent(type=IntentType.CLOSE, size=1.0),
-                        action=IntentAction.CLOSE,
-                        quantity=size_to_close,
-                        metadata={
-                            "reason": "resize",
-                            **risk_metadata,
-                        },
-                    ):
-                        current_units = 0
-                        current_side = None
-                        # Rotate symbol after close in competition mode
-                        if COMPETITION_MODE and self.rotation_symbols:
-                            self.symbol = self._next_symbol()
+                # Case 2: Size Change (Same Side) - DISABLED for competition
+                # Don't close just because target size changed - let positions ride to TP/SL
+                # if current_side == target_side and current_side is not None and current_units != target_units:
+                #     ... disabled to avoid churning
 
                 # Case 3: Open Target (if not already there)
-                if target_side and target_units > 0 and current_units == 0:
+                # CRITICAL: Do NOT enter on a rotated symbol - the bar's price is for the OLD symbol!
+                if target_side and target_units > 0 and current_units == 0 and not rotated_this_bar:
                     intent_type = IntentType.BUY if target_side == PositionSide.LONG else IntentType.SELL
                     enqueue_decision(
                         intent=TradeIntent(type=intent_type, size=target_units),  # Size is UNITS for MetaSim
@@ -653,9 +659,10 @@ class MetaPortfolioEngine:
         if position.side == PositionSide.SHORT:
             pnl_pct = -pnl_pct
 
-        if pnl_pct >= 0.01:
+        # Aggressive targets for competition: wider TP to capture bigger moves
+        if pnl_pct >= 0.03:  # 3% take profit (was 1%)
             return True, "take_profit"
-        if pnl_pct <= -0.006:
+        if pnl_pct <= -0.015:  # 1.5% stop loss (was 0.6%)
             return True, "stop_loss"
 
         return False, None
