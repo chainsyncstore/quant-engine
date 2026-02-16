@@ -1,0 +1,32 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Data & models (large, generated)
+datasets/
+experiments/
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build
+*.egg-info/
+dist/
+build/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Cache
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
