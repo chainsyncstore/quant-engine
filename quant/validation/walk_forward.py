@@ -3,6 +3,9 @@ Strict walk-forward validation orchestrator.
 
 Train → Validate → Slide Forward → Repeat.
 No random shuffling. Regime model and LightGBM are re-fit each fold.
+
+Rolling threshold estimation: each fold uses thresholds discovered
+from ALL PRIOR folds only — no lookahead bias.
 """
 
 from __future__ import annotations
@@ -30,6 +33,9 @@ from quant.validation.metrics import (
 
 logger = logging.getLogger(__name__)
 
+# Minimum number of past folds before regime thresholds are considered reliable
+MIN_FOLDS_FOR_THRESHOLD = 3
+
 
 @dataclass
 class WalkForwardResult:
@@ -48,7 +54,10 @@ def run_walk_forward(
     feature_subset: Optional[List[str]] = None,
 ) -> WalkForwardResult:
     """
-    Execute strict walk-forward validation.
+    Execute strict walk-forward validation with rolling threshold estimation.
+
+    Each fold's regime-gated PnL uses thresholds estimated from prior folds only,
+    eliminating lookahead bias. This matches how a live system would operate.
 
     Args:
         df: Full DataFrame with features + labels (output of pipeline + labeler).
@@ -86,10 +95,21 @@ def run_walk_forward(
         fold_metrics: List[FoldMetrics] = []
         fold_pnls: List[np.ndarray] = []
         importance_accum: Dict[str, List[float]] = {c: [] for c in feature_cols}
-        regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = {}
+
+        # --- Rolling regime data: accumulates across folds ---
+        # Used for threshold estimation on PAST data only
+        regime_trade_data_cumulative: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = {}
+        # Per-fold current data for gated PnL computation
+        fold_regime_data: List[Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
+
+        # --- Rolling gated PnL: computed per-fold using past thresholds ---
+        gated_pnl_parts: List[np.ndarray] = []
+        gated_n_trades_total = 0
+        gated_n_wins_total = 0
 
         fold_idx = 0
         cursor = 0
+        completed_folds = 0
 
         while cursor + cfg.wf_train_bars + cfg.wf_test_bars <= total_bars:
             train_end = cursor + cfg.wf_train_bars
@@ -172,19 +192,49 @@ def run_walk_forward(
                 if feat in importance_accum:
                     importance_accum[feat].append(imp)
 
-            # --- Accumulate regime-level data for threshold optimization ---
+            # --- Collect per-regime data for this fold ---
             regimes_all = test_with_regime["regime"].values[:valid_len]
             regimes = regimes_all[eval_mask]  # filter FLAT from regimes too
+            this_fold_regime_data: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
             for r in range(cfg.n_regimes):
                 r_mask = regimes == r
                 if r_mask.any():
-                    if r not in regime_trade_data:
-                        regime_trade_data[r] = []
-                    regime_trade_data[r].append((
+                    this_fold_regime_data[r] = (
                         probas_valid[r_mask],
                         y_valid[r_mask],
                         price_moves[r_mask],
-                    ))
+                    )
+            fold_regime_data.append(this_fold_regime_data)
+
+            # --- Rolling regime-gated PnL (using PAST thresholds only) ---
+            if completed_folds >= MIN_FOLDS_FOR_THRESHOLD:
+                # Estimate thresholds from all PRIOR folds (no lookahead)
+                rolling_thresholds, rolling_ev = _estimate_rolling_thresholds(
+                    regime_trade_data_cumulative, cfg.spread_price, cfg
+                )
+                # Identify positive-EV regimes from past data
+                positive_ev_regimes = {r for r, ev in rolling_ev.items() if ev > 0}
+
+                # Apply past-estimated thresholds to THIS fold's data
+                for r, (r_preds, r_actuals, r_moves) in this_fold_regime_data.items():
+                    if r not in positive_ev_regimes:
+                        continue
+                    thresh = rolling_thresholds.get(r, 0.5)
+                    mask = r_preds >= thresh
+                    n = int(mask.sum())
+                    if n > 0:
+                        pnl_gated = r_moves[mask] - cfg.spread_price
+                        gated_pnl_parts.append(pnl_gated)
+                        gated_n_trades_total += n
+                        gated_n_wins_total += int((pnl_gated > 0).sum())
+
+            # --- Add this fold's data to cumulative (for FUTURE folds to use) ---
+            for r, data in this_fold_regime_data.items():
+                if r not in regime_trade_data_cumulative:
+                    regime_trade_data_cumulative[r] = []
+                regime_trade_data_cumulative[r].append(data)
+
+            completed_folds += 1
 
             logger.info(
                 "Fold %d [%dm]: EV=%.6f, WR=%.1f%%, trades=%d",
@@ -206,57 +256,39 @@ def run_walk_forward(
         avg_importance = dict(sorted(avg_importance.items(), key=lambda x: x[1], reverse=True))
         all_feature_importance[h] = avg_importance
 
-        # --- Optimize per-regime thresholds ---
+        # --- Final regime thresholds (from ALL data — used for reporting & production) ---
         regime_metrics_list, regime_thresholds = _optimize_regime_thresholds(
-            regime_trade_data, cfg.spread_price, cfg
+            regime_trade_data_cumulative, cfg.spread_price, cfg
         )
         all_thresholds[h] = regime_thresholds
 
-        # --- Regime-gated PnL recomputation ---
-        # Recompute PnL using per-regime optimal thresholds instead of flat 0.5
-        # Also filter out regimes with negative EV
-        positive_ev_regimes = {
+        # --- Log final regime stats ---
+        positive_ev_regimes_final = {
             rm.regime for rm in regime_metrics_list if rm.ev > 0
         }
-        gated_pnl_parts = []
-        gated_n_trades = 0
-        gated_n_wins = 0
-
-        for regime, data_list in sorted(regime_trade_data.items()):
-            if regime not in positive_ev_regimes:
+        for regime in sorted(regime_trade_data_cumulative.keys()):
+            if regime not in positive_ev_regimes_final:
                 logger.info(
                     "  Regime %d [%dm]: SKIPPED (negative EV)", regime, h
                 )
-                continue
-
-            thresh = regime_thresholds.get(regime, 0.5)
-            all_preds = np.concatenate([d[0] for d in data_list])
-            all_moves = np.concatenate([d[2] for d in data_list])
-
-            mask = all_preds >= thresh
-            n = int(mask.sum())
-            if n > 0:
-                pnl_regime = all_moves[mask] - cfg.spread_price
-                gated_pnl_parts.append(pnl_regime)
-                gated_n_trades += n
-                gated_n_wins += int((pnl_regime > 0).sum())
+            else:
+                rm = next(r for r in regime_metrics_list if r.regime == regime)
                 logger.info(
                     "  Regime %d [%dm]: %d trades @ thresh=%.2f, EV=%.6f, WR=%.1f%%",
-                    regime, h, n, thresh,
-                    float(np.mean(pnl_regime)),
-                    (pnl_regime > 0).sum() / n * 100,
+                    regime, h, rm.n_trades, rm.optimal_threshold, rm.ev, rm.win_rate * 100,
                 )
 
-        # Use regime-gated PnL for Monte Carlo input
+        # --- Use rolling-gated PnL for Monte Carlo (no lookahead) ---
         if gated_pnl_parts:
             gated_pnl = np.concatenate(gated_pnl_parts)
             gated_ev = float(np.mean(gated_pnl))
-            gated_wr = gated_n_wins / gated_n_trades if gated_n_trades > 0 else 0.0
+            gated_wr = gated_n_wins_total / gated_n_trades_total if gated_n_trades_total > 0 else 0.0
             all_pnl[h] = gated_pnl
 
             logger.info(
-                "Horizon %dm REGIME-GATED: EV=%.6f, WR=%.1f%%, Trades=%d (from %d regimes)",
-                h, gated_ev, gated_wr * 100, gated_n_trades, len(positive_ev_regimes),
+                "Horizon %dm ROLLING-GATED: EV=%.6f, WR=%.1f%%, Trades=%d "
+                "(skip first %d folds for warmup)",
+                h, gated_ev, gated_wr * 100, gated_n_trades_total, MIN_FOLDS_FOR_THRESHOLD,
             )
         else:
             # Fallback to original PnL if no positive-EV regimes
@@ -293,6 +325,41 @@ def run_walk_forward(
         all_pnl=all_pnl,
         thresholds=all_thresholds,
     )
+
+
+def _estimate_rolling_thresholds(
+    regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    spread: float,
+    cfg,
+) -> Tuple[Dict[int, float], Dict[int, float]]:
+    """
+    Estimate per-regime thresholds from accumulated past data.
+
+    Returns:
+        (thresholds, evs) — per-regime threshold and EV estimates.
+    """
+    from quant.selection.threshold_optimizer import optimize_threshold
+
+    thresholds: Dict[int, float] = {}
+    evs: Dict[int, float] = {}
+
+    for regime, data_list in sorted(regime_trade_data.items()):
+        all_preds = np.concatenate([d[0] for d in data_list])
+        all_moves = np.concatenate([d[2] for d in data_list])
+
+        best_threshold, best_ev = optimize_threshold(
+            predictions=all_preds,
+            price_moves=all_moves,
+            spread=spread,
+            threshold_min=cfg.threshold_min,
+            threshold_max=cfg.threshold_max,
+            threshold_step=cfg.threshold_step,
+        )
+
+        thresholds[regime] = best_threshold
+        evs[regime] = best_ev
+
+    return thresholds, evs
 
 
 def _optimize_regime_thresholds(
