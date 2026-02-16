@@ -5,6 +5,10 @@ Loads production models and periodically fetches new bars from Capital.com.
 For each new bar, it computes features, detects the current regime,
 and generates a BUY/SELL/HOLD signal based on regime-gated thresholds.
 
+Includes:
+- Position sizing via Kelly criterion (quarter-Kelly, 2% cap)
+- Risk guardrails (daily loss limit, consecutive loss breaker, max trades)
+
 Usage:
     python -m quant.live.signal_generator --model-dir models/production/model_XXXXXX
     python -m quant.live.signal_generator --model-dir models/production/model_XXXXXX --once
@@ -33,6 +37,8 @@ from quant.models.trainer import TrainedModel, load_model
 from quant.models.predictor import predict_proba
 from quant.regime import gmm_regime
 from quant.regime.gmm_regime import RegimeModel
+from quant.risk.position_sizing import compute_position_size
+from quant.risk.guardrails import RiskGuardrails
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,10 +54,11 @@ REGIME_LOOKBACK = 500
 
 
 class SignalGenerator:
-    """Live signal generator with regime-gated trading."""
+    """Live signal generator with regime-gated trading, position sizing, and risk guardrails."""
 
-    def __init__(self, model_dir: Path):
+    def __init__(self, model_dir: Path, capital: float = 10000.0):
         self.model_dir = model_dir
+        self.capital = capital
 
         # Load config
         with open(model_dir / "config.json") as f:
@@ -88,9 +95,19 @@ class SignalGenerator:
         # Signal log
         self.signal_log: list = []
 
+        # Risk guardrails
+        self.guardrails = RiskGuardrails(
+            max_daily_loss=0.02,          # 2% max daily loss
+            max_consecutive_losses=3,     # Circuit breaker after 3 losses
+            max_daily_trades=10,          # Max 10 trades per day
+            cooldown_minutes=30,          # 30 min cooldown after breaker
+        )
+        self.guardrails.initialize(capital)
+
         logger.info(
-            "Signal generator initialized: horizon=%dm, tradeable regimes=%s",
+            "Signal generator initialized: horizon=%dm, capital=$%.0f, tradeable regimes=%s",
             self.horizon,
+            self.capital,
             self.tradeable_regimes,
         )
         for r, cfg in sorted(self.regime_config.items()):
@@ -118,13 +135,45 @@ class SignalGenerator:
 
         return df
 
+    def _compute_position_size(self, regime: int) -> dict:
+        """Compute position size using Kelly criterion for the given regime."""
+        cfg = self.regime_config.get(regime, {})
+        win_rate = cfg.get("win_rate", 0.5)
+        ev = cfg.get("ev", 0.0)
+
+        # Estimate avg win/loss from EV and win rate
+        # EV = WR * avg_win - (1-WR) * avg_loss
+        # Using spread as proxy for avg_loss
+        avg_loss = self.spread * 2  # conservative estimate
+        if win_rate > 0:
+            avg_win = (ev + (1 - win_rate) * avg_loss) / win_rate
+        else:
+            avg_win = 0.0
+
+        pos = compute_position_size(
+            capital=self.capital,
+            win_rate=win_rate,
+            avg_win=max(avg_win, 0),
+            avg_loss=avg_loss,
+            kelly_divisor=4.0,        # Quarter-Kelly for safety
+            max_risk_fraction=0.02,   # 2% max risk per trade
+        )
+
+        return {
+            "lot_size": pos.units,
+            "risk_fraction": round(pos.fraction, 4),
+            "kelly_raw": round(pos.kelly_raw, 4),
+            "kelly_capped": round(pos.kelly_capped, 4),
+            "reason": pos.reason,
+        }
+
     def generate_signal(self, df: pd.DataFrame) -> dict:
         """
         Generate a trading signal from recent bar data.
 
         Returns:
-            Dict with keys: signal, probability, regime, threshold,
-            regime_tradeable, timestamp, close_price
+            Dict with signal, probability, regime, threshold, position sizing,
+            and risk guardrail status.
         """
         # Feature engineering
         df_filtered = filter_sessions(df)
@@ -154,8 +203,14 @@ class SignalGenerator:
         X = latest[self.feature_cols]
         proba = float(predict_proba(self.model, X)[0])
 
+        # Check risk guardrails
+        can_trade, risk_reason = self.guardrails.can_trade()
+
         # Determine signal
-        if not regime_tradeable:
+        if not can_trade:
+            signal_type = "HOLD"
+            reason = f"Risk guardrail: {risk_reason}"
+        elif not regime_tradeable:
             signal_type = "HOLD"
             reason = f"Regime {current_regime} has negative historical EV"
         elif proba >= threshold:
@@ -168,6 +223,13 @@ class SignalGenerator:
             signal_type = "HOLD"
             reason = f"P(up)={proba:.3f} below threshold {threshold:.2f}"
 
+        # Compute position size (only for actionable signals)
+        position = {}
+        if signal_type in ("BUY", "SELL"):
+            position = self._compute_position_size(current_regime)
+
+        risk_status = self.guardrails.get_status()
+
         result = {
             "timestamp": str(latest_ts),
             "close_price": close_price,
@@ -179,10 +241,24 @@ class SignalGenerator:
             "threshold": threshold,
             "reason": reason,
             "horizon": self.horizon,
+            "position": position,
+            "risk_status": risk_status,
         }
 
         self.signal_log.append(result)
         return result
+
+    def record_trade_result(self, pnl: float, signal_type: str, regime: int, proba: float) -> None:
+        """Record a completed trade for risk tracking."""
+        from quant.risk.guardrails import TradeRecord
+        trade = TradeRecord(
+            timestamp=datetime.now(timezone.utc),
+            pnl=pnl,
+            signal=signal_type,
+            regime=regime,
+            probability=proba,
+        )
+        self.guardrails.record_trade(trade)
 
     def run_once(self) -> dict:
         """Fetch data and generate a single signal."""
@@ -190,23 +266,39 @@ class SignalGenerator:
         df = self.fetch_recent_bars()
         logger.info("Received %d bars, latest: %s", len(df), df.index[-1])
 
-        signal = self.generate_signal(df)
+        sig = self.generate_signal(df)
 
         # Pretty print
-        emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}.get(signal["signal"], "❓")
+        emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪"}.get(sig["signal"], "❓")
         logger.info(
             "%s SIGNAL: %s @ %.5f | P(up)=%.3f | Regime=%d (%s) | Thresh=%.2f",
             emoji,
-            signal["signal"],
-            signal["close_price"],
-            signal["probability"],
-            signal["regime"],
-            "tradeable" if signal["regime_tradeable"] else "SKIP",
-            signal["threshold"],
+            sig["signal"],
+            sig["close_price"],
+            sig["probability"],
+            sig["regime"],
+            "tradeable" if sig["regime_tradeable"] else "SKIP",
+            sig["threshold"],
         )
-        logger.info("  Reason: %s", signal["reason"])
+        logger.info("  Reason: %s", sig["reason"])
 
-        return signal
+        if sig["position"]:
+            logger.info(
+                "  Position: %.2f lots | Kelly=%.3f | Risk=%.1f%%",
+                sig["position"]["lot_size"],
+                sig["position"]["kelly_raw"],
+                sig["position"]["risk_fraction"] * 100,
+            )
+
+        risk = sig["risk_status"]
+        logger.info(
+            "  Risk: %d trades today | consec_losses=%d | can_trade=%s",
+            risk["trades_today"],
+            risk["consecutive_losses"],
+            risk["can_trade"],
+        )
+
+        return sig
 
     def run_loop(self, interval_seconds: int = 60) -> None:
         """
@@ -277,6 +369,12 @@ def main() -> None:
         default=60,
         help="Seconds between signals (default: 60)",
     )
+    parser.add_argument(
+        "--capital",
+        type=float,
+        default=10000.0,
+        help="Account capital in USD (default: 10000)",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model_dir)
@@ -284,7 +382,7 @@ def main() -> None:
         logger.error("Model directory not found: %s", model_dir)
         sys.exit(1)
 
-    gen = SignalGenerator(model_dir)
+    gen = SignalGenerator(model_dir, capital=args.capital)
 
     if args.once:
         gen.run_once()
