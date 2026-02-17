@@ -20,6 +20,7 @@ from quant.features import (
     microstructure,
     session_context,
     cross_timeframe,
+    spread_features,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,15 @@ _FEATURE_MODULES = [
     microstructure,
     session_context,
     cross_timeframe,
+    spread_features,
 ]
 
-# Columns that are NOT features (original OHLCV + intermediate EMAs + labels + regime)
-_NON_FEATURE_COLS = {"open", "high", "low", "close", "volume", "ema_5", "ema_20", "ema_50"}
+# Columns that are NOT features (original OHLCV + intermediate EMAs + labels + regime + bid/ask/spread)
+_NON_FEATURE_COLS = {
+    "open", "high", "low", "close", "volume", 
+    "ema_5", "ema_20", "ema_50",
+    "bid_close", "ask_close", "spread",
+}
 _NON_FEATURE_PREFIXES = ("label_", "regime")
 
 

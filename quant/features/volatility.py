@@ -70,4 +70,20 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     parkinson = log_hl ** 2 / (4 * np.log(2))
     out["parkinson_vol"] = parkinson.rolling(window=20).mean().apply(np.sqrt)
 
+    # --- Realized Volatility (5-bar) ---
+    # Standard deviation of returns over 5 bars
+    out["realized_vol_5"] = returns.rolling(window=5).std()
+
+    # --- Volatility of Volatility ---
+    # Rolling standard deviation of ATR (instability of volatility)
+    out["vol_of_vol"] = out["atr_14"].rolling(window=20).std() / out["atr_14"]
+
+    # --- Garman-Klass Volatility ---
+    # Efficient estimator using OHLC
+    # sigma^2 = 0.5 * (H-L)^2 - (2*ln(2)-1) * (C-O)^2
+    log_hl = (np.log(df["high"] / df["low"])) ** 2
+    log_co = (np.log(df["close"] / df["open"])) ** 2
+    gk_var = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+    out["garman_klass_vol"] = np.sqrt(gk_var)
+
     return out

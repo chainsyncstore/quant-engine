@@ -6,6 +6,7 @@ All features are computed from closed candles only — no lookahead.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 
@@ -35,5 +36,14 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
 
     # Momentum acceleration = change in roc_5
     out["momentum_accel"] = out["roc_5"].diff()
+
+    # --- Momentum Divergence ---
+    # Sign disagreement between fast (5) and slow (20) momentum
+    # Divergence = 1 if signs differ (reversal signal), 0 otherwise
+    out["roc_divergence_5_20"] = np.where(
+        np.sign(out["roc_5"]) != np.sign(out["roc_20"]),
+        1.0,
+        0.0
+    )
 
     return out

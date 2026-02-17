@@ -79,15 +79,17 @@ class CapitalClient:
         date_to: datetime,
         epic: Optional[str] = None,
         resolution: Optional[str] = None,
+        cache_dir: Optional[Path] = None,
     ) -> pd.DataFrame:
         """
-        Fetch historical OHLCV data with automatic pagination.
+        Fetch historical OHLCV data with automatic pagination and caching.
 
         Args:
             date_from: Start datetime (UTC).
             date_to: End datetime (UTC).
             epic: Instrument epic (default: EURUSD from config).
             resolution: Bar resolution (default: MINUTE from config).
+            cache_dir: Directory to save/load partial chunks.
 
         Returns:
             DataFrame with columns [open, high, low, close, volume]
@@ -99,38 +101,73 @@ class CapitalClient:
         all_frames: list[pd.DataFrame] = []
         current_from = date_from
 
+        if cache_dir:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
         while current_from < date_to:
-            self._throttle()
+            # Check cache first
+            chunk_loaded = False
+            if cache_dir:
+                # Filename based on start time (safe for filesystem)
+                ts_str = current_from.strftime("%Y%m%d_%H%M%S")
+                cache_file = cache_dir / f"chunk_{ts_str}.parquet"
+                
+                if cache_file.exists():
+                    try:
+                        chunk = pd.read_parquet(cache_file)
+                        all_frames.append(chunk)
+                        last_ts = chunk.index[-1]
+                        current_from = last_ts.to_pydatetime() + pd.Timedelta(minutes=1)
+                        logger.info(f"Loaded cached chunk: {ts_str} ({len(chunk)} bars)")
+                        chunk_loaded = True
+                    except Exception as e:
+                        logger.warning(f"Failed to load cache {cache_file}: {e}")
 
-            url = f"{self._cfg.base_url}/api/v1/prices/{epic}"
-            params = {
-                "resolution": resolution,
-                "max": self._cfg.max_bars_per_request,
-                "from": current_from.strftime("%Y-%m-%dT%H:%M:%S"),
-                # "to" is not supported with "max" + "from" for minute resolution
-            }
+            if not chunk_loaded:
+                self._throttle()
 
-            resp = requests.get(url, params=params, headers=self._headers(), timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
+                url = f"{self._cfg.base_url}/api/v1/prices/{epic}"
+                params = {
+                    "resolution": resolution,
+                    "max": self._cfg.max_bars_per_request,
+                    "from": current_from.strftime("%Y-%m-%dT%H:%M:%S"),
+                }
 
-            prices = data.get("prices", [])
-            if not prices:
-                break
+                try:
+                    resp = requests.get(url, params=params, headers=self._headers(), timeout=30)
+                    resp.raise_for_status()
+                    data = resp.json()
+                except Exception as e:
+                    logger.error(f"Request failed at {current_from}: {e}")
+                    # If we have gathered some data, return it partial? 
+                    # Or raise? Better to raise, but save what we have? 
+                    # We are saving chunks, so "what we have" is safe on disk.
+                    raise e
 
-            chunk = self._parse_prices(prices)
-            all_frames.append(chunk)
+                prices = data.get("prices", [])
+                if not prices:
+                    break
 
-            # Move cursor forward past the last bar received
-            last_ts = chunk.index[-1]
-            current_from = last_ts.to_pydatetime() + pd.Timedelta(minutes=1)
+                chunk = self._parse_prices(prices)
+                
+                # Save to cache
+                if cache_dir:
+                    ts_str = current_from.strftime("%Y%m%d_%H%M%S")
+                    cache_file = cache_dir / f"chunk_{ts_str}.parquet"
+                    chunk.to_parquet(cache_file)
 
-            logger.info(
-                "Fetched %d bars up to %s (%d total so far)",
-                len(chunk),
-                last_ts,
-                sum(len(f) for f in all_frames),
-            )
+                all_frames.append(chunk)
+
+                # Move cursor forward
+                last_ts = chunk.index[-1]
+                current_from = last_ts.to_pydatetime() + pd.Timedelta(minutes=1)
+
+                logger.info(
+                    "Fetched %d bars up to %s (%d total so far)",
+                    len(chunk),
+                    last_ts,
+                    sum(len(f) for f in all_frames),
+                )
 
         if not all_frames:
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -173,6 +210,9 @@ class CapitalClient:
                     "low": (bid_l + ask_l) / 2,
                     "close": (bid_c + ask_c) / 2,
                     "volume": float(p.get("lastTradedVolume", 0)),
+                    "bid_close": bid_c,
+                    "ask_close": ask_c,
+                    "spread": ask_c - bid_c,
                 }
             )
 

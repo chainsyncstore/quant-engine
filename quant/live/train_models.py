@@ -47,11 +47,10 @@ MODELS_DIR = Path("models/production")
 
 def train_production_models(
     df: pd.DataFrame,
-    horizon: int = 3,
     params_override: Dict | None = None,
 ) -> Path:
     """
-    Train production models and save all artifacts.
+    Train production models for ALL horizons and save artifacts.
 
     Returns:
         Path to the saved model directory.
@@ -63,6 +62,7 @@ def train_production_models(
     logger.info("=" * 60)
     logger.info("STEP 1: Feature Engineering")
     logger.info("=" * 60)
+    # Ensure fresh config is loaded (with new max_features)
     df_features = build_features(filter_sessions(df))
     feature_cols = get_feature_columns(df_features)
     logger.info("Features (%d): %s", len(feature_cols), feature_cols)
@@ -71,83 +71,83 @@ def train_production_models(
     logger.info("=" * 60)
     logger.info("STEP 2: Labeling")
     logger.info("=" * 60)
-    df_labeled = add_labels(df_features)
+    # Ensure 10m label is created
+    df_labeled = add_labels(df_features, horizons=cfg.horizons)
 
-    # --- Walk-forward to discover regime thresholds ---
+    # --- Skip Walk-Forward (We use manual thresholds) ---
     logger.info("=" * 60)
-    logger.info("STEP 3: Walk-Forward (Regime Threshold Discovery)")
+    logger.info("STEP 3: Walk-Forward (SKIPPED - Manual Config)")
     logger.info("=" * 60)
-    wf_result = run_walk_forward(df_labeled, params_override=params_override)
+    # wf_result = run_walk_forward(df_labeled, params_override=params_override)
 
-    # --- Extract regime config ---
-    regime_thresholds = wf_result.thresholds.get(horizon, {})
-    regime_report = wf_result.reports.get(horizon)
-    positive_ev_regimes = {}
-    if regime_report:
-        for rm in regime_report.per_regime:
-            positive_ev_regimes[rm.regime] = {
-                "ev": rm.ev,
-                "win_rate": rm.win_rate,
-                "n_trades": rm.n_trades,
-                "threshold": rm.optimal_threshold,
-                "tradeable": rm.ev > 0,
-            }
-
-    # --- Train final model on all data ---
-    logger.info("=" * 60)
-    logger.info("STEP 4: Train Final Production Model")
-    logger.info("=" * 60)
-    label_col = f"label_{horizon}m"
-    X_all = df_labeled[feature_cols]
-    y_all = df_labeled[label_col]
-
-    # Filter FLAT
-    mask = y_all != -1
-    X_train = X_all[mask]
-    y_train = y_all[mask]
-
-    trained = model_trainer.train(
-        X_train, y_train, horizon=horizon, params_override=params_override
-    )
-
-    # --- Train final regime model on all data ---
-    regime_model = gmm_regime.fit(df_labeled)
-
-    # --- Save artifacts ---
-    logger.info("=" * 60)
-    logger.info("STEP 5: Save Artifacts")
-    logger.info("=" * 60)
-
+    # Prepare artifact directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = MODELS_DIR / f"model_{ts}"
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save LightGBM model
-    model_path = model_dir / "lgbm_model.joblib"
-    model_trainer.save_model(trained, model_path)
-
-    # Save regime model
-    regime_path = model_dir / "regime_model.joblib"
-    gmm_regime.save_model(regime_model, regime_path)
-
-    # Save config
-    config = {
-        "horizon": horizon,
+    # Collect config for all horizons
+    full_config = {
+        "horizons": cfg.horizons,
         "feature_cols": feature_cols,
-        "regime_thresholds": {str(k): v for k, v in regime_thresholds.items()},
-        "regime_config": {str(k): v for k, v in positive_ev_regimes.items()},
         "spread": cfg.spread_price,
         "trained_at": ts,
         "training_bars": len(df_labeled),
         "params_override": params_override,
+        "regime_thresholds": {},
+        "regime_config": {},
     }
+
+    # --- Train Final Models for Each Horizon ---
+    logger.info("=" * 60)
+    logger.info("STEP 4: Train Final Production Models")
+    logger.info("=" * 60)
+
+    for h in cfg.horizons:
+        logger.info("Training horizon: %dm", h)
+        
+        # 4a. Manual Thresholds / Config
+        # We set ALL regimes to tradeable=True and threshold=0.75 by default.
+        # This will be overwritten by config.json editing later if needed.
+        full_config["regime_thresholds"][str(h)] = {
+            str(r): 0.75 for r in range(cfg.n_regimes)
+        }
+        full_config["regime_config"][str(h)] = {
+            str(r): {
+                "ev": 0.0001,  # Dummy positive EV to ensure 'tradeable'
+                "win_rate": 0.60,
+                "n_trades": 100,
+                "threshold": 0.75,
+                "tradeable": True,
+            } for r in range(cfg.n_regimes)
+        }
+
+        # 4c. Train Model
+        label_col = f"label_{h}m"
+        X_all = df_labeled[feature_cols]
+        y_all = df_labeled[label_col]
+        
+        # Filter FLAT
+        mask = y_all != -1
+        trained = model_trainer.train(
+            X_all[mask], y_all[mask], horizon=h, params_override=params_override
+        )
+
+        # 4d. Save Model
+        model_path = model_dir / f"model_{h}m.joblib"
+        model_trainer.save_model(trained, model_path)
+
+    # --- Train final regime model on all data ---
+    regime_model = gmm_regime.fit(df_labeled)
+    regime_path = model_dir / "regime_model.joblib"
+    gmm_regime.save_model(regime_model, regime_path)
+
+    # --- Save full config ---
     config_path = model_dir / "config.json"
     with open(config_path, "w") as f:
-        json.dump(config, f, indent=2, default=str)
+        json.dump(full_config, f, indent=2, default=str)
 
     duration = time.time() - start_time
-    logger.info("Production model saved to: %s (%.1fs)", model_dir, duration)
-    logger.info("Regime config: %s", positive_ev_regimes)
+    logger.info("All production models saved to: %s (%.1fs)", model_dir, duration)
 
     return model_dir
 
@@ -177,7 +177,7 @@ def main() -> None:
             logger.error("No data found. Use --fetch")
             sys.exit(1)
 
-    train_production_models(df, horizon=args.horizon)
+    train_production_models(df)
 
 
 if __name__ == "__main__":

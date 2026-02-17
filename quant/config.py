@@ -77,7 +77,7 @@ class ResearchConfig:
     spread_price: float = 0.00008  # 0.8 * 0.0001
 
     # Horizons to evaluate
-    horizons: List[int] = field(default_factory=lambda: [3, 5])
+    horizons: List[int] = field(default_factory=lambda: [3, 5, 10])
 
     # Walk-forward windows (in bars = 1-minute candles)
     wf_train_bars: int = 15_000
@@ -92,7 +92,7 @@ class ResearchConfig:
     n_regimes: int = 4
 
     # Feature budget
-    max_features: int = 40
+    max_features: int = 55
 
     # Model hyperparameters
     lgbm_n_estimators: int = 500

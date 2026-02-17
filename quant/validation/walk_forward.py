@@ -343,6 +343,9 @@ def _estimate_rolling_thresholds(
     thresholds: Dict[int, float] = {}
     evs: Dict[int, float] = {}
 
+    THRESHOLD_PRIOR = 0.65
+    PRIOR_STRENGTH = 50.0  # equivalent trade count
+
     for regime, data_list in sorted(regime_trade_data.items()):
         all_preds = np.concatenate([d[0] for d in data_list])
         all_moves = np.concatenate([d[2] for d in data_list])
@@ -356,8 +359,25 @@ def _estimate_rolling_thresholds(
             threshold_step=cfg.threshold_step,
         )
 
-        thresholds[regime] = best_threshold
-        evs[regime] = best_ev
+        # --- Bayesian Shrinkage ---
+        # Dampen noisy estimates from low-sample folds toward a safe prior.
+        # shrunk = (n * best + prior_weight * prior) / (n + prior_weight)
+        
+        # Count trades at the empirical best threshold
+        n_trades = (all_preds >= best_threshold).sum()
+        
+        if n_trades > 0:
+            shrunk_threshold = (
+                (n_trades * best_threshold) + (PRIOR_STRENGTH * THRESHOLD_PRIOR)
+            ) / (n_trades + PRIOR_STRENGTH)
+        else:
+            shrunk_threshold = THRESHOLD_PRIOR
+
+        # Round to nearest 0.05 step to stay on grid
+        shrunk_threshold = round(shrunk_threshold / 0.05) * 0.05
+
+        thresholds[regime] = shrunk_threshold
+        evs[regime] = best_ev  # EV is historical; we don't shrink it, just the decision boundary
 
     return thresholds, evs
 

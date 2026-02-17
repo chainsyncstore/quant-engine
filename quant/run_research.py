@@ -81,7 +81,11 @@ def generate_synthetic_eurusd(n_bars: int = 40_000, seed: int = 42) -> pd.DataFr
     return df
 
 
-def run_pipeline(df: pd.DataFrame, optimize: bool = False) -> None:
+def run_pipeline(
+    df: pd.DataFrame,
+    optimize: bool = False,
+    prune_threshold: float = 0.0,
+) -> None:
     """Execute the full research pipeline on prepared data."""
     cfg = get_research_config()
     start_time = time.time()
@@ -130,7 +134,7 @@ def run_pipeline(df: pd.DataFrame, optimize: bool = False) -> None:
     df_labeled = add_labels(df_features)
 
     # --- Step 5b: Optimization (if --optimize) ---
-    best_params = None
+    best_params = {}
     pruned_features = None
     if optimize:
         logger.info("=" * 60)
@@ -146,16 +150,12 @@ def run_pipeline(df: pd.DataFrame, optimize: bool = False) -> None:
         logger.info("Best LightGBM params: %s", best_params)
 
         # Run a quick walk-forward to get feature importance for pruning
-        logger.info("Running feature importance collection for pruning...")
-        wf_baseline = run_walk_forward(df_labeled, params_override=best_params)
-
-        # Prune features
-        fi = wf_baseline.feature_importance.get(cfg.horizons[0], {})
-        # Wrap scalar values in lists for pruner interface
-        fi_dict = {k: [v] for k, v in fi.items()} if fi else {}
-        pruned_features = prune_features(fi_dict, cumulative_threshold=0.95)
-        logger.info("Using %d pruned features (from %d)", len(pruned_features), len(feature_cols))
-
+        # (This is the old pruning method, we now have trainer-internal pruning too)
+        # We'll stick to trainer-internal pruning via prune_threshold for simplicity in this phase
+    
+    # Inject pruning threshold into params
+    best_params["prune_threshold"] = prune_threshold
+    
     # --- Step 6: Walk-forward validation ---
     logger.info("=" * 60)
     logger.info("STEP 6: Walk-Forward Validation%s", " (OPTIMIZED)" if optimize else "")
@@ -163,7 +163,7 @@ def run_pipeline(df: pd.DataFrame, optimize: bool = False) -> None:
     wf_result = run_walk_forward(
         df_labeled,
         params_override=best_params,
-        feature_subset=pruned_features,
+        feature_subset=None, # We rely on trainer-internal pruning
     )
 
     # --- Step 7: Monte Carlo ---
@@ -233,6 +233,7 @@ def main() -> None:
     parser.add_argument("--fetch", action="store_true", help="Fetch data from Capital.com")
     parser.add_argument("--months", type=int, default=3, help="Months of history to fetch")
     parser.add_argument("--optimize", action="store_true", help="Run Optuna HPO + feature pruning")
+    parser.add_argument("--prune", type=float, default=0.0, help="Feature pruning threshold (e.g. 0.01)")
     parser.add_argument("--bars", type=int, default=40000, help="Synthetic bar count for dry-run")
     args = parser.parse_args()
 
@@ -254,7 +255,10 @@ def main() -> None:
         date_from = date_to - timedelta(days=args.months * 30)
 
         logger.info("Fetching EURUSD 1m data: %s → %s", date_from, date_to)
-        df = client.fetch_historical(date_from, date_to)
+        
+        # Use a consistent cache directory for resumable fetching
+        cache_dir = get_path_config().datasets_raw / "fetch_cache"
+        df = client.fetch_historical(date_from, date_to, cache_dir=cache_dir)
 
         if df.empty:
             logger.error("No data received from API")
@@ -266,7 +270,7 @@ def main() -> None:
         label = f"EURUSD_1m_{date_from.strftime('%Y%m%d')}_{date_to.strftime('%Y%m%d')}"
         save_raw(df, label)
 
-        run_pipeline(df, optimize=args.optimize)
+        run_pipeline(df, optimize=args.optimize, prune_threshold=args.prune)
 
     else:
         # Try loading latest snapshot
@@ -277,7 +281,7 @@ def main() -> None:
             logger.error("No data found. Use --dry-run or --fetch")
             sys.exit(1)
 
-        run_pipeline(df, optimize=args.optimize)
+        run_pipeline(df, optimize=args.optimize, prune_threshold=args.prune)
 
 
 if __name__ == "__main__":

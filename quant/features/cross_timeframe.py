@@ -67,4 +67,22 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     mid_vs_long = np.sign(ema_20 - ema_50)
     out["trend_alignment"] = short_vs_mid * mid_vs_long
 
+    # --- Distances ---
+    # Safe ATR for normalization (avoid division by zero)
+    safe_atr = atr_14.replace(0, np.nan)
+    
+    out["dist_ema_5_20"] = (ema_5 - ema_20) / safe_atr
+    out["dist_ema_20_50"] = (ema_20 - ema_50) / safe_atr
+    out["dist_close_ema_20"] = (close - ema_20) / safe_atr
+
+    # --- EMA Slope (Trend Strength) ---
+    # Normalized slope of long-term EMA
+    out["ema_slope_50"] = ema_50.diff() / safe_atr
+
+    # --- Mean Reversion Score ---
+    # Distance from 100-bar mean (proxy via EMA_50 * 2 smoothing)
+    # Z-score-like: (Close - Mean) / Std
+    # Uses 50-bar EMA as 'mean' proxy and ATR as 'std' proxy
+    out["mean_reversion_score"] = (close - ema_50) / safe_atr
+
     return out

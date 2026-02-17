@@ -48,4 +48,26 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     avg_range = candle_range.rolling(window=20).mean()
     out["high_low_range_ratio"] = np.where(avg_range > 0, candle_range / avg_range, 1.0)
 
+    # --- Trade Imbalance (10-bar) ---
+    # Proxy: Ratio of up-candle volume to down-candle volume
+    # > 1 = Buying pressure, < 1 = Selling pressure
+    up_vol = np.where(returns > 0, df["volume"], 0)
+    down_vol = np.where(returns < 0, df["volume"], 0)
+    
+    roll_up = pd.Series(up_vol).rolling(window=10).sum()
+    roll_down = pd.Series(down_vol).rolling(window=10).sum()
+    out["trade_imbalance_10"] = np.where(roll_down > 0, roll_up / roll_down, 1.0)
+    out["trade_imbalance_10"] = np.log(out["trade_imbalance_10"] + 1e-9)  # Log scale for stability
+
+    # --- Amihud Illiquidity ---
+    # |Return| / Volume -> Price impact per unit of volume
+    # High = Illiquid / Informed trading
+    abs_ret = returns.abs()
+    volume = df["volume"].replace(0, 1)  # Avoid div-by-zero
+    out["amihud_illiquidity"] = abs_ret / volume
+
+    # --- Kyle's Lambda (proxy) ---
+    # Smoothed Amihud (20-bar) -> Market depth inverse
+    out["kyle_lambda_20"] = out["amihud_illiquidity"].rolling(window=20).mean()
+
     return out
