@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 class CapitalClient:
     """Client for Capital.com REST API v1."""
 
-    def __init__(self) -> None:
-        self._cfg = get_api_config()
+    def __init__(self, config: Optional[CapitalAPIConfig] = None) -> None:
+        self._cfg = config if config else get_api_config()
         self._session_token: Optional[str] = None
         self._cst: Optional[str] = None
         self._last_request_time: float = 0.0

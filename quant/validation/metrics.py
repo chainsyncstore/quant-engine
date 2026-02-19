@@ -63,7 +63,7 @@ def compute_trade_pnl(
     actuals: np.ndarray,
     price_moves: np.ndarray,
     threshold: float,
-    spread: float,
+    spread: float | np.ndarray,
 ) -> np.ndarray:
     """
     Compute per-trade PnL for trades taken above threshold.
@@ -84,11 +84,15 @@ def compute_trade_pnl(
 
     # Direction: predict up if P(up) >= threshold
     traded_moves = price_moves[trade_mask]
-    traded_preds = predictions[trade_mask]
-
-    # PnL: if we predict up (P >= threshold), we go long
-    # PnL = move - spread (if correct direction), = move - spread (always pay spread)
-    pnl = traded_moves - spread  # long bias: profit = actual move - cost
+    
+    # Handle dynamic spread (array) or static spread (float)
+    if isinstance(spread, np.ndarray):
+        if len(spread) != len(predictions):
+            raise ValueError("Spread array length must match predictions length")
+        traded_spread = spread[trade_mask]
+        pnl = traded_moves - traded_spread
+    else:
+        pnl = traded_moves - spread  # long bias: profit = actual move - cost
 
     return pnl
 

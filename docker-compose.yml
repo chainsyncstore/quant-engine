@@ -1,0 +1,19 @@
+
+version: '3.8'
+
+services:
+  quant_bot:
+    build: .
+    image: quant_bot:latest
+    container_name: quant_bot
+    restart: unless-stopped
+    volumes:
+      - ./models:/app/models
+      - ./quant_bot.db:/app/quant_bot.db
+      - ./signal_log.json:/app/signal_log.json
+    environment:
+      # Obtain these from @BotFather and @userinfobot
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+      # Generate a random key for encryption (e.g. from python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+      - BOT_MASTER_KEY=${BOT_MASTER_KEY}

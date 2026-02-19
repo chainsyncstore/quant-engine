@@ -75,6 +75,10 @@ class ResearchConfig:
     # Spread (pips → price units for EURUSD: 1 pip = 0.0001)
     spread_pips: float = 0.8
     spread_price: float = 0.00008  # 0.8 * 0.0001
+    
+    # Pessimistic Execution (Stop Loss)
+    stop_loss_pips: float = 10.0
+    stop_loss_price: float = 0.0010  # 10.0 * 0.0001
 
     # Horizons to evaluate
     horizons: List[int] = field(default_factory=lambda: [3, 5, 10])

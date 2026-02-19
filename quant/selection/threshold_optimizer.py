@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def optimize_threshold(
     predictions: np.ndarray,
     price_moves: np.ndarray,
-    spread: float,
+    spread: float | np.ndarray,
     threshold_min: float = 0.50,
     threshold_max: float = 0.80,
     threshold_step: float = 0.05,
@@ -28,7 +28,7 @@ def optimize_threshold(
     Args:
         predictions: Calibrated P(up) for each bar.
         price_moves: Actual price moves.
-        spread: Spread in price units.
+        spread: Spread in price units (float or array).
         threshold_min: Lower bound of sweep.
         threshold_max: Upper bound of sweep.
         threshold_step: Step size.
@@ -41,7 +41,7 @@ def optimize_threshold(
     best_ev = -np.inf
     best_n = 0
 
-    thresholds = np.arange(threshold_min, threshold_max + threshold_step / 2, threshold_step)
+    thresholds = np.round(np.arange(threshold_min, threshold_max + threshold_step / 2, threshold_step), 2)
 
     for t in thresholds:
         mask = predictions >= t
@@ -50,7 +50,10 @@ def optimize_threshold(
         if n_trades < 10:  # minimum trade count for reliability
             continue
 
-        pnl = price_moves[mask] - spread
+        if isinstance(spread, np.ndarray):
+            pnl = price_moves[mask] - spread[mask]
+        else:
+            pnl = price_moves[mask] - spread
         ev = float(np.mean(pnl))
 
         if ev > best_ev:

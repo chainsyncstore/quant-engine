@@ -29,7 +29,9 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from quant.config import get_research_config
+from quant.config import get_research_config, CapitalAPIConfig
+from quant.risk.volatility_guard import VolatilityGuard
+from quant.risk.volatility_guard import VolatilityGuard
 from quant.data.capital_client import CapitalClient
 from quant.data.session_filter import filter_sessions
 from quant.features.pipeline import build_features, get_feature_columns
@@ -56,10 +58,11 @@ REGIME_LOOKBACK = 500
 class SignalGenerator:
     """Live signal generator with regime-gated trading, position sizing, and risk guardrails."""
 
-    def __init__(self, model_dir: Path, capital: float = 10000.0, horizon: int = 10):
+    def __init__(self, model_dir: Path, capital: float = 10000.0, horizon: int = 10, api_config: Optional[CapitalAPIConfig] = None):
         self.model_dir = model_dir
         self.capital = capital
         self.horizon = horizon
+        self.api_config = api_config
 
         # Load config
         with open(model_dir / "config.json") as f:
@@ -121,7 +124,7 @@ class SignalGenerator:
         )
 
         # API client
-        self.client = CapitalClient()
+        self.client = CapitalClient(config=self.api_config)
         self._authenticated = False
 
         # Signal log
@@ -222,6 +225,38 @@ class SignalGenerator:
         latest = df_features.iloc[[-1]]
         latest_ts = latest.index[0]
         close_price = float(latest["close"].iloc[0])
+
+        # --- Volatility Guard ---
+        # Initialize and fit on the full history available in df_features
+        if "realized_vol_5" in df_features.columns:
+            vol_guard = VolatilityGuard(percentile=0.95)
+            # Use all available data to estimate the percentile
+            vol_guard.fit(df_features, vol_col="realized_vol_5")
+            
+            # Check most recent bar
+            last_vol = df_features["realized_vol_5"].iloc[-1]
+            if not vol_guard.check(last_vol):
+                msg = f"⛔ VOLATILITY LOCKOUT: Current={last_vol:.5f} > Thresh={vol_guard.threshold:.5f}"
+                logger.warning(msg)
+                
+                # Return HOLD signal immediately
+                risk_status = self.guardrails.get_status()
+                result = {
+                    "timestamp": str(latest_ts),
+                    "close_price": close_price,
+                    "signal": "HOLD",
+                    "probability": 0.0,
+                    "regime": -1, # Unknown/Skipped
+                    "regime_probability": 0.0,
+                    "regime_tradeable": False,
+                    "threshold": 0.0,
+                    "reason": msg,
+                    "horizon": self.horizon,
+                    "position": {},
+                    "risk_status": risk_status,
+                }
+                self.signal_log.append(result)
+                return result
 
         # Detect regime
         labels, probas = gmm_regime.predict(self.regime_model, latest)

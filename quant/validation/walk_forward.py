@@ -98,9 +98,10 @@ def run_walk_forward(
 
         # --- Rolling regime data: accumulates across folds ---
         # Used for threshold estimation on PAST data only
-        regime_trade_data_cumulative: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]] = {}
+        # Tuple: (predictions, actuals, price_moves, costs)
+        regime_trade_data_cumulative: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]] = {}
         # Per-fold current data for gated PnL computation
-        fold_regime_data: List[Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
+        fold_regime_data: List[Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]] = []
 
         # --- Rolling gated PnL: computed per-fold using past thresholds ---
         gated_pnl_parts: List[np.ndarray] = []
@@ -156,24 +157,123 @@ def run_walk_forward(
             price_moves_raw = test_df["close"].shift(-h).values - test_df["close"].values
 
             # Trim to valid rows (drop NaN from forward shift at tail)
-            valid_len = len(test_df) - h
-            price_moves = price_moves_raw[:valid_len]
+            # --- Pessimistic Execution: Check Intra-bar Stop Loss ---
+            # If Low drops below SL within h bars, we default to -SL loss.
+            # rolling(h).min() covers [t-h+1, t]. shift(-h) aligns it to [t+1, t+h].
+            # Note: This is an approximation. Ideally we check High/Low path.
+            # But rolling min is "worst case lowest price" in the future window.
+            if "low" in test_df.columns:
+                future_lows = test_df["low"].rolling(window=h).min().shift(-h).values
+                # Align with valid_len (which is len(test_df) - h)
+                future_lows = future_lows[:valid_len]
+                
+                # Check against SL
+                # Entry is at Close[t]
+                entry_prices = test_df["close"].values[:valid_len]
+                sl_price = cfg.stop_loss_price
+                
+                # Mask where Low < Entry - SL
+                sl_hit_mask = future_lows < (entry_prices - sl_price)
+                
+                # Verify length match
+                # price_moves_raw length is len(test_df) (with NaNs at end).
+                # We need to slice price_moves_raw to valid_len first?
+                # Line 159: valid_len = len(test_df) - h
+                # price_moves = price_moves_raw[:valid_len]
+                
+                # Apply SL to price_moves (in-place or copy)
+                # price_moves is currently derived from price_moves_raw[:valid_len]
+                
+                # Logic: If SL hit, PnL = -SL (ignoring spread for a moment, spread is subtracted later)
+                # Wait, price_move is (Exit - Entry).
+                # If SL hit, Exit = Entry - SL. So price_move = -SL.
+                
+                # We apply this to the generic price_moves vector.
+                # This assumes we are LONG. (Since we predict P(Up)).
+                # If we were Shorting, we'd check High > Entry + SL.
+                
+                price_moves = price_moves_raw[:valid_len].copy()
+                n_sl = sl_hit_mask.sum()
+                if n_sl > 0:
+                    # logger.info(f"Fold {fold_idx}: Pessimistic Execution applied to {n_sl} bars.")
+                    price_moves[sl_hit_mask] = -sl_price
+            else:
+                price_moves = price_moves_raw[:valid_len]
+            
             probas_valid = probas[:valid_len]
             y_valid = y_test.values[:valid_len]
 
-            # --- Filter FLAT labels (-1) from evaluation ---
-            eval_mask = y_valid != -1
+            # --- Volatility Guardrail ---
+            from quant.risk.volatility_guard import VolatilityGuard
+            vol_guard = VolatilityGuard(percentile=0.95) # TODO: Config
+            if "realized_vol_5" in train_df.columns:
+                vol_guard.fit(train_df, vol_col="realized_vol_5")
+                # Apply to test
+                # Vectorized apply is slow, but check is simple comparison
+                # threshold is float
+                if vol_guard.threshold is not None:
+                    # vectorized numpy comparison
+                    vol_vals = test_df["realized_vol_5"].values
+                    is_safe = vol_vals <= vol_guard.threshold
+                    
+                    # Log how many blocked
+                    blocked_count = (~is_safe).sum()
+                    if blocked_count > 0:
+                        # logger.debug(f"Fold {fold_idx}: Blocked {blocked_count} bars due to high vol (> {vol_guard.threshold:.5f})")
+                        pass
+                        
+                    eval_mask = eval_mask & is_safe
+
+            # Apply mask to all arrays
             price_moves = price_moves[eval_mask]
             probas_valid = probas_valid[eval_mask]
             y_valid = y_valid[eval_mask]
 
-            # --- Compute PnL at default threshold (0.5) ---
+            # --- Compute PnL with Dynamic Cost Model ---
+            # Extract volatility for cost estimation (default to 1.0 if missing)
+            # We need the volatility at the TIME OF ENTRY (cursor + i)
+            # The test_df has realized_vol_5 (lagged? no, realized is usually trailing)
+            # We use the row's volatility to penalize entering during high vol.
+            
+            # Simple vectorization is hard because cost varies per row.
+            # But we can vectorize if we build a cost vector.
+            
+            # Instantiate Cost Model (TODO: Move config to research config)
+            from quant.risk.cost_model import VolatilityAdjustedCostModel
+            cost_model = VolatilityAdjustedCostModel(base_spread=cfg.spread_price)
+            cost_model.fit(train_df) # Fit on training data to get baseline vol
+            
+            # Calculate cost for every bar in test set
+            # We use a vectorized approach for speed if possible, or apply
+            costs = test_df.apply(cost_model.estimate_cost, axis=1).values
+            
+            # Adjust costs to match valid_len
+            costs_valid = costs[:valid_len]
+            costs_valid = costs_valid[eval_mask]
+            
+            # We need a modified compute_trade_pnl that accepts array of spreads
+            # or just subtract manually here.
+            # compute_trade_pnl takes `spread` as float. We should update it or do it here.
+            # Let's do it manually for transparency or update the metric function.
+            # Updating compute_trade_pnl is cleaner but it is in metrics.py.
+            
+            # Let's do a quick local calculation for PnL to pass to metrics
+            # PnL = (Move * Direction) - Cost
+            # We need Direction (-1, 1, 0) from predictions?
+            # No, compute_trade_pnl determines direction from Probability > Threshold.
+            
+            # Wait, `compute_trade_pnl` does the threshold logic.
+            # I should update `quant/validation/metrics.py` to accept `spread` as float OR np.ndarray.
+            
+            # For now, let's keep it simple: Pass average cost? No, that defeats the purpose.
+            # I must update `compute_trade_pnl` to support vectorized spread.
+            
             pnl = compute_trade_pnl(
                 predictions=probas_valid,
                 actuals=y_valid,
                 price_moves=price_moves,
                 threshold=0.5,
-                spread=cfg.spread_price,
+                spread=costs_valid, # Passing array instead of float
             )
 
             # --- Record fold metrics ---
@@ -195,7 +295,7 @@ def run_walk_forward(
             # --- Collect per-regime data for this fold ---
             regimes_all = test_with_regime["regime"].values[:valid_len]
             regimes = regimes_all[eval_mask]  # filter FLAT from regimes too
-            this_fold_regime_data: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+            this_fold_regime_data: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
             for r in range(cfg.n_regimes):
                 r_mask = regimes == r
                 if r_mask.any():
@@ -203,6 +303,7 @@ def run_walk_forward(
                         probas_valid[r_mask],
                         y_valid[r_mask],
                         price_moves[r_mask],
+                        costs_valid[r_mask],
                     )
             fold_regime_data.append(this_fold_regime_data)
 
@@ -216,14 +317,14 @@ def run_walk_forward(
                 positive_ev_regimes = {r for r, ev in rolling_ev.items() if ev > 0}
 
                 # Apply past-estimated thresholds to THIS fold's data
-                for r, (r_preds, r_actuals, r_moves) in this_fold_regime_data.items():
+                for r, (r_preds, r_actuals, r_moves, r_costs) in this_fold_regime_data.items():
                     if r not in positive_ev_regimes:
                         continue
                     thresh = rolling_thresholds.get(r, 0.5)
                     mask = r_preds >= thresh
                     n = int(mask.sum())
                     if n > 0:
-                        pnl_gated = r_moves[mask] - cfg.spread_price
+                        pnl_gated = r_moves[mask] - r_costs[mask]
                         gated_pnl_parts.append(pnl_gated)
                         gated_n_trades_total += n
                         gated_n_wins_total += int((pnl_gated > 0).sum())
@@ -328,7 +429,7 @@ def run_walk_forward(
 
 
 def _estimate_rolling_thresholds(
-    regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]],
     spread: float,
     cfg,
 ) -> Tuple[Dict[int, float], Dict[int, float]]:
@@ -349,11 +450,12 @@ def _estimate_rolling_thresholds(
     for regime, data_list in sorted(regime_trade_data.items()):
         all_preds = np.concatenate([d[0] for d in data_list])
         all_moves = np.concatenate([d[2] for d in data_list])
+        all_costs = np.concatenate([d[3] for d in data_list])
 
         best_threshold, best_ev = optimize_threshold(
             predictions=all_preds,
             price_moves=all_moves,
-            spread=spread,
+            spread=all_costs,
             threshold_min=cfg.threshold_min,
             threshold_max=cfg.threshold_max,
             threshold_step=cfg.threshold_step,
@@ -383,7 +485,7 @@ def _estimate_rolling_thresholds(
 
 
 def _optimize_regime_thresholds(
-    regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]],
     spread: float,
     cfg,
 ) -> Tuple[List[RegimeMetrics], Dict[int, float]]:
@@ -398,11 +500,12 @@ def _optimize_regime_thresholds(
         all_preds = np.concatenate([d[0] for d in data_list])
         all_actuals = np.concatenate([d[1] for d in data_list])
         all_moves = np.concatenate([d[2] for d in data_list])
+        all_costs = np.concatenate([d[3] for d in data_list])
 
         best_threshold, best_ev = optimize_threshold(
             predictions=all_preds,
             price_moves=all_moves,
-            spread=spread,
+            spread=all_costs,
             threshold_min=cfg.threshold_min,
             threshold_max=cfg.threshold_max,
             threshold_step=cfg.threshold_step,
@@ -412,7 +515,7 @@ def _optimize_regime_thresholds(
         mask = all_preds >= best_threshold
         n_trades = int(mask.sum())
         if n_trades > 0:
-            traded_pnl = all_moves[mask] - spread
+            traded_pnl = all_moves[mask] - all_costs[mask]
             win_rate = float((traded_pnl > 0).sum() / n_trades)
         else:
             win_rate = 0.0
