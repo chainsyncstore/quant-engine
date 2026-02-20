@@ -20,16 +20,17 @@ class BotManager:
         """
         if user_id in self.sessions:
             logger.info(f"User {user_id} session already active.")
-            return
+            return False
 
-        mode = creds.get('mode', 'demo')
-        base_url = "https://api-capital.backend-capital.com" if mode == 'live' else "https://demo-api-capital.backend-capital.com"
-        
-        logger.info(f"Starting session for user {user_id} in {mode.upper()} mode.")
-        
+        live = creds.get('live', False)
+        base_url = "https://api-capital.backend-capital.com" if live else "https://demo-api-capital.backend-capital.com"
+        mode_label = "LIVE" if live else "DEMO"
+
+        logger.info(f"Starting session for user {user_id} in {mode_label} mode.")
+
         # Create user-specific config
         api_cfg = CapitalAPIConfig(
-            api_key=creds['key'],
+            api_key=creds['api_key'],
             password=creds['password'],
             identifier=creds['email'],
             base_url=base_url
@@ -43,7 +44,35 @@ class BotManager:
                 horizon=10,
                 api_config=api_cfg
             )
-            
+
+            # Test authentication BEFORE starting the loop
+            loop = asyncio.get_running_loop()
+            try:
+                await loop.run_in_executor(None, gen.client.authenticate)
+                gen._authenticated = True
+                logger.info(f"Auth OK for user {user_id} on {mode_label}")
+            except Exception as auth_err:
+                error_body = ""
+                if hasattr(auth_err, 'response') and auth_err.response is not None:
+                    try:
+                        error_body = auth_err.response.json().get('errorCode', '')
+                    except Exception:
+                        error_body = auth_err.response.text[:200]
+
+                if "null.accountId" in str(error_body):
+                    hint = (
+                        f"Your API key works on LIVE but not on DEMO. "
+                        f"Capital.com demo and live are separate environments. "
+                        f"Either create an API key in your demo account "
+                        f"(log in at demo-trading.capital.com) or use /start_live instead."
+                    )
+                    raise RuntimeError(hint) from auth_err
+                else:
+                    raise RuntimeError(
+                        f"Authentication failed on {mode_label}: {auth_err}. "
+                        f"Check your credentials with /setup."
+                    ) from auth_err
+
             # Create async engine wrapper
             engine = AsyncEngine(gen, on_signal=on_signal)
             await engine.start()
@@ -52,7 +81,7 @@ class BotManager:
             return True
         except Exception as e:
             logger.error(f"Failed to start session for user {user_id}: {e}")
-            raise e
+            raise
 
     async def stop_session(self, user_id: int):
         if user_id in self.sessions:

@@ -32,23 +32,32 @@ class AsyncEngine:
         logger.info("Async Engine stopped.")
 
     async def _loop(self):
-        logger.info("Starting async loop for user...")
+        logger.info("Engine loop started. First signal in ~60s...")
+        consecutive_errors = 0
         while self.running:
             try:
-                # Run the blocking run_once in a thread pool
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(None, self.gen.run_once)
-                
+                consecutive_errors = 0  # reset on success
+
                 if result and self.on_signal:
                     if asyncio.iscoroutinefunction(self.on_signal):
                         await self.on_signal(result)
                     else:
                         self.on_signal(result)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.error(f"Engine loop error: {e}")
-            
+                consecutive_errors += 1
+                logger.error(f"Engine loop error ({consecutive_errors}): {e}", exc_info=True)
+                if consecutive_errors >= 5:
+                    logger.error("Too many consecutive errors. Stopping engine loop.")
+                    self.running = False
+                    break
+
             # Sleep 60s
             try:
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
                 break
+        logger.info("Engine loop exited.")

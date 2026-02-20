@@ -14,7 +14,7 @@ from typing import Optional
 import pandas as pd
 import requests
 
-from quant.config import get_api_config
+from quant.config import get_api_config, CapitalAPIConfig
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +215,11 @@ class CapitalClient:
                     "spread": ask_c - bid_c,
                 }
             )
+
+        df = pd.DataFrame(records)
+        if df.empty:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "bid_close", "ask_close", "spread"])
+        return df.set_index("timestamp")
 
     # ------------------------------------------------------------------
     # Execution & Account Management

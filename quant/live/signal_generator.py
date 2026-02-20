@@ -31,7 +31,6 @@ import pandas as pd
 
 from quant.config import get_research_config, CapitalAPIConfig
 from quant.risk.volatility_guard import VolatilityGuard
-from quant.risk.volatility_guard import VolatilityGuard
 from quant.data.capital_client import CapitalClient
 from quant.data.session_filter import filter_sessions
 from quant.features.pipeline import build_features, get_feature_columns
@@ -130,6 +129,11 @@ class SignalGenerator:
         # Signal log
         self.signal_log: list = []
         self.last_processed_ts = None
+
+        # Win rate tracking
+        self.evaluated_count = 0
+        self.win_count = 0
+        self.loss_count = 0
 
         # Risk guardrails
         self.guardrails = RiskGuardrails(
@@ -336,8 +340,6 @@ class SignalGenerator:
         )
         self.guardrails.record_trade(trade)
 
-        return sig
-
     def execute_trade(self, signal: dict) -> None:
         """
         Execute trade based on signal.
@@ -401,6 +403,82 @@ class SignalGenerator:
             except Exception as e:
                 logger.error(f"Failed to place order: {e}")
 
+    def _evaluate_past_signals(self, df: pd.DataFrame) -> None:
+        """Check past BUY/SELL signals against actual price movement."""
+        if df.empty:
+            return
+
+        latest_price = float(df["close"].iloc[-1])
+        latest_ts = df.index[-1]
+        horizon_delta = timedelta(minutes=self.horizon)
+
+        for sig in self.signal_log:
+            if sig.get("outcome") is not None:
+                continue  # already evaluated
+            if sig["signal"] == "HOLD":
+                sig["outcome"] = "skip"
+                continue
+
+            sig_ts = pd.Timestamp(sig["timestamp"])
+            if (latest_ts - sig_ts) < horizon_delta:
+                continue  # not enough time elapsed
+
+            entry_price = sig["close_price"]
+            # Find the bar closest to horizon minutes after signal
+            target_ts = sig_ts + horizon_delta
+            future_bars = df.loc[df.index >= target_ts]
+            if future_bars.empty:
+                # Use latest price if exact horizon bar not available yet
+                exit_price = latest_price
+            else:
+                exit_price = float(future_bars["close"].iloc[0])
+
+            if sig["signal"] == "BUY":
+                won = exit_price > entry_price
+            else:  # SELL
+                won = exit_price < entry_price
+
+            sig["outcome"] = "win" if won else "loss"
+            sig["exit_price"] = exit_price
+            sig["pnl_pips"] = round((exit_price - entry_price) * 10000, 1)  # EURUSD pips
+            if sig["signal"] == "SELL":
+                sig["pnl_pips"] = -sig["pnl_pips"]
+
+            self.evaluated_count += 1
+            if won:
+                self.win_count += 1
+            else:
+                self.loss_count += 1
+
+            logger.info(
+                "Signal evaluated: %s @ %.5f -> %.5f = %s (%+.1f pips)",
+                sig["signal"], entry_price, exit_price, sig["outcome"], sig["pnl_pips"],
+            )
+
+    def get_win_rate_stats(self) -> dict:
+        """Return current win rate statistics."""
+        total_signals = len(self.signal_log)
+        actionable = sum(1 for s in self.signal_log if s["signal"] != "HOLD")
+        buys = sum(1 for s in self.signal_log if s["signal"] == "BUY")
+        sells = sum(1 for s in self.signal_log if s["signal"] == "SELL")
+        holds = total_signals - actionable
+
+        win_rate = (self.win_count / self.evaluated_count * 100) if self.evaluated_count > 0 else 0.0
+        total_pips = sum(s.get("pnl_pips", 0) for s in self.signal_log if s.get("outcome") in ("win", "loss"))
+
+        return {
+            "total_signals": total_signals,
+            "buys": buys,
+            "sells": sells,
+            "holds": holds,
+            "evaluated": self.evaluated_count,
+            "wins": self.win_count,
+            "losses": self.loss_count,
+            "win_rate": round(win_rate, 1),
+            "total_pips": round(total_pips, 1),
+            "pending": actionable - self.evaluated_count,
+        }
+
     def run_once(self) -> Optional[dict]:
         """Fetch data, generate signal, and EXECUTE."""
         logger.info("Fetching recent bars...")
@@ -409,7 +487,10 @@ class SignalGenerator:
         except Exception as e:
             logger.error(f"Data fetch failed: {e}")
             return None
-        
+
+        # Evaluate past signals before generating new one
+        self._evaluate_past_signals(df)
+
         latest_ts = df.index[-1]
         if self.last_processed_ts == latest_ts:
             logger.info("Data stale (ts=%s). Skipping signal generation.", latest_ts)

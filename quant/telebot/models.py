@@ -18,10 +18,10 @@ class User(Base):
 class UserContext(Base):
     __tablename__ = 'user_context'
     telegram_id = Column(Integer, ForeignKey('users.telegram_id'), primary_key=True)
-    cap_email = Column(String)
-    cap_api_key = Column(String) # Encrypted
-    cap_api_pass = Column(String) # Encrypted
-    mode = Column(String, default='demo') # demo, live
+    capital_email = Column(String)
+    capital_api_key = Column(String) # Encrypted
+    capital_password = Column(String) # Encrypted
+    live_mode = Column(Boolean, default=False)
     is_active = Column(Boolean, default=False)
     
     user = relationship("User", back_populates="context")
