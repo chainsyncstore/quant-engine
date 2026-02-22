@@ -31,8 +31,21 @@ def synthetic_ohlcv() -> pd.DataFrame:
         c = o + ret
         h = max(o, c) + abs(ret) * rng.uniform(0.2, 1.0)
         l = min(o, c) - abs(ret) * rng.uniform(0.2, 1.0)
-        volume = max(0, rng.normal(100, 30))
-        records.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": c, "volume": volume})
+        volume = max(1.0, rng.normal(100, 30))
+        taker_buy = volume * rng.uniform(0.35, 0.65)
+        taker_sell = volume - taker_buy
+        records.append(
+            {
+                "timestamp": ts,
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "volume": volume,
+                "taker_buy_volume": taker_buy,
+                "taker_sell_volume": taker_sell,
+            }
+        )
         price = c
 
     df = pd.DataFrame(records).set_index("timestamp")
@@ -63,8 +76,21 @@ def large_synthetic_ohlcv() -> pd.DataFrame:
         c = o + ret
         h = max(o, c) + abs(ret) * rng.uniform(0.1, 1.0)
         l = min(o, c) - abs(ret) * rng.uniform(0.1, 1.0)
-        volume = max(0, rng.normal(100, 30))
-        records.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": c, "volume": volume})
+        volume = max(1.0, rng.normal(100, 30))
+        taker_buy = volume * rng.uniform(0.35, 0.65)
+        taker_sell = volume - taker_buy
+        records.append(
+            {
+                "timestamp": ts,
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "volume": volume,
+                "taker_buy_volume": taker_buy,
+                "taker_sell_volume": taker_sell,
+            }
+        )
         price = c
 
     df = pd.DataFrame(records).set_index("timestamp")

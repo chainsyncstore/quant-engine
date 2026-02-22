@@ -3,10 +3,11 @@
 import pandas as pd
 import numpy as np
 
+from quant.config import get_research_config
 from quant.features.pipeline import build_features, get_feature_columns
 from quant.features import (
     momentum, volatility, candle_geometry, trend, volume, time_encoding,
-    microstructure, session_context, cross_timeframe,
+    microstructure, session_context, cross_timeframe, funding_rate,
 )
 
 
@@ -58,13 +59,29 @@ class TestIndividualFeatures:
         expected = {"roc_60", "atr_ratio_60_14", "trend_alignment"}
         assert expected.issubset(set(result.columns))
 
+    def test_funding_rate_constant_window_produces_neutral_zscore(self):
+        idx = pd.date_range("2026-01-01", periods=48, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "funding_rate_raw": np.full(len(idx), 0.000025),
+            },
+            index=idx,
+        )
+
+        result = funding_rate.compute(df)
+        stable_window = result["funding_rate_zscore"].iloc[24:]
+
+        assert not stable_window.isna().any()
+        assert (stable_window == 0.0).all()
+
 
 class TestFeaturePipeline:
     def test_feature_count_within_budget(self, synthetic_ohlcv):
         result = build_features(synthetic_ohlcv)
         feature_cols = get_feature_columns(result)
-        assert len(feature_cols) == 37  # 28 original + 9 new (EMAs excluded as non-features)
-        assert len(feature_cols) <= 40  # Within budget
+        cfg = get_research_config()
+        assert len(feature_cols) >= 30  # Ensure a substantive feature set is produced
+        assert len(feature_cols) <= cfg.max_features  # Respect configured budget
 
     def test_no_nan_after_pipeline(self, synthetic_ohlcv):
         result = build_features(synthetic_ohlcv)

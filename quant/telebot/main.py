@@ -72,6 +72,190 @@ CRYPTO = CryptoManager()
 MANAGER = BotManager(MODEL_DIR) if MODEL_DIR else None
 
 
+def _persist_user_session_flags(
+    user_id: int,
+    *,
+    is_active: bool | None = None,
+    live_mode: bool | None = None,
+) -> None:
+    """Persist session continuity flags for a user context."""
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        db_ctx = db_user.context if db_user else None
+        if not db_ctx:
+            return
+
+        changed = False
+        if live_mode is not None and db_ctx.live_mode != live_mode:
+            db_ctx.live_mode = live_mode
+            changed = True
+        if is_active is not None and db_ctx.is_active != is_active:
+            db_ctx.is_active = is_active
+            changed = True
+
+        if changed:
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"Failed to persist session flags for user {user_id}: {e}")
+    finally:
+        session.close()
+
+
+def _build_creds_from_context(ctx: UserContext | None, *, mode: str, live: bool) -> dict:
+    """Build credential payload expected by BotManager.start_session()."""
+    if mode == "crypto":
+        binance_key = CRYPTO.decrypt(ctx.binance_api_key) if ctx and ctx.binance_api_key else ""
+        binance_secret = CRYPTO.decrypt(ctx.binance_api_secret) if ctx and ctx.binance_api_secret else ""
+
+        if live and (not binance_key or not binance_secret):
+            raise RuntimeError("Binance API credentials required for live trading")
+
+        return {
+            "live": live,
+            "binance_api_key": binance_key,
+            "binance_api_secret": binance_secret,
+        }
+
+    # FX mode
+    if not ctx or not (ctx.capital_email and ctx.capital_api_key and ctx.capital_password):
+        raise RuntimeError("Credentials missing. Run /setup first.")
+
+    return {
+        "email": ctx.capital_email,
+        "api_key": CRYPTO.decrypt(ctx.capital_api_key),
+        "password": CRYPTO.decrypt(ctx.capital_password),
+        "live": live,
+    }
+
+
+def _build_signal_notifier(bot, user_id: int):
+    """Create the async callback used by the engine to notify signals."""
+
+    async def notify_signal(result):
+        try:
+            signal_type = result.get("signal", "HOLD")
+
+            # Handle engine crash notification
+            if signal_type == "ENGINE_CRASH":
+                reason = result.get("reason", "Unknown error")
+                msg = (
+                    f"⚠️ **ENGINE CRASHED**\n\n"
+                    f"Reason: {reason}\n\n"
+                    f"The engine has stopped. Use /start_demo or /start_live to restart."
+                )
+                await bot.send_message(chat_id=user_id, text=msg)
+                _persist_user_session_flags(user_id, is_active=False)
+
+                # Clean up dead session
+                if MANAGER and user_id in MANAGER.sessions:
+                    del MANAGER.sessions[user_id]
+                return
+
+            if signal_type == "HOLD":
+                return  # Don't spam user with HOLD signals
+            emoji = {"BUY": "🟢", "SELL": "🔴"}.get(signal_type, "❓")
+            msg = (
+                f"🔔 **Trading Signal**\n\n"
+                f"{emoji} Action: **{signal_type}**\n"
+                f"Price: `{result.get('close_price', 0.0):.5f}`\n"
+                f"Regime: {result.get('regime', '?')} | P(up): {result.get('probability', 0.0):.3f}\n"
+                f"Reason: {result.get('reason', 'N/A')}"
+            )
+            if result.get("position"):
+                pos = result["position"]
+                msg += f"\nSize: {pos.get('lot_size', 0):.2f} lots | Risk: {pos.get('risk_fraction', 0)*100:.1f}%"
+            await bot.send_message(chat_id=user_id, text=msg)
+        except Exception as e:
+            logger.error(f"Failed to send signal notification to user {user_id}: {e}")
+
+    return notify_signal
+
+
+async def _restore_active_sessions(application):
+    """Restore active sessions from DB on bot startup."""
+    if not MANAGER:
+        return
+
+    from quant.config import get_research_config
+    rcfg = get_research_config()
+
+    session = SessionLocal()
+    restore_targets: list[tuple[int, bool, dict]] = []
+    try:
+        active_users = (
+            session.query(User)
+            .join(UserContext, UserContext.telegram_id == User.telegram_id)
+            .filter(User.status == "active", UserContext.is_active.is_(True))
+            .all()
+        )
+
+        for db_user in active_users:
+            ctx = db_user.context
+            if not ctx:
+                continue
+
+            live = bool(ctx.live_mode)
+            try:
+                creds = _build_creds_from_context(ctx, mode=rcfg.mode, live=live)
+            except Exception as cred_err:
+                logger.warning(f"Skipping auto-restore for user {db_user.telegram_id}: {cred_err}")
+                ctx.is_active = False
+                continue
+
+            restore_targets.append((db_user.telegram_id, live, creds))
+
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Failed loading sessions for auto-restore: {e}", exc_info=True)
+        return
+    finally:
+        session.close()
+
+    if not restore_targets:
+        logger.info("No persisted active sessions to restore.")
+        return
+
+    logger.info("Restoring %d persisted session(s)...", len(restore_targets))
+    for user_id, live, creds in restore_targets:
+        try:
+            started = await MANAGER.start_session(
+                user_id,
+                creds,
+                on_signal=_build_signal_notifier(application.bot, user_id),
+            )
+            if started:
+                _persist_user_session_flags(user_id, is_active=True, live_mode=live)
+                logger.info("Restored session for user %s in %s mode.", user_id, "LIVE" if live else "DEMO")
+                try:
+                    await application.bot.send_message(
+                        chat_id=user_id,
+                        text=(
+                            "♻️ **Session Restored**\n\n"
+                            "System restarted, and your trading session resumed automatically."
+                            + FOOTER
+                        ),
+                    )
+                except Exception as notify_err:
+                    logger.warning(f"Failed to notify restored session for user {user_id}: {notify_err}")
+        except Exception as restore_err:
+            logger.error(f"Failed to restore session for user {user_id}: {restore_err}")
+            _persist_user_session_flags(user_id, is_active=False)
+            try:
+                await application.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "⚠️ Could not auto-resume your trading session.\n"
+                        "Please run `/start_demo` or `/start_live`."
+                        + FOOTER
+                    ),
+                )
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
@@ -187,39 +371,18 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
     # Build credentials dict based on mode
     try:
         ctx = user.context
-        if rcfg.mode == "crypto":
-            # Crypto: credentials required for live, optional for paper
-            binance_key = CRYPTO.decrypt(ctx.binance_api_key) if ctx and ctx.binance_api_key else ''
-            binance_secret = CRYPTO.decrypt(ctx.binance_api_secret) if ctx and ctx.binance_api_secret else ''
-
-            if live and (not binance_key or not binance_secret):
-                logger.warning("User %s tried /start_live without Binance API credentials", user_id)
-                await update.message.reply_text(
-                    "❌ Binance API credentials required for live trading.\n\n"
-                    "Run: `/setup BINANCE_API_KEY BINANCE_API_SECRET`\n\n"
-                    "For paper trading without credentials, use `/start_demo`" + FOOTER
-                )
-                session.close()
-                return
-
-            creds = {
-                'live': live,
-                'binance_api_key': binance_key,
-                'binance_api_secret': binance_secret,
-            }
-        else:
-            # FX: Capital.com credentials required
-            if not ctx or not (ctx.capital_email and ctx.capital_api_key and ctx.capital_password):
-                await update.message.reply_text("❌ Credentials missing. Run /setup first." + FOOTER)
-                session.close()
-                return
-            creds = {
-                'email': ctx.capital_email,
-                'api_key': CRYPTO.decrypt(ctx.capital_api_key),
-                'password': CRYPTO.decrypt(ctx.capital_password),
-                'live': live
-            }
+        creds = _build_creds_from_context(ctx, mode=rcfg.mode, live=live)
     except Exception as e:
+        if rcfg.mode == "crypto" and live and "Binance API credentials required for live trading" in str(e):
+            logger.warning("User %s tried /start_live without Binance API credentials", user_id)
+            await update.message.reply_text(
+                "❌ Binance API credentials required for live trading.\n\n"
+                "Run: `/setup BINANCE_API_KEY BINANCE_API_SECRET`\n\n"
+                "For paper trading without credentials, use `/start_demo`" + FOOTER
+            )
+            session.close()
+            return
+
         logger.error(f"Credential loading failed for user {user_id}: {e}")
         await update.message.reply_text("❌ Failed to load credentials. Try `/setup` again." + FOOTER)
         session.close()
@@ -228,58 +391,13 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
     session.close()
 
     mode_str = "LIVE 🔴" if live else "DEMO 🟢"
-    
-    async def notify_signal(result):
-        try:
-            signal_type = result.get('signal', 'HOLD')
-
-            # Handle engine crash notification
-            if signal_type == 'ENGINE_CRASH':
-                reason = result.get('reason', 'Unknown error')
-                msg = (
-                    f"⚠️ **ENGINE CRASHED**\n\n"
-                    f"Reason: {reason}\n\n"
-                    f"The engine has stopped. Use /start_demo or /start_live to restart."
-                )
-                await context.bot.send_message(chat_id=user_id, text=msg)
-                # Clean up dead session
-                if MANAGER and user_id in MANAGER.sessions:
-                    del MANAGER.sessions[user_id]
-                return
-
-            if signal_type == 'HOLD':
-                return  # Don't spam user with HOLD signals
-            emoji = {"BUY": "🟢", "SELL": "🔴"}.get(signal_type, "❓")
-            msg = (
-                f"🔔 **Trading Signal**\n\n"
-                f"{emoji} Action: **{signal_type}**\n"
-                f"Price: `{result.get('close_price', 0.0):.5f}`\n"
-                f"Regime: {result.get('regime', '?')} | P(up): {result.get('probability', 0.0):.3f}\n"
-                f"Reason: {result.get('reason', 'N/A')}"
-            )
-            if result.get('position'):
-                pos = result['position']
-                msg += f"\nSize: {pos.get('lot_size', 0):.2f} lots | Risk: {pos.get('risk_fraction', 0)*100:.1f}%"
-            await context.bot.send_message(chat_id=user_id, text=msg)
-        except Exception as e:
-            logger.error(f"Failed to send signal notification to user {user_id}: {e}")
+    notify_signal = _build_signal_notifier(context.bot, user_id)
 
     try:
         started = await MANAGER.start_session(user_id, creds, on_signal=notify_signal)
         if started:
-            # Persist requested mode only after a successful engine start.
-            mode_session = SessionLocal()
-            try:
-                db_user = mode_session.query(User).filter_by(telegram_id=user_id).first()
-                db_ctx = db_user.context if db_user else None
-                if db_ctx and db_ctx.live_mode != live:
-                    db_ctx.live_mode = live
-                    mode_session.commit()
-            except Exception as mode_err:
-                mode_session.rollback()
-                logger.warning(f"Failed to persist live_mode for user {user_id}: {mode_err}")
-            finally:
-                mode_session.close()
+            # Persist requested mode and active state only after successful start.
+            _persist_user_session_flags(user_id, live_mode=live, is_active=True)
 
             await update.message.reply_text(
                 f"🚀 **{mode_str} Trading STARTED**\n\n"
@@ -288,8 +406,10 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
                 "Run: `/stats`" + FOOTER
             )
         else:
+            _persist_user_session_flags(user_id, is_active=True)
             await update.message.reply_text("⚠️ Engine already running." + FOOTER)
     except Exception as e:
+        _persist_user_session_flags(user_id, is_active=False)
         logger.error(f"Failed to start engine for user {user_id}: {e}")
         await update.message.reply_text(f"❌ Failed to start engine: {e}" + FOOTER)
 
@@ -330,14 +450,18 @@ async def stop_trading(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = update.effective_user.id
 
-    if await MANAGER.stop_session(user_id):
+    stopped = await MANAGER.stop_session(user_id)
+    # Explicit /stop means user opted out of auto-resume.
+    _persist_user_session_flags(user_id, is_active=False)
+
+    if stopped:
         await update.message.reply_text(
             "Bzzt. **Engine STOPPED** 🛑\n\n"
             "To resume:\n"
             "`/start_demo` or `/start_live`" + FOOTER
         )
     else:
-        await update.message.reply_text("⚠️ Engine not running." + FOOTER)
+        await update.message.reply_text("⚠️ Engine not running. Auto-resume disabled." + FOOTER)
 
 
 async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -353,6 +477,8 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = session.query(User).filter_by(telegram_id=target_id).first()
         if user:
             user.status = 'banned'
+            if user.context:
+                user.context.is_active = False
             session.commit()
             
             # Stop engine if running
@@ -599,7 +725,10 @@ def main():
         print("Error: TELEGRAM_TOKEN environment variable is missing.")
         return
         
-    application = ApplicationBuilder().token(token).build()
+    async def post_init(app):
+        await _restore_active_sessions(app)
+
+    application = ApplicationBuilder().token(token).post_init(post_init).build()
     
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('help', help_command))

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(PEM=\"/c/Users/HP/Downloads/quant-key.pem\")",
+      "Bash(BASE=\"/c/Users/HP/Downloads/hypothesis-research-engine\")",
+      "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-Downloads-hypothesis-research-engine/tasks/**)",
+      "Bash(tar czf:*)",
+      "Read(//tmp/**)",
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(git status:*)",
+      "Read(//c/Users/HP/**)",
+      "Bash(ls:*)"
+    ]
+  }
+}

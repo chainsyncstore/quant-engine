@@ -36,7 +36,10 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     # Z-score (24-bar = 1 day window)
     fr_mean = fr.rolling(24).mean()
     fr_std = fr.rolling(24).std()
-    out["funding_rate_zscore"] = (fr - fr_mean) / fr_std.replace(0, np.nan)
+    # Funding can stay constant for long stretches, which makes rolling std = 0.
+    # In that case, z-score should be neutral (0.0), not NaN.
+    zscore = (fr - fr_mean) / fr_std.replace(0, np.nan)
+    out["funding_rate_zscore"] = zscore.fillna(0.0)
 
     # Extreme flag: |zscore| > 2.0
     out["funding_rate_extreme"] = (out["funding_rate_zscore"].abs() > 2.0).astype(float)
