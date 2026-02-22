@@ -1,7 +1,6 @@
 
 import logging
 import os
-import asyncio
 from pathlib import Path
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
@@ -82,11 +81,16 @@ def _persist_user_session_flags(
     session = SessionLocal()
     try:
         db_user = session.query(User).filter_by(telegram_id=user_id).first()
-        db_ctx = db_user.context if db_user else None
-        if not db_ctx:
+        if not db_user:
             return
 
+        db_ctx = db_user.context
         changed = False
+        if not db_ctx:
+            db_ctx = UserContext(telegram_id=user_id)
+            db_user.context = db_ctx
+            changed = True
+
         if live_mode is not None and db_ctx.live_mode != live_mode:
             db_ctx.live_mode = live_mode
             changed = True
@@ -103,30 +107,18 @@ def _persist_user_session_flags(
         session.close()
 
 
-def _build_creds_from_context(ctx: UserContext | None, *, mode: str, live: bool) -> dict:
+def _build_creds_from_context(ctx: UserContext | None, *, live: bool) -> dict:
     """Build credential payload expected by BotManager.start_session()."""
-    if mode == "crypto":
-        binance_key = CRYPTO.decrypt(ctx.binance_api_key) if ctx and ctx.binance_api_key else ""
-        binance_secret = CRYPTO.decrypt(ctx.binance_api_secret) if ctx and ctx.binance_api_secret else ""
+    binance_key = CRYPTO.decrypt(ctx.binance_api_key) if ctx and ctx.binance_api_key else ""
+    binance_secret = CRYPTO.decrypt(ctx.binance_api_secret) if ctx and ctx.binance_api_secret else ""
 
-        if live and (not binance_key or not binance_secret):
-            raise RuntimeError("Binance API credentials required for live trading")
-
-        return {
-            "live": live,
-            "binance_api_key": binance_key,
-            "binance_api_secret": binance_secret,
-        }
-
-    # FX mode
-    if not ctx or not (ctx.capital_email and ctx.capital_api_key and ctx.capital_password):
-        raise RuntimeError("Credentials missing. Run /setup first.")
+    if live and (not binance_key or not binance_secret):
+        raise RuntimeError("Binance API credentials required for live trading")
 
     return {
-        "email": ctx.capital_email,
-        "api_key": CRYPTO.decrypt(ctx.capital_api_key),
-        "password": CRYPTO.decrypt(ctx.capital_password),
         "live": live,
+        "binance_api_key": binance_key,
+        "binance_api_secret": binance_secret,
     }
 
 
@@ -178,16 +170,13 @@ async def _restore_active_sessions(application):
     if not MANAGER:
         return
 
-    from quant.config import get_research_config
-    rcfg = get_research_config()
-
     session = SessionLocal()
     restore_targets: list[tuple[int, bool, dict]] = []
     try:
         active_users = (
             session.query(User)
             .join(UserContext, UserContext.telegram_id == User.telegram_id)
-            .filter(User.status == "active", UserContext.is_active.is_(True))
+            .filter(User.status.in_(("active", "approved")), UserContext.is_active.is_(True))
             .all()
         )
 
@@ -198,7 +187,7 @@ async def _restore_active_sessions(application):
 
             live = bool(ctx.live_mode)
             try:
-                creds = _build_creds_from_context(ctx, mode=rcfg.mode, live=live)
+                creds = _build_creds_from_context(ctx, live=live)
             except Exception as cred_err:
                 logger.warning(f"Skipping auto-restore for user {db_user.telegram_id}: {cred_err}")
                 ctx.is_active = False
@@ -360,20 +349,20 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
     session = SessionLocal()
     user = session.query(User).filter_by(telegram_id=user_id).first()
 
-    if not user or user.status != 'active':
+    if not user or user.status in {'pending', 'banned'}:
         await update.message.reply_text("⛔ Account not approved." + FOOTER)
         session.close()
         return
 
-    from quant.config import get_research_config
-    rcfg = get_research_config()
-
     # Build credentials dict based on mode
     try:
+        if not user.context:
+            user.context = UserContext(telegram_id=user_id)
+            session.commit()
         ctx = user.context
-        creds = _build_creds_from_context(ctx, mode=rcfg.mode, live=live)
+        creds = _build_creds_from_context(ctx, live=live)
     except Exception as e:
-        if rcfg.mode == "crypto" and live and "Binance API credentials required for live trading" in str(e):
+        if live and "Binance API credentials required for live trading" in str(e):
             logger.warning("User %s tried /start_live without Binance API credentials", user_id)
             await update.message.reply_text(
                 "❌ Binance API credentials required for live trading.\n\n"
@@ -406,7 +395,7 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
                 "Run: `/stats`" + FOOTER
             )
         else:
-            _persist_user_session_flags(user_id, is_active=True)
+            _persist_user_session_flags(user_id, live_mode=live, is_active=True)
             await update.message.reply_text("⚠️ Engine already running." + FOOTER)
     except Exception as e:
         _persist_user_session_flags(user_id, is_active=False)
@@ -514,24 +503,14 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session.commit()
             await update.message.reply_text(f"✅ User {target_id} has been **APPROVED**." + FOOTER)
             try:
-                from quant.config import get_research_config
-                rcfg = get_research_config()
-                if rcfg.mode == "crypto":
-                    approve_msg = (
-                        "🎉 **Account Approved!**\n\n"
-                        "You're all set for paper trading!\n"
-                        "Run `/start_demo` to begin (no API keys needed).\n\n"
-                        "For live trading later:\n"
-                        "`/setup BINANCE_API_KEY BINANCE_API_SECRET`\n"
-                        "then `/start_live`"
-                    )
-                else:
-                    approve_msg = (
-                        "🎉 **Account Approved!**\n\n"
-                        "Set up your trading credentials:\n"
-                        "`/setup your@email.com YOUR_API_KEY YOUR_PASSWORD`\n"
-                        "(no brackets - just paste values directly)"
-                    )
+                approve_msg = (
+                    "🎉 **Account Approved!**\n\n"
+                    "You're all set for paper trading!\n"
+                    "Run `/start_demo` to begin (no API keys needed).\n\n"
+                    "For live trading later:\n"
+                    "`/setup BINANCE_API_KEY BINANCE_API_SECRET`\n"
+                    "then `/start_live`"
+                )
                 await context.bot.send_message(target_id, approve_msg)
             except:
                 pass
@@ -544,72 +523,38 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
-    from quant.config import get_research_config
-    rcfg = get_research_config()
 
-    if rcfg.mode == "crypto":
-        # Crypto mode: optional Binance API key + secret (for future live trading)
-        # Paper trading works without credentials
-        if len(args) < 2:
-            await update.message.reply_text(
-                "**Crypto Mode Setup**\n\n"
-                "For paper trading, no setup needed!\n"
-                "Just run `/start_demo`\n\n"
-                "For future live trading:\n"
-                "`/setup BINANCE_API_KEY BINANCE_API_SECRET`\n\n"
-                "**Security Note:** Your keys are encrypted." + FOOTER
-            )
-            return
+    # Crypto mode: optional Binance API key + secret (for future live trading)
+    # Paper trading works without credentials
+    if len(args) < 2:
+        await update.message.reply_text(
+            "**Crypto Mode Setup**\n\n"
+            "For paper trading, no setup needed!\n"
+            "Just run `/start_demo`\n\n"
+            "For future live trading:\n"
+            "`/setup BINANCE_API_KEY BINANCE_API_SECRET`\n\n"
+            "**Security Note:** Your keys are encrypted." + FOOTER
+        )
+        return
 
-        api_key = args[0]
-        api_secret = args[1]
+    api_key = args[0]
+    api_secret = args[1]
 
-        session = SessionLocal()
-        user = session.query(User).filter_by(telegram_id=user_id).first()
-        if user:
-            if not user.context:
-                user.context = UserContext(telegram_id=user_id)
-            user.context.binance_api_key = CRYPTO.encrypt(api_key)
-            user.context.binance_api_secret = CRYPTO.encrypt(api_secret)
-            session.commit()
-            await update.message.reply_text(
-                "✅ **Binance Credentials Saved!**\n\n"
-                "Run: `/start_demo` or `/start_live`" + FOOTER
-            )
-        else:
-            await update.message.reply_text("⛔ User not found." + FOOTER)
-        session.close()
+    session = SessionLocal()
+    user = session.query(User).filter_by(telegram_id=user_id).first()
+    if user:
+        if not user.context:
+            user.context = UserContext(telegram_id=user_id)
+        user.context.binance_api_key = CRYPTO.encrypt(api_key)
+        user.context.binance_api_secret = CRYPTO.encrypt(api_secret)
+        session.commit()
+        await update.message.reply_text(
+            "✅ **Binance Credentials Saved!**\n\n"
+            "Run: `/start_demo` or `/start_live`" + FOOTER
+        )
     else:
-        # FX mode: Capital.com credentials
-        if len(args) < 3:
-            await update.message.reply_text(
-                "⚠️ Usage:\n"
-                "`/setup your@email.com YOUR_API_KEY YOUR_PASSWORD`\n\n"
-                "⚠️ Do NOT include < > brackets — just paste the values directly.\n\n"
-                "**Security Note:** Your keys are encrypted." + FOOTER
-            )
-            return
-
-        email = args[0]
-        api_key = args[1]
-        password = args[2]
-
-        session = SessionLocal()
-        user = session.query(User).filter_by(telegram_id=user_id).first()
-        if user:
-            if not user.context:
-                user.context = UserContext(telegram_id=user_id)
-            user.context.capital_email = email
-            user.context.capital_api_key = CRYPTO.encrypt(api_key)
-            user.context.capital_password = CRYPTO.encrypt(password)
-            session.commit()
-            await update.message.reply_text(
-                "✅ **Credentials Saved!**\n\n"
-                "Run: `/start_demo` or `/start_live`" + FOOTER
-            )
-        else:
-            await update.message.reply_text("⛔ User not found." + FOOTER)
-        session.close()
+        await update.message.reply_text("⛔ User not found." + FOOTER)
+    session.close()
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not MANAGER:
@@ -623,12 +568,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     engine = MANAGER.sessions[user_id]
     gen = engine.gen
-    is_crypto = gen.mode == "crypto"
-
-    mode_label = "PAPER CRYPTO 🟡" if is_crypto else "DEMO 🟢"
-    if gen.mode != "crypto" and gen.client:
-        base_url = gen.client._cfg.base_url.lower()
-        mode_label = "LIVE 🔴" if "api-capital" in base_url and "demo" not in base_url else "DEMO 🟢"
+    mode_label = "LIVE �" if gen.live else "PAPER CRYPTO �"
 
     wr = gen.get_win_rate_stats()
 
@@ -645,7 +585,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pnl_usd = s.get('pnl_usd', 0)
                 exit_r = " SL" if s.get('exit_reason') == 'stop_loss' else ""
                 tag = f" L{exit_r} ${pnl_usd:+.0f}" if pnl_usd else f" L{exit_r}"
-            price_fmt = f"{s['close_price']:.2f}" if is_crypto else f"{s['close_price']:.5f}"
+            price_fmt = f"{s['close_price']:.2f}"
             trade_lines.append(
                 f"- {s['signal']} @ {price_fmt} (P={s['probability']:.3f}){tag}"
             )
@@ -654,26 +594,9 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trade_str = "(No signals yet)"
 
     # Balance & PnL
-    if is_crypto:
-        balance_str = f"${wr.get('paper_balance', 10000):,.2f}"
-        pnl_str = wr.get('total_pnl', '$0.00')
-        stop_losses = wr.get('stop_losses', 0)
-    else:
-        balance_str = "N/A"
-        pnl_str = wr.get('total_pnl', 'N/A')
-        stop_losses = 0
-        if gen.client:
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, gen._ensure_authenticated)
-                acct = await loop.run_in_executor(None, gen.client.get_accounts)
-                positions = await loop.run_in_executor(None, gen.client.get_positions)
-                balance = acct.get('balance', {}).get('balance', 0) if isinstance(acct.get('balance'), dict) else acct.get('balance', 0)
-                total_pnl = sum([p.get('position', {}).get('profit', 0) for p in positions])
-                balance_str = f"${balance:,.2f}"
-                pnl_str = f"${total_pnl:,.2f}"
-            except Exception as e:
-                logger.warning(f"Could not fetch account data: {e}")
+    balance_str = f"${wr.get('paper_balance', 10000):,.2f}"
+    pnl_str = wr.get('total_pnl', '$0.00')
+    stop_losses = wr.get('stop_losses', 0)
 
     if wr["evaluated"] > 0:
         wr_section = (
@@ -691,7 +614,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             wr_section = ""
 
-    instrument = "BTCUSDT 1H" if is_crypto else "EURUSD 1m"
+    instrument = "BTCUSDT 1H"
     msg = (
         f"📊 **{mode_label} Statistics** ({instrument})\n\n"
         f"💰 **Balance:** {balance_str}\n"

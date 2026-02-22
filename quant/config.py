@@ -25,7 +25,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class CapitalAPIConfig:
-    """Capital.com REST API connection settings."""
+    """Legacy Capital.com REST API settings (deprecated, kept for compatibility)."""
 
     api_key: str = field(default_factory=lambda: os.getenv("CAPITAL_API_KEY", ""))
     password: str = field(default_factory=lambda: os.getenv("CAPITAL_PASSWORD", ""))
@@ -62,7 +62,7 @@ class BinanceAPIConfig:
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class SessionConfig:
-    """Trading session windows (UTC hours)."""
+    """Legacy FX trading session windows (UTC hours)."""
 
     # (start_hour, start_minute, end_hour, end_minute)
     london: Tuple[int, int, int, int] = (8, 0, 16, 30)
@@ -88,7 +88,7 @@ class SessionConfig:
 class ResearchConfig:
     """Core research parameters."""
 
-    # Mode: "fx" for EURUSD 1-min, "crypto" for BTC/ETH 1H
+    # Crypto-only runtime mode.
     mode: str = "crypto"
 
     # Spread / transaction cost

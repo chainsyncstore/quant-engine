@@ -1,5 +1,5 @@
 """
-Shared test fixtures — synthetic EURUSD data generators.
+Shared test fixtures — synthetic market data generators.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -11,7 +11,7 @@ import pytest
 
 @pytest.fixture
 def synthetic_ohlcv() -> pd.DataFrame:
-    """Generate 1000 bars of synthetic EURUSD-like 1m data (weekday sessions only)."""
+    """Generate 1000 bars of synthetic OHLCV data for feature/label tests."""
     rng = np.random.default_rng(42)
     n = 1000
     timestamps = []

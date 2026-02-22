@@ -23,6 +23,10 @@ class CapitalClient:
     """Client for Capital.com REST API v1."""
 
     def __init__(self, config: Optional[CapitalAPIConfig] = None) -> None:
+        raise RuntimeError(
+            "CapitalClient is deprecated and disabled. "
+            "This codebase is crypto-only (Binance)."
+        )
         self._cfg = config if config else get_api_config()
         self._session_token: Optional[str] = None
         self._cst: Optional[str] = None

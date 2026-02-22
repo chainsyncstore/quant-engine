@@ -105,7 +105,7 @@ def save_raw(df: pd.DataFrame, label: str) -> Path:
 
     Args:
         df: Validated OHLCV DataFrame.
-        label: Descriptive label (e.g., 'EURUSD_1m_20260101_20260301').
+        label: Descriptive label (e.g., 'BTCUSDT_1h_20260101_20260301').
 
     Returns:
         Path to saved file.
@@ -143,19 +143,16 @@ def snapshot(
     Args:
         df: OHLCV DataFrame to snapshot.
         tag: Optional descriptive tag.
-        prefix: Snapshot filename prefix (default: auto-detected from research mode).
+        prefix: Snapshot filename prefix (default: BTCUSDT_1h_snap).
 
     Returns:
         Path to snapshot file.
     """
-    from quant.config import get_research_config
-
     paths = get_path_config()
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     if prefix is None:
-        rcfg = get_research_config()
-        prefix = "BTCUSDT_1h_snap" if rcfg.mode == "crypto" else "EURUSD_1m_snap"
+        prefix = "BTCUSDT_1h_snap"
 
     name = f"{prefix}_{ts}"
     if tag:
@@ -167,22 +164,18 @@ def snapshot(
 
 
 def load_latest_snapshot(prefix: Optional[str] = None) -> Optional[pd.DataFrame]:
-    """Load the most recent dataset snapshot matching the current mode.
+    """Load the most recent crypto dataset snapshot.
 
     Args:
-        prefix: Explicit prefix filter. If None, auto-detected from research mode
-                (e.g. "BTCUSDT_1h_snap" for crypto, "EURUSD_1m_snap" for FX).
+        prefix: Explicit prefix filter. If None, defaults to "BTCUSDT_1h_snap".
 
     Returns:
         DataFrame or None if no matching snapshots exist.
     """
-    from quant.config import get_research_config
-
     paths = get_path_config()
 
     if prefix is None:
-        rcfg = get_research_config()
-        prefix = "BTCUSDT_1h_snap" if rcfg.mode == "crypto" else "EURUSD_1m_snap"
+        prefix = "BTCUSDT_1h_snap"
 
     snaps = sorted(paths.datasets_snapshots.glob(f"{prefix}*.parquet"))
     if not snaps:

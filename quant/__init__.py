@@ -1,1 +1,1 @@
-"""Quant Research Engine — EURUSD short-horizon directional prediction."""
+"""Quant Research Engine — crypto short-horizon directional prediction."""

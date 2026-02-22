@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 
 from quant.config import get_research_config, get_path_config
-from quant.data.capital_client import CapitalClient
 from quant.data.binance_client import BinanceClient
 from quant.data.session_filter import filter_sessions
 from quant.data.storage import snapshot, validate_ohlcv, load_latest_snapshot
@@ -207,16 +206,12 @@ def main() -> None:
     get_path_config()
     cfg = get_research_config()
 
+    if cfg.mode != "crypto":
+        logger.error("Legacy FX training mode is disabled. Set mode=crypto in ResearchConfig.")
+        sys.exit(1)
+
     if args.fetch:
-        if cfg.mode == "crypto":
-            df = fetch_binance_data(months=args.months)
-        else:
-            client = CapitalClient()
-            client.authenticate()
-            date_to = datetime.now(timezone.utc)
-            date_from = date_to - timedelta(days=args.months * 30)
-            logger.info("Fetching EURUSD 1m data: %s -> %s", date_from, date_to)
-            df = client.fetch_historical(date_from, date_to)
+        df = fetch_binance_data(months=args.months)
 
         if df.empty:
             logger.error("No data received")

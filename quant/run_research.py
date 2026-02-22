@@ -2,10 +2,10 @@
 Main research pipeline orchestrator.
 
 Usage:
-    # Dry run with synthetic data (no API needed):
+    # Dry run with synthetic BTC-like data (no API needed):
     python -m quant.run_research --dry-run
 
-    # Full run fetching real data:
+    # Full run fetching real Binance data:
     python -m quant.run_research --fetch --months 3
 """
 
@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from quant.config import get_path_config, get_research_config
+from quant.data.binance_client import BinanceClient
 from quant.data.session_filter import filter_sessions
 from quant.data.storage import snapshot, validate_ohlcv, report_gaps
 from quant.features.pipeline import build_features, get_feature_columns
@@ -38,42 +39,57 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_synthetic_eurusd(n_bars: int = 40_000, seed: int = 42) -> pd.DataFrame:
+def generate_synthetic_crypto(n_bars: int = 10_000, seed: int = 42) -> pd.DataFrame:
     """
-    Generate synthetic EURUSD-like 1-minute data for testing.
+    Generate synthetic BTCUSDT-like 1-hour data for testing.
 
-    Produces realistic-looking data with varying volatility regimes.
+    Produces realistic-looking data with varying volatility regimes and
+    required supplementary columns for crypto feature modules.
     """
     rng = np.random.default_rng(seed)
 
-    # Generate only weekday session hours (08:00-21:00 UTC)
-    timestamps = []
-    current = datetime(2025, 11, 1, 8, 0, tzinfo=timezone.utc)
-    while len(timestamps) < n_bars:
-        if current.weekday() < 5 and 8 <= current.hour < 21:
-            timestamps.append(current)
-        current += timedelta(minutes=1)
+    timestamps = pd.date_range(
+        end=datetime.now(timezone.utc),
+        periods=n_bars,
+        freq="h",
+        tz="UTC",
+    )
 
-    price = 1.0850  # Typical EURUSD
+    price = 45000.0
     records = []
 
     for i, ts in enumerate(timestamps):
         # Regime-varying volatility
-        regime_cycle = np.sin(2 * np.pi * i / 5000) * 0.5 + 0.5
-        vol = 0.0001 + regime_cycle * 0.0003  # 1-4 pips
+        regime_cycle = np.sin(2 * np.pi * i / 1500) * 0.5 + 0.5
+        vol = 0.002 + regime_cycle * 0.01
 
         ret = rng.normal(0, vol)
         o = price
-        c = o + ret
+        c = o * (1 + ret)
 
         # High/low with realistic wicks
         wick_factor = rng.uniform(0.3, 1.5)
-        h = max(o, c) + abs(ret) * wick_factor * rng.uniform(0.1, 1.0)
-        l = min(o, c) - abs(ret) * wick_factor * rng.uniform(0.1, 1.0)
+        h = max(o, c) * (1 + abs(ret) * wick_factor * rng.uniform(0.1, 1.0))
+        l = min(o, c) * (1 - abs(ret) * wick_factor * rng.uniform(0.1, 1.0))
 
-        volume = max(0, rng.normal(100, 30))
+        volume = max(0.0, rng.normal(2500, 900))
+        taker_buy = max(0.0, min(volume, volume * rng.uniform(0.35, 0.65)))
 
-        records.append({"timestamp": ts, "open": o, "high": h, "low": l, "close": c, "volume": volume})
+        records.append(
+            {
+                "timestamp": ts,
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": c,
+                "volume": volume,
+                "taker_buy_volume": taker_buy,
+                "taker_sell_volume": volume - taker_buy,
+                "funding_rate_raw": float(rng.normal(0.00001, 0.00015)),
+                "open_interest": float(rng.normal(2.5e8, 6e7)),
+                "open_interest_value": float(rng.normal(1.2e10, 2.5e9)),
+            }
+        )
         price = c
 
     df = pd.DataFrame(records).set_index("timestamp")
@@ -228,9 +244,9 @@ def run_pipeline(
 
 def main() -> None:
     """CLI entrypoint."""
-    parser = argparse.ArgumentParser(description="EURUSD Quant Research Engine")
-    parser.add_argument("--dry-run", action="store_true", help="Use synthetic data (no API)")
-    parser.add_argument("--fetch", action="store_true", help="Fetch data from Capital.com")
+    parser = argparse.ArgumentParser(description="Crypto Quant Research Engine")
+    parser.add_argument("--dry-run", action="store_true", help="Use synthetic crypto data (no API)")
+    parser.add_argument("--fetch", action="store_true", help="Fetch data from Binance")
     parser.add_argument("--months", type=int, default=3, help="Months of history to fetch")
     parser.add_argument("--optimize", action="store_true", help="Run Optuna HPO + feature pruning")
     parser.add_argument("--prune", type=float, default=0.0, help="Feature pruning threshold (e.g. 0.01)")
@@ -241,24 +257,26 @@ def main() -> None:
     get_path_config()
 
     if args.dry_run:
-        logger.info("DRY RUN — using synthetic EURUSD data (%d bars)", args.bars)
-        df = generate_synthetic_eurusd(n_bars=args.bars)
+        logger.info("DRY RUN — using synthetic BTCUSDT data (%d bars)", args.bars)
+        df = generate_synthetic_crypto(n_bars=args.bars)
         run_pipeline(df, optimize=args.optimize)
 
     elif args.fetch:
-        from quant.data.capital_client import CapitalClient
+        cfg = get_research_config()
+        if cfg.mode != "crypto":
+            logger.error("Legacy FX mode is disabled. Set mode=crypto in ResearchConfig.")
+            sys.exit(1)
 
-        client = CapitalClient()
-        client.authenticate()
+        client = BinanceClient()
 
         date_to = datetime.now(timezone.utc)
         date_from = date_to - timedelta(days=args.months * 30)
 
-        logger.info("Fetching EURUSD 1m data: %s → %s", date_from, date_to)
-        
-        # Use a consistent cache directory for resumable fetching
-        cache_dir = get_path_config().datasets_raw / "fetch_cache"
-        df = client.fetch_historical(date_from, date_to, cache_dir=cache_dir)
+        logger.info("Fetching BTCUSDT 1H data: %s → %s", date_from, date_to)
+        ohlcv = client.fetch_historical(date_from, date_to)
+        funding = client.fetch_funding_rates(date_from, date_to)
+        oi = client.fetch_open_interest(date_from, date_to)
+        df = BinanceClient.merge_supplementary(ohlcv, funding, oi)
 
         if df.empty:
             logger.error("No data received from API")
@@ -267,7 +285,7 @@ def main() -> None:
         # Save raw
         from quant.data.storage import save_raw
 
-        label = f"EURUSD_1m_{date_from.strftime('%Y%m%d')}_{date_to.strftime('%Y%m%d')}"
+        label = f"BTCUSDT_1h_{date_from.strftime('%Y%m%d')}_{date_to.strftime('%Y%m%d')}"
         save_raw(df, label)
 
         run_pipeline(df, optimize=args.optimize, prune_threshold=args.prune)

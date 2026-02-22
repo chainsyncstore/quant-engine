@@ -10,7 +10,7 @@ class User(Base):
     telegram_id = Column(Integer, primary_key=True)
     username = Column(String)
     role = Column(String, default='user') # admin, user
-    status = Column(String, default='pending') # pending, approved, banned
+    status = Column(String, default='pending') # pending, active, banned
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     context = relationship("UserContext", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -18,11 +18,7 @@ class User(Base):
 class UserContext(Base):
     __tablename__ = 'user_context'
     telegram_id = Column(Integer, ForeignKey('users.telegram_id'), primary_key=True)
-    # Capital.com credentials (FX mode)
-    capital_email = Column(String)
-    capital_api_key = Column(String)
-    capital_password = Column(String)
-    # Binance credentials (crypto mode - for future live trading)
+    # Binance credentials (crypto mode)
     binance_api_key = Column(String)
     binance_api_secret = Column(String)
     live_mode = Column(Boolean, default=False)

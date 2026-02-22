@@ -1,7 +1,7 @@
 """
-Live signal generator for paper trading.
+Live signal generator for Binance-backed crypto paper/live trading.
 
-Loads production models and periodically fetches new bars from Capital.com.
+Loads production models and periodically fetches new bars from Binance.
 For each new bar, it computes features, detects the current regime,
 and generates a BUY/SELL/HOLD signal based on regime-gated thresholds.
 
@@ -29,9 +29,8 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from quant.config import get_research_config, CapitalAPIConfig, BinanceAPIConfig
+from quant.config import BinanceAPIConfig
 from quant.risk.volatility_guard import VolatilityGuard
-from quant.data.capital_client import CapitalClient
 from quant.data.binance_client import BinanceClient
 from quant.data.session_filter import filter_sessions
 from quant.features.pipeline import build_features, get_feature_columns
@@ -58,14 +57,17 @@ REGIME_LOOKBACK = 500
 class SignalGenerator:
     """Live signal generator with regime-gated trading, position sizing, and risk guardrails."""
 
-    def __init__(self, model_dir: Path, capital: float = 10000.0, horizon: int = 10,
-                 api_config: Optional[CapitalAPIConfig] = None,
-                 binance_config: Optional[BinanceAPIConfig] = None,
-                 live: bool = False):
+    def __init__(
+        self,
+        model_dir: Path,
+        capital: float = 10000.0,
+        horizon: int = 10,
+        binance_config: Optional[BinanceAPIConfig] = None,
+        live: bool = False,
+    ):
         self.model_dir = model_dir
         self.capital = capital
         self.horizon = horizon
-        self.api_config = api_config
         self.binance_config = binance_config
         self.live = live
 
@@ -73,8 +75,12 @@ class SignalGenerator:
         with open(model_dir / "config.json") as f:
             self.config = json.load(f)
 
-        # Determine mode from model config (crypto vs fx)
-        self.mode = self.config.get("mode", "fx")
+        # Determine mode from model config
+        self.mode = self.config.get("mode", "crypto")
+        if self.mode != "crypto":
+            raise RuntimeError(
+                f"Model at {model_dir} is mode={self.mode!r}. Only crypto models are supported."
+            )
         self.taker_fee_rate = self.config.get("taker_fee_rate", 0.0004)
 
         # Validate horizon
@@ -127,13 +133,8 @@ class SignalGenerator:
             model_dir / "regime_model.joblib"
         )
 
-        # API client — Binance for crypto, Capital.com for FX
-        if self.mode == "crypto":
-            self.binance_client = BinanceClient(config=self.binance_config)
-            self.client = None
-        else:
-            self.client = CapitalClient(config=self.api_config)
-            self.binance_client = None
+        # API client — Binance only
+        self.binance_client = BinanceClient(config=self.binance_config)
         self._authenticated = False
 
         # Signal log
@@ -177,17 +178,12 @@ class SignalGenerator:
             )
 
     def _ensure_authenticated(self) -> None:
-        if self.mode == "crypto":
-            if self.live and not self._authenticated:
-                # Live crypto mode: verify Binance API credentials
-                self.binance_client.authenticate()
-                self._authenticated = True
-            else:
-                # Paper mode: read-only endpoints don't need auth
-                self._authenticated = True
-            return
-        if not self._authenticated:
-            self.client.authenticate()
+        if self.live and not self._authenticated:
+            # Live crypto mode: verify Binance API credentials
+            self.binance_client.authenticate()
+            self._authenticated = True
+        else:
+            # Paper mode: read-only endpoints don't need auth
             self._authenticated = True
 
     def fetch_recent_bars(self, n_bars: int = 800) -> pd.DataFrame:
@@ -195,22 +191,17 @@ class SignalGenerator:
         self._ensure_authenticated()
         date_to = datetime.now(timezone.utc)
 
-        if self.mode == "crypto":
-            # Fetch 700 bars of 1H data (~29 days, fits in 1 Binance request)
-            date_from = date_to - timedelta(hours=n_bars)
+        # Fetch n bars of 1H data from Binance
+        date_from = date_to - timedelta(hours=n_bars)
 
-            ohlcv = self.binance_client.fetch_historical(date_from, date_to)
-            if ohlcv.empty:
-                raise RuntimeError("No OHLCV data from Binance")
+        ohlcv = self.binance_client.fetch_historical(date_from, date_to)
+        if ohlcv.empty:
+            raise RuntimeError("No OHLCV data from Binance")
 
-            # Fetch supplementary data for feature computation
-            funding = self.binance_client.fetch_funding_rates(date_from, date_to)
-            oi = self.binance_client.fetch_open_interest(date_from, date_to)
-            df = BinanceClient.merge_supplementary(ohlcv, funding, oi)
-        else:
-            # FX mode: 14 hours of 1-min bars
-            date_from = date_to - timedelta(hours=14)
-            df = self.client.fetch_historical(date_from, date_to)
+        # Fetch supplementary data for feature computation
+        funding = self.binance_client.fetch_funding_rates(date_from, date_to)
+        oi = self.binance_client.fetch_open_interest(date_from, date_to)
+        df = BinanceClient.merge_supplementary(ohlcv, funding, oi)
 
         if df.empty:
             raise RuntimeError("No data received from API")
@@ -223,19 +214,12 @@ class SignalGenerator:
         win_rate = cfg.get("win_rate", 0.5)
         ev = cfg.get("ev", 0.0)
 
-        if self.mode == "crypto":
-            # For crypto: avg_loss based on fee rate + typical adverse move
-            avg_loss = close_price * self.taker_fee_rate * 2 + close_price * 0.005
-            if win_rate > 0 and avg_loss > 0:
-                avg_win = (ev + (1 - win_rate) * avg_loss) / win_rate
-            else:
-                avg_win = 0.0
+        # For crypto: avg_loss based on fee rate + typical adverse move
+        avg_loss = close_price * self.taker_fee_rate * 2 + close_price * 0.005
+        if win_rate > 0 and avg_loss > 0:
+            avg_win = (ev + (1 - win_rate) * avg_loss) / win_rate
         else:
-            avg_loss = self.spread * 2
-            if win_rate > 0:
-                avg_win = (ev + (1 - win_rate) * avg_loss) / win_rate
-            else:
-                avg_win = 0.0
+            avg_win = 0.0
 
         pos = compute_position_size(
             capital=self.capital,
@@ -424,7 +408,7 @@ class SignalGenerator:
         )
 
         # Live mode: close on Binance
-        if self.live and self.mode == "crypto":
+        if self.live:
             symbol = self.binance_client._cfg.symbol
             try:
                 self.binance_client.close_position(symbol)
@@ -447,10 +431,7 @@ class SignalGenerator:
         direction = pos["signal"]
         age = datetime.now(timezone.utc) - pos["entry_time"]
 
-        if self.mode == "crypto":
-            horizon_delta = timedelta(hours=self.horizon)
-        else:
-            horizon_delta = timedelta(minutes=self.horizon)
+        horizon_delta = timedelta(hours=self.horizon)
 
         # Check stop loss
         if direction == "BUY":
@@ -475,107 +456,68 @@ class SignalGenerator:
         """
         Execute trade based on signal.
 
-        In crypto mode: paper trading only (log signal, no actual execution).
-        In FX mode: execute via Capital.com API.
+        In paper mode, logs synthetic fills.
+        In live mode, executes via Binance Futures.
         """
         sig_type = signal["signal"]
         if sig_type == "HOLD":
             return
 
-        if self.mode == "crypto":
-            size = signal.get("position", {}).get("lot_size", 0)
+        size = signal.get("position", {}).get("lot_size", 0)
 
-            if not self.live:
-                # Paper trading: close opposing position if one exists
-                if self._open_position and self._open_position["signal"] != sig_type:
-                    self._close_open_position("OPPOSING_SIGNAL", signal["close_price"])
+        if not self.live:
+            # Paper trading: close opposing position if one exists
+            if self._open_position and self._open_position["signal"] != sig_type:
+                self._close_open_position("OPPOSING_SIGNAL", signal["close_price"])
 
-                logger.info(
-                    "PAPER TRADE: %s %.4f BTC @ $%.2f (risk=%.1f%%)",
-                    sig_type, size, signal["close_price"],
-                    signal.get("position", {}).get("risk_fraction", 0) * 100,
-                )
-                self._open_new_position(signal)
-                return
-
-            # LIVE execution via Binance Futures
-            if not self._authenticated:
-                self._ensure_authenticated()
-
-            symbol = self.binance_client._cfg.symbol
-            try:
-                positions = self.binance_client.get_positions(symbol)
-            except Exception as e:
-                logger.error(f"Failed to fetch Binance positions: {e}")
-                return
-
-            current_pos = positions[0] if positions else None
-            if current_pos:
-                pos_amt = float(current_pos["positionAmt"])
-                # Close if opposite direction: long (>0) vs SELL, short (<0) vs BUY
-                is_long = pos_amt > 0
-                if (is_long and sig_type == "SELL") or (not is_long and sig_type == "BUY"):
-                    logger.info("Closing opposite %s position before %s", "LONG" if is_long else "SHORT", sig_type)
-                    try:
-                        self.binance_client.close_position(symbol)
-                        self._open_position = None  # Clear tracked position
-                    except Exception as e:
-                        logger.error(f"Failed to close Binance position: {e}")
-                        return
-                    current_pos = None
-                else:
-                    # Already positioned in same direction
-                    logger.info("Already %s %s. Skipping duplicate order.", "LONG" if is_long else "SHORT", symbol)
-                    return
-
-            if size <= 0:
-                logger.warning("Signal %s but lot_size=0. Skipping.", sig_type)
-                return
-
-            logger.info("LIVE TRADE: %s %.4f %s @ $%.2f", sig_type, size, symbol, signal["close_price"])
-            try:
-                self.binance_client.place_order(symbol=symbol, side=sig_type, quantity=size)
-                self._open_new_position(signal)
-            except Exception as e:
-                logger.error(f"Failed to place Binance order: {e}")
+            logger.info(
+                "PAPER TRADE: %s %.4f BTC @ $%.2f (risk=%.1f%%)",
+                sig_type, size, signal["close_price"],
+                signal.get("position", {}).get("risk_fraction", 0) * 100,
+            )
+            self._open_new_position(signal)
             return
 
-        # FX mode: execute via Capital.com
+        # LIVE execution via Binance Futures
         if not self._authenticated:
             self._ensure_authenticated()
 
-        epic = self.client._cfg.epic
+        symbol = self.binance_client._cfg.symbol
         try:
-            positions = self.client.get_positions()
+            positions = self.binance_client.get_positions(symbol)
         except Exception as e:
-            logger.error(f"Failed to fetch positions: {e}")
+            logger.error(f"Failed to fetch Binance positions: {e}")
             return
 
-        current_pos = next((p for p in positions if p["market"]["epic"] == epic), None)
-        current_dir = current_pos["direction"] if current_pos else None
-        deal_id = current_pos["dealId"] if current_pos else None
-
-        if current_pos and current_dir != sig_type:
-            logger.info(f"Closing opposite {current_dir} position {deal_id}")
-            try:
-                self.client.close_position(deal_id)
-                self._open_position = None  # Clear tracked position
+        current_pos = positions[0] if positions else None
+        if current_pos:
+            pos_amt = float(current_pos["positionAmt"])
+            # Close if opposite direction: long (>0) vs SELL, short (<0) vs BUY
+            is_long = pos_amt > 0
+            if (is_long and sig_type == "SELL") or (not is_long and sig_type == "BUY"):
+                logger.info("Closing opposite %s position before %s", "LONG" if is_long else "SHORT", sig_type)
+                try:
+                    self.binance_client.close_position(symbol)
+                    self._open_position = None  # Clear tracked position
+                except Exception as e:
+                    logger.error(f"Failed to close Binance position: {e}")
+                    return
                 current_pos = None
-            except Exception as e:
-                logger.error(f"Failed to close position: {e}")
+            else:
+                # Already positioned in same direction
+                logger.info("Already %s %s. Skipping duplicate order.", "LONG" if is_long else "SHORT", symbol)
                 return
 
-        if not current_pos:
-            size = signal.get("position", {}).get("lot_size", 0)
-            if size <= 0:
-                logger.warning("Signal BUY/SELL but size=0. Skipping.")
-                return
+        if size <= 0:
+            logger.warning("Signal %s but lot_size=0. Skipping.", sig_type)
+            return
 
-            logger.info(f"Opening {sig_type} {size} {epic}")
-            try:
-                self.client.place_order(epic=epic, direction=sig_type, size=size)
-            except Exception as e:
-                logger.error(f"Failed to place order: {e}")
+        logger.info("LIVE TRADE: %s %.4f %s @ $%.2f", sig_type, size, symbol, signal["close_price"])
+        try:
+            self.binance_client.place_order(symbol=symbol, side=sig_type, quantity=size)
+            self._open_new_position(signal)
+        except Exception as e:
+            logger.error(f"Failed to place Binance order: {e}")
 
     def _evaluate_past_signals(self, df: pd.DataFrame) -> None:
         """
@@ -591,11 +533,7 @@ class SignalGenerator:
         latest_price = float(df["close"].iloc[-1])
         latest_ts = df.index[-1]
 
-        # Crypto horizons are in hours, FX horizons are in minutes
-        if self.mode == "crypto":
-            horizon_delta = timedelta(hours=self.horizon)
-        else:
-            horizon_delta = timedelta(minutes=self.horizon)
+        horizon_delta = timedelta(hours=self.horizon)
 
         for sig in self.signal_log:
             if sig.get("outcome") is not None:
@@ -651,24 +589,18 @@ class SignalGenerator:
             sig["outcome"] = "win" if won else "loss"
             sig["exit_price"] = exit_price
 
-            if self.mode == "crypto":
-                pnl_pct = (exit_price - entry_price) / entry_price * 100
-                if sig["signal"] == "SELL":
-                    pnl_pct = -pnl_pct
-                sig["pnl_pct"] = round(pnl_pct, 3)
+            pnl_pct = (exit_price - entry_price) / entry_price * 100
+            if sig["signal"] == "SELL":
+                pnl_pct = -pnl_pct
+            sig["pnl_pct"] = round(pnl_pct, 3)
 
-                # Update paper balance using the risk fraction from the trade
-                risk_frac = sig.get("position", {}).get("risk_fraction", 0.02)
-                trade_pnl_usd = self.paper_balance * risk_frac * (pnl_pct / 100) / self.stop_loss_pct
-                sig["pnl_usd"] = round(trade_pnl_usd, 2)
-                self.paper_balance += trade_pnl_usd
+            # Update paper balance using the risk fraction from the trade
+            risk_frac = sig.get("position", {}).get("risk_fraction", 0.02)
+            trade_pnl_usd = self.paper_balance * risk_frac * (pnl_pct / 100) / self.stop_loss_pct
+            sig["pnl_usd"] = round(trade_pnl_usd, 2)
+            self.paper_balance += trade_pnl_usd
 
-                pnl_label = f"{pnl_pct:+.3f}% (${trade_pnl_usd:+.2f})"
-            else:
-                sig["pnl_pips"] = round((exit_price - entry_price) * 10000, 1)
-                if sig["signal"] == "SELL":
-                    sig["pnl_pips"] = -sig["pnl_pips"]
-                pnl_label = f"{sig['pnl_pips']:+.1f} pips"
+            pnl_label = f"{pnl_pct:+.3f}% (${trade_pnl_usd:+.2f})"
 
             self.evaluated_count += 1
             if won:
@@ -705,13 +637,9 @@ class SignalGenerator:
 
         win_rate = (self.win_count / self.evaluated_count * 100) if self.evaluated_count > 0 else 0.0
 
-        if self.mode == "crypto":
-            total_pnl_usd = sum(s.get("pnl_usd", 0) for s in self.signal_log if s.get("outcome") in ("win", "loss"))
-            total_pnl_pct = (self.paper_balance - self.initial_capital) / self.initial_capital * 100
-            pnl_label = f"${total_pnl_usd:+,.2f} ({total_pnl_pct:+.2f}%)"
-        else:
-            total_pnl = sum(s.get("pnl_pips", 0) for s in self.signal_log if s.get("outcome") in ("win", "loss"))
-            pnl_label = f"{total_pnl:+.1f} pips"
+        total_pnl_usd = sum(s.get("pnl_usd", 0) for s in self.signal_log if s.get("outcome") in ("win", "loss"))
+        total_pnl_pct = (self.paper_balance - self.initial_capital) / self.initial_capital * 100
+        pnl_label = f"${total_pnl_usd:+,.2f} ({total_pnl_pct:+.2f}%)"
 
         stop_losses = sum(1 for s in self.signal_log if s.get("exit_reason") == "stop_loss")
 
@@ -877,7 +805,7 @@ def main() -> None:
         "--interval",
         type=int,
         default=None,
-        help="Seconds between signals (default: 3600 for crypto, 60 for FX)",
+        help="Seconds between signals (default: 3600)",
     )
     parser.add_argument(
         "--capital",
@@ -900,8 +828,8 @@ def main() -> None:
 
     gen = SignalGenerator(model_dir, capital=args.capital, horizon=args.horizon)
 
-    # Default interval: 1H for crypto, 1min for FX
-    interval = args.interval or (3600 if gen.mode == "crypto" else 60)
+    # Default interval: 1H
+    interval = args.interval or 3600
 
     if args.once:
         gen.run_once()
