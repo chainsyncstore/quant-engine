@@ -69,6 +69,6 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
             np.abs(df["low"] - df["close"].shift(1))
         )
         atr = tr.rolling(window=14).mean()
-        out["spread_to_atr"] = np.where(atr > 0, spread / atr, 0.0)
+        out["spread_to_atr"] = np.where(atr > 0, spread / atr, np.nan)
 
     return out

@@ -26,11 +26,13 @@ class VolatilityGuard:
             return
 
         vol_values = df[vol_col].dropna()
-        if len(vol_values) >= self.min_samples:
-            self.threshold = float(vol_values.quantile(self.percentile))
-        else:
-            # Not enough data for reliable percentile — disable guard
+        if len(vol_values) == 0:
             self.threshold = None
+            return
+
+        # Even when history is shorter than min_samples, use available data so
+        # the guard remains functional in live and test environments.
+        self.threshold = float(vol_values.quantile(self.percentile))
             
     def check(self, current_vol: float) -> bool:
         """

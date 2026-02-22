@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 
 from quant.data.session_filter import filter_sessions
+from quant.config import ResearchConfig
 
 
 class TestSessionFilter:
@@ -13,7 +14,11 @@ class TestSessionFilter:
         # All bars should already be in session (our fixture generates session-only data)
         assert len(result) == len(synthetic_ohlcv)
 
-    def test_drops_weekend_bars(self):
+    def test_drops_weekend_bars(self, monkeypatch):
+        monkeypatch.setattr(
+            "quant.data.session_filter.get_research_config",
+            lambda: ResearchConfig(mode="fx"),
+        )
         # Create data with a Saturday bar
         timestamps = [
             datetime(2025, 12, 6, 10, 0, tzinfo=timezone.utc),  # Saturday
@@ -28,7 +33,11 @@ class TestSessionFilter:
         assert len(result) == 1  # Only Monday kept
         assert result.index[0].weekday() == 0  # Monday
 
-    def test_drops_out_of_session_bars(self):
+    def test_drops_out_of_session_bars(self, monkeypatch):
+        monkeypatch.setattr(
+            "quant.data.session_filter.get_research_config",
+            lambda: ResearchConfig(mode="fx"),
+        )
         # Create data at 03:00 UTC (before London open)
         timestamps = [
             datetime(2025, 12, 8, 3, 0, tzinfo=timezone.utc),   # Too early

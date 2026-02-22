@@ -10,11 +10,14 @@ class TestLabeler:
     def test_3m_labels_correct(self, synthetic_ohlcv):
         from quant.config import get_research_config
         cfg = get_research_config()
-        dz = cfg.dead_zone_price
         result = add_labels(synthetic_ohlcv, horizons=[3])
         # Verify labels manually for first few rows
         for i in range(min(10, len(result))):
             move = synthetic_ohlcv["close"].iloc[i + 3] - synthetic_ohlcv["close"].iloc[i]
+            if cfg.mode == "crypto" and cfg.dead_zone_pct > 0:
+                dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
+            else:
+                dz = cfg.dead_zone_price
             if move > dz:
                 expected = 1
             elif move < -dz:
@@ -26,10 +29,13 @@ class TestLabeler:
     def test_5m_labels_correct(self, synthetic_ohlcv):
         from quant.config import get_research_config
         cfg = get_research_config()
-        dz = cfg.dead_zone_price
         result = add_labels(synthetic_ohlcv, horizons=[5])
         for i in range(min(10, len(result))):
             move = synthetic_ohlcv["close"].iloc[i + 5] - synthetic_ohlcv["close"].iloc[i]
+            if cfg.mode == "crypto" and cfg.dead_zone_pct > 0:
+                dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
+            else:
+                dz = cfg.dead_zone_price
             if move > dz:
                 expected = 1
             elif move < -dz:
@@ -51,21 +57,23 @@ class TestLabeler:
     def test_dead_zone_filters_small_moves(self):
         """Verify moves within dead zone are labeled FLAT (-1)."""
         from datetime import datetime, timedelta, timezone
-        # Create prices with known moves: +0.001 (UP), -0.001 (DOWN), +0.00001 (FLAT)
+        # Create prices with known moves beyond dead zone in crypto mode.
         ts = [datetime(2025, 12, 1, 10, i, tzinfo=timezone.utc) for i in range(10)]
-        prices = [1.0, 1.0, 1.0, 1.001, 1.0, 1.0, 0.999, 1.0, 1.0, 1.00001]
+        prices = [1.0, 1.0, 1.0, 1.0012, 1.0, 1.0, 0.9988, 1.0, 1.0, 1.00001]
         df = pd.DataFrame({
             "open": prices, "high": [p + 0.001 for p in prices],
             "low": [p - 0.001 for p in prices], "close": prices,
             "volume": [100] * 10,
         }, index=pd.DatetimeIndex(ts, tz="UTC"))
         result = add_labels(df, horizons=[3])
-        # Row 0: close[3]=1.001 - close[0]=1.0 = 0.001 > dead_zone → UP (1)
+        # Row 0: close[3]=1.0012 - close[0]=1.0 = 0.0012 > dead_zone → UP (1)
         assert result["label_3m"].iloc[0] == 1
-        # Row 3: close[6]=0.999 - close[3]=1.001 = -0.002 < -dead_zone → DOWN (0)
+        # Row 3: close[6]=0.9988 - close[3]=1.0012 = -0.0024 < -dead_zone → DOWN (0)
         assert result["label_3m"].iloc[3] == 0
 
     def test_both_horizons_present(self, synthetic_ohlcv):
+        from quant.config import get_research_config
+        cfg = get_research_config()
         result = add_labels(synthetic_ohlcv)
-        assert "label_3m" in result.columns
-        assert "label_5m" in result.columns
+        for h in cfg.horizons:
+            assert f"label_{h}m" in result.columns
