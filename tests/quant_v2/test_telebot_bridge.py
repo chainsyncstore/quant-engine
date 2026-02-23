@@ -260,6 +260,25 @@ def test_format_portfolio_snapshot_includes_notional_breakdown() -> None:
     assert "ETHUSDT" in text
 
 
+def test_format_portfolio_snapshot_lists_all_symbol_stakes_without_truncation() -> None:
+    service = InMemoryExecutionService()
+    asyncio.run(service.start_session(SessionRequest(user_id=102, live=False)))
+    snap = service.get_portfolio_snapshot(102)
+    assert snap is not None
+
+    symbol_notionals = {f"SYM{i}USDT": float(200 - i) for i in range(12)}
+    open_positions = {symbol: 0.01 for symbol in symbol_notionals}
+    custom = replace(
+        snap,
+        open_positions=open_positions,
+        symbol_notional_usd=symbol_notionals,
+    )
+    text = format_portfolio_snapshot(custom, mode_label="PAPER")
+
+    for symbol in symbol_notionals:
+        assert symbol in text
+
+
 def test_format_portfolio_snapshot_includes_symbol_pnl_when_available() -> None:
     service = InMemoryExecutionService()
     asyncio.run(service.start_session(SessionRequest(user_id=101, live=False)))
@@ -270,9 +289,25 @@ def test_format_portfolio_snapshot_includes_symbol_pnl_when_available() -> None:
         snap,
         open_positions={"BTCUSDT": 0.01, "ETHUSDT": -0.02},
         symbol_notional_usd={"BTCUSDT": 150.0, "ETHUSDT": 200.0},
-        symbol_pnl_usd={"BTCUSDT": 12.5, "ETHUSDT": -8.0},
+        symbol_pnl_usd={
+            "BTCUSDT": 12.5,
+            "ETHUSDT": -8.0,
+            "XRPUSDT": 18.0,
+            "SOLUSDT": 0.5,
+            "ADAUSDT": -10.0,
+            "LTCUSDT": 6.0,
+        },
     )
     text = format_portfolio_snapshot(custom, mode_label="PAPER")
     assert "Top Symbol PnL" in text
-    assert "BTCUSDT" in text
-    assert "ETHUSDT" in text
+
+    pnl_section = text.split("Top Symbol PnL:\n", 1)[1]
+    expected_order = ["XRPUSDT", "BTCUSDT", "LTCUSDT", "SOLUSDT", "ETHUSDT", "ADAUSDT"]
+    for symbol in expected_order:
+        assert symbol in pnl_section
+
+    first_index = -1
+    for symbol in expected_order:
+        current_index = pnl_section.index(f"- {symbol}:")
+        assert current_index > first_index
+        first_index = current_index

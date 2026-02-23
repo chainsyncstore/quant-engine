@@ -660,6 +660,64 @@ def test_routed_execution_service_populates_unrealized_symbol_pnl_for_paper() ->
     assert snapshot.symbol_pnl_usd["BTCUSDT"] == pytest.approx(open_qty * 10.0)
 
 
+def test_routed_execution_service_merges_prices_for_symbol_notional_snapshot() -> None:
+    service = RoutedExecutionService(
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.10,
+            max_gross_exposure_frac=0.20,
+            max_net_exposure_frac=0.20,
+        )
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=513, live=False))) is True
+
+    btc_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.9,
+    )
+    eth_signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.9,
+    )
+
+    asyncio.run(
+        service.route_signals(
+            513,
+            signals=(btc_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    asyncio.run(
+        service.route_signals(
+            513,
+            signals=(eth_signal,),
+            prices={"ETHUSDT": 200.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+
+    snapshot = service.get_portfolio_snapshot(513)
+    assert snapshot is not None
+    assert "BTCUSDT" in snapshot.open_positions
+    assert "ETHUSDT" in snapshot.open_positions
+    assert "BTCUSDT" in snapshot.symbol_notional_usd
+    assert "ETHUSDT" in snapshot.symbol_notional_usd
+
+
 def test_routed_execution_service_reset_session_state_reinitializes_paper_session() -> None:
     service = RoutedExecutionService()
     assert asyncio.run(service.start_session(SessionRequest(user_id=409, live=False))) is True

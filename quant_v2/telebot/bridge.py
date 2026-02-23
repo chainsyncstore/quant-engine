@@ -48,11 +48,11 @@ def format_portfolio_snapshot(snapshot: PortfolioSnapshot, *, mode_label: str) -
         lines.append("")
         lines.append("Per-symbol stake:")
         ordered = sorted(symbol_notionals.items(), key=lambda kv: abs(kv[1]), reverse=True)
-        for symbol, notional in ordered[:10]:
+        for symbol, notional in ordered:
             lines.append(f"- {symbol}: `${notional:,.2f}`")
 
     if snapshot.symbol_pnl_usd:
-        top = sorted(snapshot.symbol_pnl_usd.items(), key=lambda kv: abs(kv[1]), reverse=True)[:5]
+        top = sorted(snapshot.symbol_pnl_usd.items(), key=lambda kv: kv[1], reverse=True)
         lines.append("")
         lines.append("Top Symbol PnL:")
         for symbol, pnl in top:

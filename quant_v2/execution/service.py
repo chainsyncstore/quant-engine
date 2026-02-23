@@ -634,11 +634,16 @@ class RoutedExecutionService:
                 starting_positions=current_positions,
             )
 
-        state.last_prices = {
+        incoming_prices = {
             symbol: float(price)
             for symbol, price in prices.items()
             if float(price) > 0.0
         }
+        if incoming_prices:
+            state.last_prices = {
+                **state.last_prices,
+                **incoming_prices,
+            }
         merged_anomaly = max(
             state.external_execution_anomaly_rate,
             state.diagnostics.reject_rate,
@@ -674,7 +679,7 @@ class RoutedExecutionService:
             state.adapter,
             equity_usd=state.snapshot.equity_usd,
             risk_policy=policy,
-            prices=prices,
+            prices=state.last_prices,
         )
         if state.snapshot.open_positions:
             state.snapshot = replace(
