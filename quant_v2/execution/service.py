@@ -55,10 +55,18 @@ class ExecutionDiagnostics:
     reject_rate: float = 0.0
     slippage_sample_count: int = 0
     avg_adverse_slippage_bps: float = 0.0
+    entry_orders: int = 0
+    rebalance_orders: int = 0
+    exit_orders: int = 0
+    skipped_by_filter: int = 0
+    skipped_by_deadband: int = 0
     live_go_no_go_passed: bool = True
     rollback_required: bool = False
     rollout_failure_streak: int = 0
     rollout_gate_reasons: tuple[str, ...] = field(default_factory=tuple)
+    effective_symbol_cap_frac: float = 0.0
+    effective_gross_cap_frac: float = 0.0
+    effective_net_cap_frac: float = 0.0
 
 
 class ExecutionService(Protocol):
@@ -120,6 +128,8 @@ class _SessionState:
     effective_risk_policy: PortfolioRiskPolicy
     last_prices: dict[str, float] = field(default_factory=dict)
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
+    paper_entry_price: dict[str, float] = field(default_factory=dict)
+    last_rebalance_at: dict[str, datetime] = field(default_factory=dict)
     external_execution_anomaly_rate: float = 0.0
     monitoring_snapshot: MonitoringSnapshot = field(default_factory=MonitoringSnapshot)
     kill_switch: KillSwitchEvaluation = field(
@@ -245,6 +255,9 @@ class RoutedExecutionService:
         enforce_live_go_no_go: bool | None = None,
         live_go_no_go: bool | None = None,
         rollback_failure_threshold: int | None = None,
+        min_rebalance_notional_usd: float | None = None,
+        rebalance_cooldown_seconds: int | None = None,
+        max_orders_per_cycle: int | None = None,
     ) -> None:
         self._sessions: dict[int, _SessionState] = {}
         self._paper_adapter_factory = paper_adapter_factory or self._default_paper_adapter_factory
@@ -283,6 +296,24 @@ class RoutedExecutionService:
         self._rollback_reasons: tuple[str, ...] = ()
         self._refresh_runtime_rollout_controls()
 
+        if min_rebalance_notional_usd is None:
+            min_rebalance_notional_usd = self._parse_float_env(
+                "BOT_V2_MIN_REBALANCE_NOTIONAL_USD",
+                10.0,
+            )
+        self._min_rebalance_notional_usd = max(float(min_rebalance_notional_usd), 0.0)
+
+        if rebalance_cooldown_seconds is None:
+            rebalance_cooldown_seconds = self._parse_int_env(
+                "BOT_V2_REBALANCE_COOLDOWN_SECONDS",
+                0,
+            )
+        self._rebalance_cooldown_seconds = max(int(rebalance_cooldown_seconds), 0)
+
+        if max_orders_per_cycle is None:
+            max_orders_per_cycle = self._parse_int_env("BOT_V2_MAX_ORDERS_PER_CYCLE", 0)
+        self._max_orders_per_cycle = max(int(max_orders_per_cycle), 0)
+
     async def start_session(self, request: SessionRequest) -> bool:
         if request.user_id in self._sessions:
             return False
@@ -303,6 +334,7 @@ class RoutedExecutionService:
             risk_policy=session_policy,
             prices={},
         )
+        diagnostics = self._build_initial_diagnostics(session_policy)
         self._sessions[request.user_id] = _SessionState(
             request=request,
             adapter=adapter,
@@ -310,6 +342,7 @@ class RoutedExecutionService:
             snapshot=snapshot,
             effective_risk_policy=session_policy,
             last_prices={},
+            diagnostics=diagnostics,
         )
         return True
 
@@ -334,6 +367,7 @@ class RoutedExecutionService:
             risk_policy=state.effective_risk_policy,
             prices={},
         )
+        diagnostics = self._build_initial_diagnostics(state.effective_risk_policy)
         self._sessions[user_id] = _SessionState(
             request=state.request,
             adapter=adapter,
@@ -341,6 +375,7 @@ class RoutedExecutionService:
             snapshot=snapshot,
             effective_risk_policy=state.effective_risk_policy,
             last_prices={},
+            diagnostics=diagnostics,
         )
         return True
 
@@ -364,6 +399,15 @@ class RoutedExecutionService:
                 risk_policy=state.effective_risk_policy,
                 prices=state.last_prices,
             )
+            if state.snapshot.open_positions:
+                state.snapshot = replace(
+                    state.snapshot,
+                    symbol_pnl_usd=self._resolve_symbol_pnl(
+                        state,
+                        open_positions=state.snapshot.open_positions,
+                        prices=state.last_prices,
+                    ),
+                )
         except Exception as exc:
             logger.warning("Failed refreshing v2 snapshot for user %s: %s", user_id, exc)
 
@@ -449,6 +493,12 @@ class RoutedExecutionService:
             policy = state.effective_risk_policy
         else:
             policy = self._apply_canary_risk_cap(risk_policy) if state.request.live else risk_policy
+        state.diagnostics = replace(
+            state.diagnostics,
+            effective_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
+            effective_gross_cap_frac=float(policy.max_gross_exposure_frac),
+            effective_net_cap_frac=float(policy.max_net_exposure_frac),
+        )
         cfg = planner_config or self._planner_config
 
         if equity_usd is not None:
@@ -471,8 +521,11 @@ class RoutedExecutionService:
             min_qty=min_qty,
         )
 
-        epoch_minute = int(datetime.now(timezone.utc).timestamp() // 60)
+        now_utc = datetime.now(timezone.utc)
+        epoch_minute = int(now_utc.timestamp() // 60)
         results: list[ExecutionResult] = []
+        activity_by_key: dict[str, str] = {}
+        attempted_orders = 0
         for plan in order_plans:
             idempotency_key = build_idempotency_key(
                 user_id=user_id,
@@ -480,6 +533,57 @@ class RoutedExecutionService:
                 epoch_minute=epoch_minute,
             )
             mark_price = float(prices.get(plan.symbol, 0.0) or 0.0)
+            current_qty = float(current_positions.get(plan.symbol, 0.0))
+            activity = self._classify_order_activity(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=float(plan.quantity),
+            )
+
+            if activity == "rebalance":
+                delta_notional_usd = abs(float(plan.quantity) * mark_price)
+                if (
+                    self._min_rebalance_notional_usd > 0.0
+                    and mark_price > 0.0
+                    and delta_notional_usd < self._min_rebalance_notional_usd
+                ):
+                    results.append(
+                        self._build_skipped_result(
+                            idempotency_key=idempotency_key,
+                            plan=plan,
+                            mark_price=mark_price,
+                            reason="skipped_by_deadband:min_notional_delta",
+                        )
+                    )
+                    continue
+
+                if self._rebalance_cooldown_seconds > 0:
+                    previous = state.last_rebalance_at.get(plan.symbol)
+                    if previous is not None:
+                        elapsed_seconds = (now_utc - previous).total_seconds()
+                        if elapsed_seconds < self._rebalance_cooldown_seconds:
+                            results.append(
+                                self._build_skipped_result(
+                                    idempotency_key=idempotency_key,
+                                    plan=plan,
+                                    mark_price=mark_price,
+                                    reason="skipped_by_deadband:cooldown",
+                                )
+                            )
+                            continue
+
+            if self._max_orders_per_cycle > 0 and attempted_orders >= self._max_orders_per_cycle:
+                results.append(
+                    self._build_skipped_result(
+                        idempotency_key=idempotency_key,
+                        plan=plan,
+                        mark_price=mark_price,
+                        reason="skipped_by_deadband:max_orders_per_cycle",
+                    )
+                )
+                continue
+
+            attempted_orders += 1
             try:
                 result = state.adapter.place_order(
                     plan,
@@ -508,12 +612,33 @@ class RoutedExecutionService:
                     reason=f"adapter_exception:{exc.__class__.__name__}",
                 )
             results.append(result)
+            activity_by_key[idempotency_key] = activity
 
         state.diagnostics = self._update_execution_diagnostics(
             state.diagnostics,
             results=results,
             prices=prices,
+            activity_by_key=activity_by_key,
         )
+
+        for result in results:
+            activity = activity_by_key.get(result.idempotency_key)
+            if activity == "rebalance" and result.accepted:
+                state.last_rebalance_at[result.symbol] = now_utc
+
+        if state.mode != "live":
+            self._update_paper_entry_price(
+                state,
+                results=results,
+                prices=prices,
+                starting_positions=current_positions,
+            )
+
+        state.last_prices = {
+            symbol: float(price)
+            for symbol, price in prices.items()
+            if float(price) > 0.0
+        }
         merged_anomaly = max(
             state.external_execution_anomaly_rate,
             state.diagnostics.reject_rate,
@@ -551,7 +676,15 @@ class RoutedExecutionService:
             risk_policy=policy,
             prices=prices,
         )
-        state.last_prices = {symbol: float(price) for symbol, price in prices.items() if float(price) > 0.0}
+        if state.snapshot.open_positions:
+            state.snapshot = replace(
+                state.snapshot,
+                symbol_pnl_usd=self._resolve_symbol_pnl(
+                    state,
+                    open_positions=state.snapshot.open_positions,
+                    prices=state.last_prices,
+                ),
+            )
         return tuple(results)
 
     def set_monitoring_snapshot(
@@ -688,6 +821,43 @@ class RoutedExecutionService:
             return bool(default)
         return clean in {"1", "true", "yes", "on"}
 
+    @staticmethod
+    def _parse_int_env(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        if raw is None:
+            return int(default)
+        clean = raw.strip()
+        if not clean:
+            return int(default)
+        try:
+            return int(clean)
+        except ValueError:
+            return int(default)
+
+    @staticmethod
+    def _parse_float_env(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None:
+            return float(default)
+        clean = raw.strip()
+        if not clean:
+            return float(default)
+        try:
+            return float(clean)
+        except ValueError:
+            return float(default)
+
+    def _build_initial_diagnostics(self, policy: PortfolioRiskPolicy) -> ExecutionDiagnostics:
+        return ExecutionDiagnostics(
+            live_go_no_go_passed=self._live_go_no_go_passed,
+            rollback_required=self._rollback_required,
+            rollout_failure_streak=self._rollout_failure_streak,
+            rollout_gate_reasons=self._current_live_rollout_gate_reasons(),
+            effective_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
+            effective_gross_cap_frac=float(policy.max_gross_exposure_frac),
+            effective_net_cap_frac=float(policy.max_net_exposure_frac),
+        )
+
     def _resolve_session_risk_policy(self, request: SessionRequest) -> PortfolioRiskPolicy:
         if not request.live:
             return self._risk_policy
@@ -733,6 +903,62 @@ class RoutedExecutionService:
             raise TypeError("Adapter must provide get_positions()")
         return dict(get_positions())
 
+    @staticmethod
+    def _safe_get_position_metrics(adapter: object) -> dict[str, dict[str, float]]:
+        getter = getattr(adapter, "get_position_metrics", None)
+        if not callable(getter):
+            return {}
+
+        raw = getter()
+        if not isinstance(raw, dict):
+            return {}
+
+        metrics: dict[str, dict[str, float]] = {}
+        for symbol, payload in raw.items():
+            if not isinstance(payload, dict):
+                continue
+            entry_price = float(payload.get("entry_price", 0.0) or 0.0)
+            unrealized = float(payload.get("unrealized_pnl_usd", 0.0) or 0.0)
+            metrics[str(symbol)] = {
+                "entry_price": entry_price,
+                "unrealized_pnl_usd": unrealized,
+            }
+        return metrics
+
+    @staticmethod
+    def _classify_order_activity(*, current_qty: float, side: str, quantity: float) -> str:
+        eps = 1e-12
+        side_sign = 1.0 if side == "BUY" else -1.0
+        next_qty = float(current_qty) + (side_sign * float(quantity))
+
+        if abs(current_qty) <= eps and abs(next_qty) > eps:
+            return "entry"
+        if abs(next_qty) <= eps and abs(current_qty) > eps:
+            return "exit"
+        return "rebalance"
+
+    @staticmethod
+    def _build_skipped_result(
+        *,
+        idempotency_key: str,
+        plan: object,
+        mark_price: float,
+        reason: str,
+    ) -> ExecutionResult:
+        return ExecutionResult(
+            accepted=False,
+            order_id="",
+            idempotency_key=idempotency_key,
+            symbol=str(getattr(plan, "symbol", "")),
+            side=str(getattr(plan, "side", "BUY")),
+            requested_qty=float(getattr(plan, "quantity", 0.0) or 0.0),
+            filled_qty=0.0,
+            avg_price=float(mark_price or 0.0),
+            status="skipped",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            reason=reason,
+        )
+
     @classmethod
     def _update_execution_diagnostics(
         cls,
@@ -740,17 +966,40 @@ class RoutedExecutionService:
         *,
         results: Iterable[ExecutionResult],
         prices: dict[str, float],
+        activity_by_key: dict[str, str] | None = None,
     ) -> ExecutionDiagnostics:
         total_orders = current.total_orders
         accepted_orders = current.accepted_orders
         rejected_orders = current.rejected_orders
         slippage_sum = current.avg_adverse_slippage_bps * current.slippage_sample_count
         slippage_samples = current.slippage_sample_count
+        entry_orders = current.entry_orders
+        rebalance_orders = current.rebalance_orders
+        exit_orders = current.exit_orders
+        skipped_by_filter = current.skipped_by_filter
+        skipped_by_deadband = current.skipped_by_deadband
+
+        activity_lookup = activity_by_key or {}
 
         for result in results:
+            reason = (result.reason or "").strip().lower()
+            if reason.startswith("skipped_by_filter"):
+                skipped_by_filter += 1
+                continue
+            if reason.startswith("skipped_by_deadband"):
+                skipped_by_deadband += 1
+                continue
+
             total_orders += 1
             if result.accepted:
                 accepted_orders += 1
+                activity = activity_lookup.get(result.idempotency_key)
+                if activity == "entry":
+                    entry_orders += 1
+                elif activity == "exit":
+                    exit_orders += 1
+                elif activity == "rebalance":
+                    rebalance_orders += 1
             else:
                 rejected_orders += 1
 
@@ -774,11 +1023,133 @@ class RoutedExecutionService:
             reject_rate=float(reject_rate),
             slippage_sample_count=slippage_samples,
             avg_adverse_slippage_bps=float(avg_adverse_slippage_bps),
+            entry_orders=entry_orders,
+            rebalance_orders=rebalance_orders,
+            exit_orders=exit_orders,
+            skipped_by_filter=skipped_by_filter,
+            skipped_by_deadband=skipped_by_deadband,
             live_go_no_go_passed=current.live_go_no_go_passed,
             rollback_required=current.rollback_required,
             rollout_failure_streak=current.rollout_failure_streak,
             rollout_gate_reasons=current.rollout_gate_reasons,
+            effective_symbol_cap_frac=current.effective_symbol_cap_frac,
+            effective_gross_cap_frac=current.effective_gross_cap_frac,
+            effective_net_cap_frac=current.effective_net_cap_frac,
         )
+
+    @staticmethod
+    def _update_paper_entry_price(
+        state: _SessionState,
+        *,
+        results: Iterable[ExecutionResult],
+        prices: dict[str, float],
+        starting_positions: dict[str, float],
+    ) -> None:
+        running_positions: dict[str, float] = {
+            symbol: float(qty)
+            for symbol, qty in starting_positions.items()
+        }
+
+        for result in results:
+            if not result.accepted or result.filled_qty <= 0.0:
+                continue
+
+            symbol = result.symbol
+            current_qty = float(running_positions.get(symbol, 0.0))
+            entry_price = float(state.paper_entry_price.get(symbol, 0.0) or 0.0)
+
+            fill_price = float(result.avg_price)
+            if fill_price <= 0.0:
+                fill_price = float(prices.get(symbol, 0.0) or 0.0)
+            if fill_price <= 0.0:
+                continue
+
+            next_qty, next_entry = RoutedExecutionService._apply_paper_fill(
+                current_qty=current_qty,
+                current_entry_price=entry_price,
+                side=result.side,
+                fill_qty=float(result.filled_qty),
+                fill_price=fill_price,
+            )
+            if abs(next_qty) <= 1e-12:
+                state.paper_entry_price.pop(symbol, None)
+                running_positions.pop(symbol, None)
+            else:
+                state.paper_entry_price[symbol] = next_entry
+                running_positions[symbol] = next_qty
+
+    @staticmethod
+    def _apply_paper_fill(
+        *,
+        current_qty: float,
+        current_entry_price: float,
+        side: str,
+        fill_qty: float,
+        fill_price: float,
+    ) -> tuple[float, float]:
+        eps = 1e-12
+        if fill_qty <= 0.0 or fill_price <= 0.0:
+            return float(current_qty), float(current_entry_price)
+
+        side_sign = 1.0 if side == "BUY" else -1.0
+        next_qty = float(current_qty) + (side_sign * float(fill_qty))
+
+        if abs(current_qty) <= eps:
+            return next_qty, float(fill_price)
+
+        same_direction = (current_qty > 0 and side_sign > 0) or (current_qty < 0 and side_sign < 0)
+        if same_direction:
+            total_abs = abs(current_qty) + float(fill_qty)
+            if total_abs <= eps:
+                return 0.0, 0.0
+            weighted = (abs(current_qty) * float(current_entry_price)) + (float(fill_qty) * float(fill_price))
+            return next_qty, (weighted / total_abs)
+
+        remaining = abs(current_qty) - float(fill_qty)
+        if remaining > eps:
+            return next_qty, float(current_entry_price)
+        if abs(remaining) <= eps:
+            return 0.0, 0.0
+        return next_qty, float(fill_price)
+
+    @classmethod
+    def _resolve_symbol_pnl(
+        cls,
+        state: _SessionState,
+        *,
+        open_positions: dict[str, float],
+        prices: dict[str, float],
+    ) -> dict[str, float]:
+        symbol_pnl: dict[str, float] = {}
+
+        live_metrics: dict[str, dict[str, float]] = {}
+        if state.mode == "live":
+            try:
+                live_metrics = cls._safe_get_position_metrics(state.adapter)
+            except Exception:
+                live_metrics = {}
+
+        for symbol, qty in open_positions.items():
+            signed_qty = float(qty)
+            if signed_qty == 0.0:
+                continue
+
+            if state.mode == "live":
+                metrics = live_metrics.get(symbol, {})
+                unrealized = float(metrics.get("unrealized_pnl_usd", 0.0) or 0.0)
+                if unrealized != 0.0:
+                    symbol_pnl[symbol] = unrealized
+                    continue
+                entry_price = float(metrics.get("entry_price", 0.0) or 0.0)
+            else:
+                entry_price = float(state.paper_entry_price.get(symbol, 0.0) or 0.0)
+
+            mark_price = float(prices.get(symbol, 0.0) or 0.0)
+            if entry_price <= 0.0 or mark_price <= 0.0:
+                continue
+
+            symbol_pnl[symbol] = (mark_price - entry_price) * signed_qty
+        return symbol_pnl
 
     @staticmethod
     def _adverse_slippage_bps(
@@ -811,12 +1182,14 @@ class RoutedExecutionService:
 
         gross = 0.0
         net = 0.0
+        symbol_notionals: dict[str, float] = {}
         if equity_usd > 0.0 and prices:
             for symbol, qty in open_positions.items():
                 mark_price = float(prices.get(symbol, 0.0))
                 if mark_price <= 0.0:
                     continue
                 notional = float(qty) * mark_price
+                symbol_notionals[symbol] = abs(notional)
                 gross += abs(notional) / equity_usd
                 net += notional / equity_usd
 
@@ -828,6 +1201,7 @@ class RoutedExecutionService:
             timestamp=datetime.now(timezone.utc),
             equity_usd=equity_usd,
             open_positions=open_positions,
+            symbol_notional_usd=symbol_notionals,
             risk=RiskSnapshot(
                 gross_exposure_frac=float(gross),
                 net_exposure_frac=float(net),

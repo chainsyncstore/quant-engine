@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+from dataclasses import replace
+
 from quant_v2.contracts import StrategySignal
 from quant_v2.execution.service import InMemoryExecutionService, RoutedExecutionService, SessionRequest
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
@@ -232,9 +234,45 @@ def test_format_portfolio_snapshot_handles_missing_risk() -> None:
     assert snap is not None
 
     # force a snapshot without risk for rendering edge case
-    from dataclasses import replace
-
     no_risk = replace(snap, risk=None)
     text = format_portfolio_snapshot(no_risk, mode_label="LIVE")
     assert "LIVE" in text
     assert "Risk Budget Used" in text
+
+
+def test_format_portfolio_snapshot_includes_notional_breakdown() -> None:
+    service = InMemoryExecutionService()
+    asyncio.run(service.start_session(SessionRequest(user_id=100, live=False)))
+    snap = service.get_portfolio_snapshot(100)
+    assert snap is not None
+
+    custom = replace(
+        snap,
+        open_positions={"BTCUSDT": 0.01, "ETHUSDT": -0.02},
+        symbol_notional_usd={"BTCUSDT": 150.0, "ETHUSDT": 200.0},
+    )
+    text = format_portfolio_snapshot(custom, mode_label="PAPER")
+    assert "Total Notional" in text
+    assert "Cash Available" in text
+    assert "Avg per symbol" in text
+    assert "Per-symbol stake" in text
+    assert "BTCUSDT" in text
+    assert "ETHUSDT" in text
+
+
+def test_format_portfolio_snapshot_includes_symbol_pnl_when_available() -> None:
+    service = InMemoryExecutionService()
+    asyncio.run(service.start_session(SessionRequest(user_id=101, live=False)))
+    snap = service.get_portfolio_snapshot(101)
+    assert snap is not None
+
+    custom = replace(
+        snap,
+        open_positions={"BTCUSDT": 0.01, "ETHUSDT": -0.02},
+        symbol_notional_usd={"BTCUSDT": 150.0, "ETHUSDT": 200.0},
+        symbol_pnl_usd={"BTCUSDT": 12.5, "ETHUSDT": -8.0},
+    )
+    text = format_portfolio_snapshot(custom, mode_label="PAPER")
+    assert "Top Symbol PnL" in text
+    assert "BTCUSDT" in text
+    assert "ETHUSDT" in text

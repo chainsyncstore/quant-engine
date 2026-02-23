@@ -661,17 +661,38 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
     """Format compact execution diagnostics text for Telegram stats."""
 
     diagnostics = bridge.get_execution_diagnostics(user_id)
-    if diagnostics is None or diagnostics.total_orders <= 0:
+    if diagnostics is None:
         return ""
+
+    entry_orders = int(getattr(diagnostics, "entry_orders", 0) or 0)
+    rebalance_orders = int(getattr(diagnostics, "rebalance_orders", 0) or 0)
+    exit_orders = int(getattr(diagnostics, "exit_orders", 0) or 0)
+    skipped_by_filter = int(getattr(diagnostics, "skipped_by_filter", 0) or 0)
+    skipped_by_deadband = int(getattr(diagnostics, "skipped_by_deadband", 0) or 0)
+    total_orders = int(getattr(diagnostics, "total_orders", 0) or 0)
 
     lines = [
         "Execution Telemetry:",
-        f"- Orders: {diagnostics.total_orders} "
+        f"- Orders this session: {total_orders} "
         f"(accepted={diagnostics.accepted_orders}, rejected={diagnostics.rejected_orders})",
+        (
+            "- Order Activity: "
+            f"entries={entry_orders}, rebalances={rebalance_orders}, exits={exit_orders}"
+        ),
+        f"- Skipped: filter={skipped_by_filter}, deadband={skipped_by_deadband}",
         f"- Reject rate: {diagnostics.reject_rate*100:.2f}%",
         f"- Avg adverse slippage: {diagnostics.avg_adverse_slippage_bps:.2f} bps "
         f"across {diagnostics.slippage_sample_count} fills",
     ]
+
+    symbol_cap = float(getattr(diagnostics, "effective_symbol_cap_frac", 0.0) or 0.0)
+    gross_cap = float(getattr(diagnostics, "effective_gross_cap_frac", 0.0) or 0.0)
+    net_cap = float(getattr(diagnostics, "effective_net_cap_frac", 0.0) or 0.0)
+    if symbol_cap > 0.0 and gross_cap > 0.0 and net_cap > 0.0:
+        lines.append(
+            "- Effective caps: "
+            f"symbol={symbol_cap*100:.2f}% gross={gross_cap*100:.2f}% net={net_cap*100:.2f}%"
+        )
 
     rollout_reasons = tuple(getattr(diagnostics, "rollout_gate_reasons", ()) or ())
     rollout_enabled = (
@@ -713,12 +734,12 @@ def _build_kill_switch_text(bridge: V2ExecutionBridge, user_id: int) -> str:
     if evaluation is None:
         return ""
 
-    status = "PAUSED" if evaluation.pause_trading else "CLEAR"
+    status = "PAUSED" if evaluation.pause_trading else "ACTIVE"
     reasons = ", ".join(evaluation.reasons) if evaluation.reasons else "none"
     return (
-        "Kill Switch:\n"
-        f"- State: {status}\n"
-        f"- Reasons: {reasons}"
+        "Safety State:\n"
+        f"- Trading status: {status}\n"
+        f"- Pause reasons: {reasons}"
     )
 
 
@@ -1070,8 +1091,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/status - Check if running\n"
             "/stats - View live performance\n\n"
             + trading_caption + "\n"
-            "Paper trading starts at $10,000 with 2% stop loss.\n"
-            "Trades auto-close at 4H horizon or stop loss."
+            "Paper trading starts at $10,000 and rebalances exposure as new signals arrive.\n"
+            "v2 does not auto-close by 4H horizon or stop-loss unless you explicitly add lifecycle rules.\n"
+            "Risk budget: spreads up to 15% of equity across signals (max 5% per symbol) while capping gross at 20% and net at 10%."
         )
         
         user_id = update.effective_user.id

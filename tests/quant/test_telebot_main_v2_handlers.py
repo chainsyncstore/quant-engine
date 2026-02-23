@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from quant.telebot import main as telebot_main
+from quant_v2.execution.service import ExecutionDiagnostics
+from quant_v2.monitoring.kill_switch import KillSwitchEvaluation
 
 
 class _FakeMessage:
@@ -267,3 +269,51 @@ def test_status_v2_clears_degraded_alert_when_pair_healthy(monkeypatch) -> None:
     assert user_id not in telebot_main.V2_DEGRADED_ALERTED_USERS
     assert update.message.replies
     assert "Engine Running" in update.message.replies[-1]
+
+
+def test_help_command_v2_clarifies_rebalancer_behavior(monkeypatch) -> None:
+    update = _FakeUpdate(808)
+    context = _FakeContext()
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: object())
+    monkeypatch.setattr(telebot_main, "_using_shadow_backend", lambda: False)
+    monkeypatch.setattr(telebot_main, "_is_admin_user", lambda user_id: False)
+
+    asyncio.run(telebot_main.help_command(update, context))
+
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "rebalances exposure as new signals arrive" in msg
+    assert "does not auto-close by 4H horizon or stop-loss" in msg
+
+
+def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
+    class _DiagBridge:
+        def get_execution_diagnostics(self, user_id: int):
+            _ = user_id
+            return ExecutionDiagnostics(
+                total_orders=5,
+                accepted_orders=4,
+                rejected_orders=1,
+                reject_rate=0.2,
+                slippage_sample_count=3,
+                avg_adverse_slippage_bps=7.5,
+                entry_orders=2,
+                rebalance_orders=2,
+                exit_orders=0,
+                skipped_by_filter=1,
+                skipped_by_deadband=2,
+                effective_symbol_cap_frac=0.05,
+                effective_gross_cap_frac=0.15,
+                effective_net_cap_frac=0.10,
+            )
+
+        def get_kill_switch_evaluation(self, user_id: int):
+            _ = user_id
+            return KillSwitchEvaluation(pause_trading=False)
+
+    text = telebot_main._build_execution_diagnostics_text(_DiagBridge(), 808)
+    assert "Order Activity" in text
+    assert "entries=2, rebalances=2, exits=0" in text
+    assert "Skipped: filter=1, deadband=2" in text
+    assert "Effective caps" in text

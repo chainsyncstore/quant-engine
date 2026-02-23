@@ -20,6 +20,13 @@ def format_portfolio_snapshot(snapshot: PortfolioSnapshot, *, mode_label: str) -
     dd = f"{risk.max_drawdown_frac*100:.2f}%" if risk else "n/a"
     budget = f"{risk.risk_budget_used_frac*100:.2f}%" if risk else "n/a"
 
+    symbol_notionals = snapshot.symbol_notional_usd or {}
+    total_notional = float(sum(symbol_notionals.values()))
+    cash_available = max(snapshot.equity_usd - total_notional, 0.0)
+    avg_notional = (
+        total_notional / snapshot.symbol_count if snapshot.symbol_count else 0.0
+    )
+
     lines = [
         f"📊 **{mode_label} Portfolio Stats (v2)**",
         "",
@@ -30,7 +37,19 @@ def format_portfolio_snapshot(snapshot: PortfolioSnapshot, *, mode_label: str) -
         f"↔️ Net Exposure: `{net}`",
         f"📉 Max Drawdown: `{dd}`",
         f"🛡️ Risk Budget Used: `{budget}`",
+        f"💵 Total Notional: `${total_notional:,.2f}`",
+        f"💼 Cash Available: `${cash_available:,.2f}`",
     ]
+
+    if snapshot.symbol_count:
+        lines.append(f"⚖️ Avg per symbol: `${avg_notional:,.2f}`")
+
+    if symbol_notionals:
+        lines.append("")
+        lines.append("Per-symbol stake:")
+        ordered = sorted(symbol_notionals.items(), key=lambda kv: abs(kv[1]), reverse=True)
+        for symbol, notional in ordered[:10]:
+            lines.append(f"- {symbol}: `${notional:,.2f}`")
 
     if snapshot.symbol_pnl_usd:
         top = sorted(snapshot.symbol_pnl_usd.items(), key=lambda kv: abs(kv[1]), reverse=True)[:5]

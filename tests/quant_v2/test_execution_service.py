@@ -435,6 +435,231 @@ def test_routed_execution_service_tracks_adverse_slippage_diagnostics() -> None:
     assert diagnostics.avg_adverse_slippage_bps == pytest.approx(10.0, rel=1e-6)
 
 
+def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None:
+    service = RoutedExecutionService(
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.10,
+            max_gross_exposure_frac=0.20,
+            max_net_exposure_frac=0.20,
+        )
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=509, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+
+    routed_entry = asyncio.run(
+        service.route_signals(
+            509,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    assert len(routed_entry) == 1
+
+    routed_rebalance = asyncio.run(
+        service.route_signals(
+            509,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.06,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    assert len(routed_rebalance) == 1
+
+    low_conf_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.20,
+    )
+    routed_exit = asyncio.run(
+        service.route_signals(
+            509,
+            signals=(low_conf_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.55,
+            ),
+        )
+    )
+    assert len(routed_exit) == 1
+
+    diagnostics = service.get_execution_diagnostics(509)
+    assert diagnostics is not None
+    assert diagnostics.total_orders == 3
+    assert diagnostics.accepted_orders == 3
+    assert diagnostics.entry_orders == 1
+    assert diagnostics.rebalance_orders == 1
+    assert diagnostics.exit_orders == 1
+
+
+def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
+    service = RoutedExecutionService(
+        min_rebalance_notional_usd=200.0,
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.10,
+            max_gross_exposure_frac=0.20,
+            max_net_exposure_frac=0.20,
+        ),
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=510, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+
+    routed_entry = asyncio.run(
+        service.route_signals(
+            510,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    assert len(routed_entry) == 1
+    assert routed_entry[0].accepted is True
+
+    routed_rebalance = asyncio.run(
+        service.route_signals(
+            510,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.09,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    assert len(routed_rebalance) == 1
+    assert routed_rebalance[0].accepted is False
+    assert routed_rebalance[0].reason.startswith("skipped_by_deadband")
+
+    diagnostics = service.get_execution_diagnostics(510)
+    assert diagnostics is not None
+    assert diagnostics.total_orders == 1
+    assert diagnostics.skipped_by_deadband == 1
+
+
+def test_routed_execution_service_filter_skips_do_not_count_as_rejects() -> None:
+    class FilterSkippingAdapter:
+        def get_positions(self):
+            return {}
+
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None):
+            return ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=plan.symbol,
+                side=plan.side,
+                requested_qty=plan.quantity,
+                filled_qty=0.0,
+                avg_price=float(mark_price or 0.0),
+                status="skipped",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="skipped_by_filter:min_notional",
+            )
+
+    service = RoutedExecutionService(paper_adapter_factory=FilterSkippingAdapter)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=511, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.9,
+    )
+    routed = asyncio.run(
+        service.route_signals(
+            511,
+            signals=(signal,),
+            prices={"BTCUSDT": 100.0},
+        )
+    )
+    assert len(routed) == 1
+    assert routed[0].reason.startswith("skipped_by_filter")
+
+    diagnostics = service.get_execution_diagnostics(511)
+    assert diagnostics is not None
+    assert diagnostics.total_orders == 0
+    assert diagnostics.rejected_orders == 0
+    assert diagnostics.skipped_by_filter == 1
+
+
+def test_routed_execution_service_populates_unrealized_symbol_pnl_for_paper() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=512, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.9,
+    )
+
+    routed = asyncio.run(
+        service.route_signals(
+            512,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+    assert len(routed) == 1
+
+    asyncio.run(
+        service.route_signals(
+            512,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 110.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+            ),
+        )
+    )
+
+    snapshot = service.get_portfolio_snapshot(512)
+    assert snapshot is not None
+    assert "BTCUSDT" in snapshot.symbol_pnl_usd
+    open_qty = float(snapshot.open_positions.get("BTCUSDT", 0.0))
+    assert snapshot.symbol_pnl_usd["BTCUSDT"] == pytest.approx(open_qty * 10.0)
+
+
 def test_routed_execution_service_reset_session_state_reinitializes_paper_session() -> None:
     service = RoutedExecutionService()
     assert asyncio.run(service.start_session(SessionRequest(user_id=409, live=False))) is True

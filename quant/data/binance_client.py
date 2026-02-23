@@ -12,7 +12,7 @@ import hmac
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -32,6 +32,7 @@ class BinanceClient:
     def __init__(self, config: Optional[BinanceAPIConfig] = None) -> None:
         self._cfg = config if config else get_binance_config()
         self._last_request_time: float = 0.0
+        self._exchange_info_cache: tuple[float, dict[str, Any]] | None = None
 
     def _throttle(self) -> None:
         elapsed = time.time() - self._last_request_time
@@ -44,6 +45,66 @@ class BinanceClient:
         resp = requests.get(url, params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
+
+    def get_exchange_info(self, *, cache_ttl_seconds: float = 300.0) -> dict[str, Any]:
+        """Fetch and cache futures exchange metadata (filters, precision, etc.)."""
+
+        now = time.time()
+        cached = self._exchange_info_cache
+        if cached is not None:
+            cached_at, payload = cached
+            if (now - cached_at) <= max(float(cache_ttl_seconds), 0.0):
+                return payload
+
+        url = f"{self._cfg.base_url}/fapi/v1/exchangeInfo"
+        payload = self._get(url, {})
+        if not isinstance(payload, dict):
+            raise RuntimeError("Unexpected exchangeInfo payload type")
+
+        self._exchange_info_cache = (now, payload)
+        return payload
+
+    def get_symbol_filters(self, symbol: str) -> dict[str, float]:
+        """Return normalized quantity/notional filters for a futures symbol."""
+
+        symbol_upper = str(symbol).strip().upper()
+        if not symbol_upper:
+            return {}
+
+        info = self.get_exchange_info()
+        symbols = info.get("symbols", []) if isinstance(info, dict) else []
+        if not isinstance(symbols, list):
+            return {}
+
+        payload: dict[str, Any] | None = None
+        for item in symbols:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("symbol", "")).upper() == symbol_upper:
+                payload = item
+                break
+        if payload is None:
+            return {}
+
+        filters = payload.get("filters", [])
+        if not isinstance(filters, list):
+            return {}
+
+        parsed: dict[str, float] = {
+            "step_size": 0.0,
+            "min_qty": 0.0,
+            "min_notional": 0.0,
+        }
+        for item in filters:
+            if not isinstance(item, dict):
+                continue
+            filter_type = str(item.get("filterType", "")).upper()
+            if filter_type == "LOT_SIZE":
+                parsed["step_size"] = float(item.get("stepSize", 0.0) or 0.0)
+                parsed["min_qty"] = float(item.get("minQty", 0.0) or 0.0)
+            elif filter_type in {"MIN_NOTIONAL", "NOTIONAL"}:
+                parsed["min_notional"] = float(item.get("notional", item.get("minNotional", 0.0)) or 0.0)
+        return parsed
 
     # ------------------------------------------------------------------
     # OHLCV with taker buy/sell volumes

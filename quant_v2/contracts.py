@@ -101,6 +101,7 @@ class PortfolioSnapshot:
     equity_usd: float
     open_positions: dict[str, float] = field(default_factory=dict)
     symbol_pnl_usd: dict[str, float] = field(default_factory=dict)
+    symbol_notional_usd: dict[str, float] = field(default_factory=dict)
     risk: RiskSnapshot | None = None
 
     def __post_init__(self) -> None:

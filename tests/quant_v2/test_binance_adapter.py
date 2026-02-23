@@ -8,6 +8,7 @@ class FakeBinanceClient:
     def __init__(self) -> None:
         self.place_calls: list[tuple[str, str, float]] = []
         self.close_calls: list[str] = []
+        self.symbol_filters: dict[str, dict[str, float]] = {}
 
     def place_order(self, symbol: str, side: str, quantity: float):
         self.place_calls.append((symbol, side, quantity))
@@ -35,6 +36,9 @@ class FakeBinanceClient:
             {"symbol": "ETHUSDT", "positionAmt": "0"},
             {"symbol": "SOLUSDT", "positionAmt": "-1.5"},
         ]
+
+    def get_symbol_filters(self, symbol: str) -> dict[str, float]:
+        return dict(self.symbol_filters.get(symbol, {}))
 
 
 def test_binance_adapter_place_order_and_idempotency() -> None:
@@ -77,3 +81,38 @@ def test_binance_adapter_get_positions_mapping() -> None:
     positions = adapter.get_positions()
 
     assert positions == {"BTCUSDT": 0.25, "SOLUSDT": -1.5}
+
+
+def test_binance_adapter_normalizes_quantity_to_step_size() -> None:
+    client = FakeBinanceClient()
+    client.symbol_filters["BTCUSDT"] = {
+        "step_size": 0.01,
+        "min_qty": 0.01,
+        "min_notional": 100.0,
+    }
+    adapter = BinanceExecutionAdapter(client)
+
+    plan = OrderPlan(symbol="BTCUSDT", side="BUY", quantity=0.123)
+    result = adapter.place_order(plan, idempotency_key="norm", mark_price=1000.0)
+
+    assert result.accepted is True
+    assert client.place_calls[-1] == ("BTCUSDT", "BUY", 0.12)
+    assert result.requested_qty == 0.12
+
+
+def test_binance_adapter_skips_order_below_symbol_filters() -> None:
+    client = FakeBinanceClient()
+    client.symbol_filters["BTCUSDT"] = {
+        "step_size": 0.001,
+        "min_qty": 0.001,
+        "min_notional": 100.0,
+    }
+    adapter = BinanceExecutionAdapter(client)
+
+    plan = OrderPlan(symbol="BTCUSDT", side="BUY", quantity=0.05)
+    result = adapter.place_order(plan, idempotency_key="skip-filter", mark_price=1000.0)
+
+    assert result.accepted is False
+    assert result.status == "skipped"
+    assert result.reason.startswith("skipped_by_filter")
+    assert client.place_calls == []
