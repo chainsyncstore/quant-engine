@@ -11,7 +11,7 @@ from ALL PRIOR folds only — no lookahead bias.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -52,6 +52,7 @@ def run_walk_forward(
     horizons: Optional[List[int]] = None,
     params_override: Optional[Dict] = None,
     feature_subset: Optional[List[str]] = None,
+    validation_mode: str = "walk_forward",
 ) -> WalkForwardResult:
     """
     Execute strict walk-forward validation with rolling threshold estimation.
@@ -69,15 +70,32 @@ def run_walk_forward(
         WalkForwardResult with per-horizon reports.
     """
     cfg = get_research_config()
+    mode = (validation_mode or "walk_forward").strip().lower()
+
+    if mode == "purged_kfold":
+        return _run_purged_kfold(
+            df,
+            horizons=horizons,
+            params_override=params_override,
+            feature_subset=feature_subset,
+        )
+
+    if mode != "walk_forward":
+        raise ValueError(
+            f"Unsupported validation_mode={validation_mode!r}. "
+            "Use 'walk_forward' or 'purged_kfold'."
+        )
+
     horizons = horizons or cfg.horizons
 
     feature_cols = feature_subset or get_feature_columns(df)
     total_bars = len(df)
 
     logger.info(
-        "Walk-forward: %d total bars, train=%d, test=%d, step=%d",
+        "Walk-forward: %d total bars, train=%d, embargo=%d, test=%d, step=%d",
         total_bars,
         cfg.wf_train_bars,
+        cfg.wf_embargo_bars,
         cfg.wf_test_bars,
         cfg.wf_step_bars,
     )
@@ -112,12 +130,13 @@ def run_walk_forward(
         cursor = 0
         completed_folds = 0
 
-        while cursor + cfg.wf_train_bars + cfg.wf_test_bars <= total_bars:
+        while cursor + cfg.wf_train_bars + cfg.wf_embargo_bars + cfg.wf_test_bars <= total_bars:
             train_end = cursor + cfg.wf_train_bars
-            test_end = train_end + cfg.wf_test_bars
+            test_start = train_end + cfg.wf_embargo_bars
+            test_end = test_start + cfg.wf_test_bars
 
             train_df = df.iloc[cursor:train_end]
-            test_df = df.iloc[train_end:test_end]
+            test_df = df.iloc[test_start:test_end]
 
             X_train = extract_feature_matrix(train_df)
             y_train = train_df[label_col]
@@ -168,11 +187,9 @@ def run_walk_forward(
                 future_lows = future_lows[:valid_len]
                 entry_prices = test_df["close"].values[:valid_len]
 
-                # Compute stop loss in price units (percentage for crypto, absolute for FX)
-                if cfg.mode == "crypto" and cfg.stop_loss_pct > 0:
+                # Compute stop loss in price units (percentage of entry price)
+                if cfg.stop_loss_pct > 0:
                     sl_prices = entry_prices * cfg.stop_loss_pct
-                elif cfg.stop_loss_pips > 0:
-                    sl_prices = np.full(valid_len, cfg.stop_loss_pips * 0.0001)
                 else:
                     sl_prices = np.zeros(valid_len)
 
@@ -214,13 +231,10 @@ def run_walk_forward(
             probas_valid = probas_valid[eval_mask]
             y_valid = y_valid[eval_mask]
 
-            # --- Compute PnL with Dynamic Cost Model ---
-            from quant.risk.cost_model import VolatilityAdjustedCostModel, PercentageCostModel
+            # --- Compute PnL with dynamic crypto fee model ---
+            from quant.risk.cost_model import PercentageCostModel
 
-            if cfg.mode == "crypto":
-                cost_model = PercentageCostModel(fee_rate=cfg.taker_fee_rate)
-            else:
-                cost_model = VolatilityAdjustedCostModel(base_spread=cfg.spread_price)
+            cost_model = PercentageCostModel(fee_rate=cfg.taker_fee_rate)
             cost_model.fit(train_df)
             
             # Calculate cost for every bar in test set
@@ -231,29 +245,13 @@ def run_walk_forward(
             costs_valid = costs[:valid_len]
             costs_valid = costs_valid[eval_mask]
             
-            # We need a modified compute_trade_pnl that accepts array of spreads
-            # or just subtract manually here.
-            # compute_trade_pnl takes `spread` as float. We should update it or do it here.
-            # Let's do it manually for transparency or update the metric function.
-            # Updating compute_trade_pnl is cleaner but it is in metrics.py.
-            
-            # Let's do a quick local calculation for PnL to pass to metrics
-            # PnL = (Move * Direction) - Cost
-            # We need Direction (-1, 1, 0) from predictions?
-            # No, compute_trade_pnl determines direction from Probability > Threshold.
-            
-            # Wait, `compute_trade_pnl` does the threshold logic.
-            # I should update `quant/validation/metrics.py` to accept `spread` as float OR np.ndarray.
-            
-            # For now, let's keep it simple: Pass average cost? No, that defeats the purpose.
-            # I must update `compute_trade_pnl` to support vectorized spread.
-            
             pnl = compute_trade_pnl(
                 predictions=probas_valid,
                 actuals=y_valid,
                 price_moves=price_moves,
                 threshold=0.5,
-                spread=costs_valid, # Passing array instead of float
+                spread=costs_valid,
+                allow_short=True,
             )
 
             # --- Record fold metrics ---
@@ -291,7 +289,7 @@ def run_walk_forward(
             if completed_folds >= MIN_FOLDS_FOR_THRESHOLD:
                 # Estimate thresholds from all PRIOR folds (no lookahead)
                 rolling_thresholds, rolling_ev = _estimate_rolling_thresholds(
-                    regime_trade_data_cumulative, cfg.spread_price, cfg
+                    regime_trade_data_cumulative, cfg
                 )
                 # Identify positive-EV regimes from past data
                 positive_ev_regimes = {r for r, ev in rolling_ev.items() if ev > 0}
@@ -301,10 +299,13 @@ def run_walk_forward(
                     if r not in positive_ev_regimes:
                         continue
                     thresh = rolling_thresholds.get(r, 0.5)
-                    mask = r_preds >= thresh
-                    n = int(mask.sum())
+                    long_mask = r_preds >= thresh
+                    short_mask = r_preds <= (1.0 - thresh)
+                    trade_mask = long_mask | short_mask
+                    n = int(trade_mask.sum())
                     if n > 0:
-                        pnl_gated = r_moves[mask] - r_costs[mask]
+                        dirs = np.where(long_mask[trade_mask], 1.0, -1.0)
+                        pnl_gated = (r_moves[trade_mask] * dirs) - r_costs[trade_mask]
                         gated_pnl_parts.append(pnl_gated)
                         gated_n_trades_total += n
                         gated_n_wins_total += int((pnl_gated > 0).sum())
@@ -339,7 +340,7 @@ def run_walk_forward(
 
         # --- Final regime thresholds (from ALL data — used for reporting & production) ---
         regime_metrics_list, regime_thresholds = _optimize_regime_thresholds(
-            regime_trade_data_cumulative, cfg.spread_price, cfg
+            regime_trade_data_cumulative, cfg
         )
         all_thresholds[h] = regime_thresholds
 
@@ -408,9 +409,273 @@ def run_walk_forward(
     )
 
 
+def _iter_purged_kfold_splits(
+    total_bars: int,
+    n_splits: int,
+    embargo_bars: int,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Build contiguous purged K-fold train/test index splits."""
+    if n_splits < 2:
+        raise ValueError("n_splits must be >= 2")
+    if total_bars <= 0:
+        return []
+
+    all_idx = np.arange(total_bars)
+    bounds: List[Tuple[int, int]] = []
+    for fold in range(n_splits):
+        start = (fold * total_bars) // n_splits
+        end = ((fold + 1) * total_bars) // n_splits
+        if end > start:
+            bounds.append((start, end))
+
+    splits: List[Tuple[np.ndarray, np.ndarray]] = []
+    for test_start, test_end in bounds:
+        test_idx = all_idx[test_start:test_end]
+        if len(test_idx) == 0:
+            continue
+
+        train_mask = np.ones(total_bars, dtype=bool)
+        train_mask[test_start:test_end] = False
+
+        purge_start = max(0, test_start - embargo_bars)
+        purge_end = min(total_bars, test_end + embargo_bars)
+        train_mask[purge_start:test_start] = False
+        train_mask[test_end:purge_end] = False
+
+        train_idx = all_idx[train_mask]
+        if len(train_idx) == 0:
+            continue
+
+        splits.append((train_idx, test_idx))
+
+    return splits
+
+
+def _run_purged_kfold(
+    df: pd.DataFrame,
+    horizons: Optional[List[int]] = None,
+    params_override: Optional[Dict] = None,
+    feature_subset: Optional[List[str]] = None,
+) -> WalkForwardResult:
+    """
+    Execute purged K-fold validation with temporal embargo around each test fold.
+
+    This is a CPCV-inspired leakage-resistant alternative to walk-forward.
+    """
+    cfg = get_research_config()
+    horizons = horizons or cfg.horizons
+
+    feature_cols = feature_subset or get_feature_columns(df)
+    total_bars = len(df)
+
+    n_splits = max(4, min(12, max(2, total_bars // max(cfg.wf_test_bars, 1))))
+    splits = _iter_purged_kfold_splits(total_bars, n_splits, cfg.wf_embargo_bars)
+    if not splits:
+        raise ValueError("No valid purged K-fold splits could be constructed")
+
+    logger.info(
+        "Purged-KFold: %d total bars, splits=%d, embargo=%d",
+        total_bars,
+        len(splits),
+        cfg.wf_embargo_bars,
+    )
+
+    reports: Dict[int, HorizonReport] = {}
+    all_feature_importance: Dict[int, Dict[str, float]] = {}
+    all_pnl: Dict[int, np.ndarray] = {}
+    all_thresholds: Dict[int, Dict[int, float]] = {}
+
+    for h in horizons:
+        label_col = f"label_{h}m"
+        if label_col not in df.columns:
+            raise ValueError(f"Label column '{label_col}' not found. Run labeler first.")
+
+        fold_metrics: List[FoldMetrics] = []
+        fold_pnls: List[np.ndarray] = []
+        importance_accum: Dict[str, List[float]] = {c: [] for c in feature_cols}
+        regime_trade_data_cumulative: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]] = {}
+
+        for fold_idx, (train_idx, test_idx) in enumerate(splits):
+            train_df = df.iloc[train_idx]
+            test_df = df.iloc[test_idx]
+
+            if len(test_df) <= h:
+                continue
+
+            X_train = extract_feature_matrix(train_df)
+            y_train = train_df[label_col]
+            X_test = extract_feature_matrix(test_df)
+            y_test = test_df[label_col]
+
+            train_mask = y_train != -1
+            X_train_filtered = X_train[train_mask]
+            y_train_filtered = y_train[train_mask]
+
+            if len(X_train_filtered) < 100:
+                logger.warning(
+                    "Purged fold %d [%dm]: Skipping — only %d tradeable training samples",
+                    fold_idx,
+                    h,
+                    len(X_train_filtered),
+                )
+                continue
+
+            regime_model = gmm_regime.fit(train_df)
+            test_with_regime = gmm_regime.add_regime_columns(test_df, regime_model)
+
+            trained = model_trainer.train(
+                X_train_filtered,
+                y_train_filtered,
+                horizon=h,
+                params_override=params_override,
+            )
+
+            probas = predict_proba(trained, X_test)
+
+            price_moves_raw = test_df["close"].shift(-h).values - test_df["close"].values
+            valid_len = len(test_df) - h
+            if valid_len <= 0:
+                continue
+
+            eval_mask = y_test.values[:valid_len] != -1
+
+            if "low" in test_df.columns:
+                future_lows = test_df["low"].rolling(window=h).min().shift(-h).values[:valid_len]
+                entry_prices = test_df["close"].values[:valid_len]
+
+                if cfg.stop_loss_pct > 0:
+                    sl_prices = entry_prices * cfg.stop_loss_pct
+                else:
+                    sl_prices = np.zeros(valid_len)
+
+                sl_hit_mask = future_lows < (entry_prices - sl_prices)
+                price_moves = price_moves_raw[:valid_len].copy()
+                if int(sl_hit_mask.sum()) > 0:
+                    price_moves[sl_hit_mask] = -sl_prices[sl_hit_mask]
+            else:
+                price_moves = price_moves_raw[:valid_len]
+
+            probas_valid = probas[:valid_len]
+            y_valid = y_test.values[:valid_len]
+
+            from quant.risk.volatility_guard import VolatilityGuard
+
+            vol_guard = VolatilityGuard(percentile=0.95)
+            if "realized_vol_5" in train_df.columns:
+                vol_guard.fit(train_df, vol_col="realized_vol_5")
+                if vol_guard.threshold is not None:
+                    vol_vals = test_df["realized_vol_5"].values[:valid_len]
+                    eval_mask = eval_mask & (vol_vals <= vol_guard.threshold)
+
+            if not eval_mask.any():
+                continue
+
+            price_moves = price_moves[eval_mask]
+            probas_valid = probas_valid[eval_mask]
+            y_valid = y_valid[eval_mask]
+
+            from quant.risk.cost_model import PercentageCostModel
+
+            cost_model = PercentageCostModel(fee_rate=cfg.taker_fee_rate)
+            cost_model.fit(train_df)
+
+            costs = test_df.apply(cost_model.estimate_cost, axis=1).values
+            costs_valid = costs[:valid_len]
+            costs_valid = costs_valid[eval_mask]
+
+            pnl = compute_trade_pnl(
+                predictions=probas_valid,
+                actuals=y_valid,
+                price_moves=price_moves,
+                threshold=0.5,
+                spread=costs_valid,
+                allow_short=True,
+            )
+
+            fm = compute_metrics(
+                pnl=pnl,
+                fold=fold_idx,
+                train_start=str(train_df.index[0]),
+                test_start=str(test_df.index[0]),
+                test_end=str(test_df.index[-1]),
+            )
+            fold_metrics.append(fm)
+            fold_pnls.append(pnl)
+
+            for feat, imp in trained.feature_importance.items():
+                if feat in importance_accum:
+                    importance_accum[feat].append(imp)
+
+            regimes_all = test_with_regime["regime"].values[:valid_len]
+            regimes = regimes_all[eval_mask]
+            for r in range(cfg.n_regimes):
+                r_mask = regimes == r
+                if r_mask.any():
+                    regime_trade_data_cumulative.setdefault(r, []).append(
+                        (
+                            probas_valid[r_mask],
+                            y_valid[r_mask],
+                            price_moves[r_mask],
+                            costs_valid[r_mask],
+                        )
+                    )
+
+            logger.info(
+                "Purged fold %d [%dm]: EV=%.6f, WR=%.1f%%, trades=%d",
+                fold_idx,
+                h,
+                fm.spread_adjusted_ev,
+                fm.win_rate * 100,
+                fm.n_trades,
+            )
+
+        avg_importance = {
+            feat: float(np.mean(vals)) if vals else 0.0
+            for feat, vals in importance_accum.items()
+        }
+        all_feature_importance[h] = dict(
+            sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)
+        )
+
+        regime_metrics_list, regime_thresholds = _optimize_regime_thresholds(
+            regime_trade_data_cumulative,
+            cfg,
+        )
+        all_thresholds[h] = regime_thresholds
+
+        all_pnl[h] = np.concatenate(fold_pnls) if fold_pnls else np.array([])
+
+        overall = aggregate_fold_metrics(fold_metrics)
+        reports[h] = HorizonReport(
+            horizon=h,
+            overall_ev=overall["spread_adjusted_ev"],
+            overall_win_rate=overall["win_rate"],
+            overall_sharpe=overall["sharpe"],
+            overall_max_drawdown=overall["max_drawdown"],
+            overall_n_trades=overall["n_trades"],
+            overall_worst_streak=overall["worst_losing_streak"],
+            per_regime=regime_metrics_list,
+            per_fold=fold_metrics,
+        )
+
+        logger.info(
+            "Horizon %dm purged-kfold complete: %d folds, overall EV=%.6f, WR=%.1f%%",
+            h,
+            len(fold_metrics),
+            overall["spread_adjusted_ev"],
+            overall["win_rate"] * 100,
+        )
+
+    return WalkForwardResult(
+        reports=reports,
+        feature_importance=all_feature_importance,
+        all_pnl=all_pnl,
+        thresholds=all_thresholds,
+    )
+
+
 def _estimate_rolling_thresholds(
     regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]],
-    spread: float,
     cfg,
 ) -> Tuple[Dict[int, float], Dict[int, float]]:
     """
@@ -439,6 +704,7 @@ def _estimate_rolling_thresholds(
             threshold_min=cfg.threshold_min,
             threshold_max=cfg.threshold_max,
             threshold_step=cfg.threshold_step,
+            allow_short=True,
         )
 
         # --- Bayesian Shrinkage ---
@@ -446,7 +712,10 @@ def _estimate_rolling_thresholds(
         # shrunk = (n * best + prior_weight * prior) / (n + prior_weight)
         
         # Count trades at the empirical best threshold
-        n_trades = (all_preds >= best_threshold).sum()
+        n_trades = (
+            (all_preds >= best_threshold) |
+            (all_preds <= (1.0 - best_threshold))
+        ).sum()
         
         if n_trades > 0:
             shrunk_threshold = (
@@ -466,7 +735,6 @@ def _estimate_rolling_thresholds(
 
 def _optimize_regime_thresholds(
     regime_trade_data: Dict[int, List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]],
-    spread: float,
     cfg,
 ) -> Tuple[List[RegimeMetrics], Dict[int, float]]:
     """Sweep probability thresholds per regime to maximize EV."""
@@ -489,13 +757,17 @@ def _optimize_regime_thresholds(
             threshold_min=cfg.threshold_min,
             threshold_max=cfg.threshold_max,
             threshold_step=cfg.threshold_step,
+            allow_short=True,
         )
 
         # Compute win rate at best threshold
-        mask = all_preds >= best_threshold
-        n_trades = int(mask.sum())
+        long_mask = all_preds >= best_threshold
+        short_mask = all_preds <= (1.0 - best_threshold)
+        trade_mask = long_mask | short_mask
+        n_trades = int(trade_mask.sum())
         if n_trades > 0:
-            traded_pnl = all_moves[mask] - all_costs[mask]
+            dirs = np.where(long_mask[trade_mask], 1.0, -1.0)
+            traded_pnl = (all_moves[trade_mask] * dirs) - all_costs[trade_mask]
             win_rate = float((traded_pnl > 0).sum() / n_trades)
         else:
             win_rate = 0.0

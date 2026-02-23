@@ -6,6 +6,8 @@ from quant.validation.metrics import (
     compute_metrics,
     compute_trade_pnl,
     aggregate_fold_metrics,
+    probabilistic_sharpe_ratio,
+    deflated_sharpe_ratio,
     _worst_losing_streak,
 )
 
@@ -53,6 +55,32 @@ class TestMetrics:
         pnl = compute_trade_pnl(predictions, actuals, price_moves, threshold=0.5, spread=spread)
         assert len(pnl) == 2  # Only indices 1, 2 pass threshold
         np.testing.assert_allclose(pnl[0], 0.002 - 0.00008)
+
+    def test_trade_pnl_bidirectional_threshold(self):
+        predictions = np.array([0.9, 0.2, 0.7, 0.1])
+        actuals = np.array([1, 0, 1, 0])
+        price_moves = np.array([0.003, -0.002, 0.001, -0.004])
+        spread = 0.0001
+
+        pnl = compute_trade_pnl(
+            predictions,
+            actuals,
+            price_moves,
+            threshold=0.7,
+            spread=spread,
+            allow_short=True,
+        )
+        assert len(pnl) == 4
+        assert float(np.mean(pnl)) > 0
+
+    def test_probabilistic_and_deflated_sharpe_ranges(self):
+        pnl = np.array([0.02, 0.01, 0.015, -0.001, 0.03, 0.005, 0.01, 0.025])
+        psr = probabilistic_sharpe_ratio(pnl)
+        dsr = deflated_sharpe_ratio(pnl, n_trials=20)
+
+        assert 0.0 <= psr <= 1.0
+        assert 0.0 <= dsr <= 1.0
+        assert dsr <= psr
 
     def test_aggregate_fold_metrics(self):
         m1 = compute_metrics(np.array([0.01, 0.02]), fold=0)

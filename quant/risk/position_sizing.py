@@ -102,10 +102,9 @@ def compute_position_size(
     # Cap at max risk per trade
     risk_fraction = min(fractional_kelly, max_risk_fraction)
 
-    # Convert to lots
+    # Convert risk budget to lot size proxy.
     risk_amount = capital * risk_fraction
-    # lot_size = risk_amount / (stop_loss_pips * pip_value)
-    # For simplicity, use avg_loss as implied stop
+    # Use avg_loss as implied stop distance.
     stop_pips = abs(avg_loss) / 0.0001  # Convert price to pips
     if stop_pips > 0:
         lots = risk_amount / (stop_pips * pip_value)

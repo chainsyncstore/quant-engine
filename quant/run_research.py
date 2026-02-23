@@ -28,6 +28,7 @@ from quant.data.storage import snapshot, validate_ohlcv, report_gaps
 from quant.features.pipeline import build_features, get_feature_columns
 from quant.labels.labeler import add_labels
 from quant.risk.monte_carlo import MonteCarloResult, simulate
+from quant.validation.metrics import probabilistic_sharpe_ratio, deflated_sharpe_ratio
 from quant.validation.walk_forward import WalkForwardResult, run_walk_forward
 from quant.experiment.logger import save_experiment, determine_verdict
 
@@ -101,6 +102,7 @@ def run_pipeline(
     df: pd.DataFrame,
     optimize: bool = False,
     prune_threshold: float = 0.0,
+    validation_mode: str = "walk_forward",
 ) -> None:
     """Execute the full research pipeline on prepared data."""
     cfg = get_research_config()
@@ -174,12 +176,17 @@ def run_pipeline(
     
     # --- Step 6: Walk-forward validation ---
     logger.info("=" * 60)
-    logger.info("STEP 6: Walk-Forward Validation%s", " (OPTIMIZED)" if optimize else "")
+    logger.info(
+        "STEP 6: %s Validation%s",
+        validation_mode.upper(),
+        " (OPTIMIZED)" if optimize else "",
+    )
     logger.info("=" * 60)
     wf_result = run_walk_forward(
         df_labeled,
         params_override=best_params,
         feature_subset=None, # We rely on trainer-internal pruning
+        validation_mode=validation_mode,
     )
 
     # --- Step 7: Monte Carlo ---
@@ -201,6 +208,7 @@ def run_pipeline(
         mc_results=mc_results,
         snapshot_path=str(snap_path),
         duration_seconds=duration,
+        validation_mode=validation_mode,
     )
 
     # --- Summary ---
@@ -212,13 +220,24 @@ def run_pipeline(
     logger.info("Verdict: %s", verdict)
     logger.info("Experiment log: %s", exp_path)
 
+    threshold_count = int(
+        round((cfg.threshold_max - cfg.threshold_min) / cfg.threshold_step)
+    ) + 1
+    n_trials_assumed = max(1, threshold_count * cfg.n_regimes)
+
     for h, report in wf_result.reports.items():
+        pnl = wf_result.all_pnl.get(h, np.array([]))
+        psr = probabilistic_sharpe_ratio(pnl)
+        dsr = deflated_sharpe_ratio(pnl, n_trials=n_trials_assumed)
+
         logger.info(
-            "  %dm → EV=%.6f | WR=%.1f%% | Sharpe=%.2f | Trades=%d | MaxDD=%.4f",
+            "  %dm → EV=%.6f | WR=%.1f%% | Sharpe=%.2f | PSR=%.3f | DSR=%.3f | Trades=%d | MaxDD=%.4f",
             h,
             report.overall_ev,
             report.overall_win_rate * 100,
             report.overall_sharpe,
+            psr,
+            dsr,
             report.overall_n_trades,
             report.overall_max_drawdown,
         )
@@ -251,6 +270,13 @@ def main() -> None:
     parser.add_argument("--optimize", action="store_true", help="Run Optuna HPO + feature pruning")
     parser.add_argument("--prune", type=float, default=0.0, help="Feature pruning threshold (e.g. 0.01)")
     parser.add_argument("--bars", type=int, default=40000, help="Synthetic bar count for dry-run")
+    parser.add_argument(
+        "--validation-mode",
+        type=str,
+        choices=["walk_forward", "purged_kfold"],
+        default="walk_forward",
+        help="Validation engine to run (default: walk_forward)",
+    )
     args = parser.parse_args()
 
     # Ensure output dirs exist
@@ -259,14 +285,14 @@ def main() -> None:
     if args.dry_run:
         logger.info("DRY RUN — using synthetic BTCUSDT data (%d bars)", args.bars)
         df = generate_synthetic_crypto(n_bars=args.bars)
-        run_pipeline(df, optimize=args.optimize)
+        run_pipeline(
+            df,
+            optimize=args.optimize,
+            prune_threshold=args.prune,
+            validation_mode=args.validation_mode,
+        )
 
     elif args.fetch:
-        cfg = get_research_config()
-        if cfg.mode != "crypto":
-            logger.error("Legacy FX mode is disabled. Set mode=crypto in ResearchConfig.")
-            sys.exit(1)
-
         client = BinanceClient()
 
         date_to = datetime.now(timezone.utc)
@@ -288,7 +314,12 @@ def main() -> None:
         label = f"BTCUSDT_1h_{date_from.strftime('%Y%m%d')}_{date_to.strftime('%Y%m%d')}"
         save_raw(df, label)
 
-        run_pipeline(df, optimize=args.optimize, prune_threshold=args.prune)
+        run_pipeline(
+            df,
+            optimize=args.optimize,
+            prune_threshold=args.prune,
+            validation_mode=args.validation_mode,
+        )
 
     else:
         # Try loading latest snapshot
@@ -299,7 +330,12 @@ def main() -> None:
             logger.error("No data found. Use --dry-run or --fetch")
             sys.exit(1)
 
-        run_pipeline(df, optimize=args.optimize, prune_threshold=args.prune)
+        run_pipeline(
+            df,
+            optimize=args.optimize,
+            prune_threshold=args.prune,
+            validation_mode=args.validation_mode,
+        )
 
 
 if __name__ == "__main__":

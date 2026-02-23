@@ -6,7 +6,9 @@ All metrics account for spread when evaluating PnL.
 
 from __future__ import annotations
 
+import math
 import logging
+from statistics import NormalDist
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -14,6 +16,8 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+_NORM = NormalDist()
+_EULER_GAMMA = 0.5772156649
 
 
 @dataclass
@@ -64,9 +68,10 @@ def compute_trade_pnl(
     price_moves: np.ndarray,
     threshold: float,
     spread: float | np.ndarray,
+    allow_short: bool = False,
 ) -> np.ndarray:
     """
-    Compute per-trade PnL for trades taken above threshold.
+    Compute per-trade PnL for thresholded directional trades.
 
     Args:
         predictions: Calibrated P(up) for each bar.
@@ -74,25 +79,36 @@ def compute_trade_pnl(
         price_moves: Actual price moves (close[t+h] - close[t]).
         threshold: Minimum probability to take a trade.
         spread: Spread in price units (e.g. 0.00008).
+        allow_short: When True, take SELL trades for P(up) <= (1-threshold).
 
     Returns:
         Array of PnL values for each traded bar (empty if no trades).
     """
-    trade_mask = predictions >= threshold
+    if isinstance(spread, np.ndarray) and len(spread) != len(predictions):
+        raise ValueError("Spread array length must match predictions length")
+
+    long_mask = predictions >= threshold
+    if allow_short:
+        short_mask = predictions <= (1.0 - threshold)
+        trade_mask = long_mask | short_mask
+    else:
+        trade_mask = long_mask
+
     if not trade_mask.any():
         return np.array([])
 
-    # Direction: predict up if P(up) >= threshold
     traded_moves = price_moves[trade_mask]
-    
-    # Handle dynamic spread (array) or static spread (float)
-    if isinstance(spread, np.ndarray):
-        if len(spread) != len(predictions):
-            raise ValueError("Spread array length must match predictions length")
-        traded_spread = spread[trade_mask]
-        pnl = traded_moves - traded_spread
+    if allow_short:
+        trade_dirs = np.where(long_mask[trade_mask], 1.0, -1.0)
+        gross_pnl = traded_moves * trade_dirs
     else:
-        pnl = traded_moves - spread  # long bias: profit = actual move - cost
+        gross_pnl = traded_moves
+
+    if isinstance(spread, np.ndarray):
+        traded_spread = spread[trade_mask]
+        pnl = gross_pnl - traded_spread
+    else:
+        pnl = gross_pnl - spread
 
     return pnl
 
@@ -202,6 +218,72 @@ def aggregate_fold_metrics(folds: List[FoldMetrics]) -> dict:
         "n_trades": total_trades,
         "worst_losing_streak": max(f.worst_losing_streak for f in folds),
     }
+
+
+def probabilistic_sharpe_ratio(
+    pnl: np.ndarray,
+    benchmark_sharpe: float = 0.0,
+) -> float:
+    """
+    Compute Probabilistic Sharpe Ratio (PSR).
+
+    PSR estimates P(SR_true > benchmark_sharpe), adjusting for skew/kurtosis.
+    """
+    n = len(pnl)
+    if n < 2:
+        return 0.5
+
+    std = float(np.std(pnl))
+    if std <= 0:
+        return 0.5
+
+    sharpe = float(np.mean(pnl) / std)
+    standardized = (pnl - np.mean(pnl)) / std
+    skew = float(np.mean(standardized ** 3))
+    kurt = float(np.mean(standardized ** 4))
+
+    denom_sq = 1.0 - (skew * sharpe) + (((kurt - 1.0) / 4.0) * sharpe * sharpe)
+    denom = math.sqrt(max(1e-12, denom_sq))
+    z = ((sharpe - benchmark_sharpe) * math.sqrt(n - 1)) / denom
+    return float(_NORM.cdf(z))
+
+
+def deflated_sharpe_ratio(
+    pnl: np.ndarray,
+    n_trials: int,
+) -> float:
+    """
+    Compute Deflated Sharpe Ratio (DSR) using a multiple-testing-adjusted benchmark.
+
+    n_trials should approximate the number of strategy/threshold variants explored.
+    """
+    n_trials = max(int(n_trials), 1)
+    if n_trials <= 1:
+        return probabilistic_sharpe_ratio(pnl, benchmark_sharpe=0.0)
+
+    n = len(pnl)
+    if n < 2:
+        return 0.5
+
+    std = float(np.std(pnl))
+    if std <= 0:
+        return 0.5
+
+    sharpe = float(np.mean(pnl) / std)
+    standardized = (pnl - np.mean(pnl)) / std
+    skew = float(np.mean(standardized ** 3))
+    kurt = float(np.mean(standardized ** 4))
+
+    sr_var = (1.0 - (skew * sharpe) + (((kurt - 1.0) / 4.0) * sharpe * sharpe)) / max(n - 1, 1)
+    sr_std = math.sqrt(max(1e-12, sr_var))
+
+    p1 = min(max(1.0 - 1.0 / n_trials, 1e-6), 1.0 - 1e-6)
+    p2 = min(max(1.0 - 1.0 / (n_trials * math.e), 1e-6), 1.0 - 1e-6)
+    z1 = _NORM.inv_cdf(p1)
+    z2 = _NORM.inv_cdf(p2)
+    sharpe_star = sr_std * ((1.0 - _EULER_GAMMA) * z1 + (_EULER_GAMMA * z2))
+
+    return probabilistic_sharpe_ratio(pnl, benchmark_sharpe=sharpe_star)
 
 
 def _worst_losing_streak(pnl: np.ndarray) -> int:

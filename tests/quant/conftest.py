@@ -14,13 +14,8 @@ def synthetic_ohlcv() -> pd.DataFrame:
     """Generate 1000 bars of synthetic OHLCV data for feature/label tests."""
     rng = np.random.default_rng(42)
     n = 1000
-    timestamps = []
-    current = datetime(2025, 12, 1, 8, 0, tzinfo=timezone.utc)
-
-    while len(timestamps) < n:
-        if current.weekday() < 5 and 8 <= current.hour < 21:
-            timestamps.append(current)
-        current += timedelta(minutes=1)
+    current = datetime(2025, 12, 1, 0, 0, tzinfo=timezone.utc)
+    timestamps = [current + timedelta(minutes=i) for i in range(n)]
 
     price = 1.0850
     records = []
@@ -58,13 +53,8 @@ def large_synthetic_ohlcv() -> pd.DataFrame:
     """Generate 35000 bars — enough for walk-forward validation."""
     rng = np.random.default_rng(42)
     n = 35000
-    timestamps = []
-    current = datetime(2025, 9, 1, 8, 0, tzinfo=timezone.utc)
-
-    while len(timestamps) < n:
-        if current.weekday() < 5 and 8 <= current.hour < 21:
-            timestamps.append(current)
-        current += timedelta(minutes=1)
+    current = datetime(2025, 9, 1, 0, 0, tzinfo=timezone.utc)
+    timestamps = [current + timedelta(minutes=i) for i in range(n)]
 
     price = 1.0850
     records = []

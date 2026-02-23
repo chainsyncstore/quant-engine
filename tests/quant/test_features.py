@@ -7,7 +7,7 @@ from quant.config import get_research_config
 from quant.features.pipeline import build_features, get_feature_columns
 from quant.features import (
     momentum, volatility, candle_geometry, trend, volume, time_encoding,
-    microstructure, session_context, cross_timeframe, funding_rate,
+    microstructure, crypto_session, cross_timeframe, funding_rate,
 )
 
 
@@ -47,9 +47,19 @@ class TestIndividualFeatures:
         expected = {"return_autocorr_5", "return_kurtosis_20", "high_low_range_ratio"}
         assert expected.issubset(set(result.columns))
 
-    def test_session_context_produces_expected_columns(self, synthetic_ohlcv):
-        result = session_context.compute(synthetic_ohlcv)
-        expected = {"session_elapsed_pct", "dist_from_session_high", "dist_from_session_low"}
+    def test_crypto_session_produces_expected_columns(self, synthetic_ohlcv):
+        result = crypto_session.compute(synthetic_ohlcv)
+        expected = {
+            "hours_to_funding",
+            "hours_to_funding_sin",
+            "hours_to_funding_cos",
+            "post_funding_window",
+            "asia_session",
+            "europe_session",
+            "us_session",
+            "day_of_week_sin",
+            "day_of_week_cos",
+        }
         assert expected.issubset(set(result.columns))
 
     def test_cross_timeframe_produces_expected_columns(self, synthetic_ohlcv):

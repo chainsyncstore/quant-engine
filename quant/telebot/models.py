@@ -23,5 +23,8 @@ class UserContext(Base):
     binance_api_secret = Column(String)
     live_mode = Column(Boolean, default=False)
     is_active = Column(Boolean, default=False)
+    strategy_profile = Column(String, default='core_v2')
+    active_model_version = Column(String)
+    active_model_source = Column(String)
 
     user = relationship("User", back_populates="context")

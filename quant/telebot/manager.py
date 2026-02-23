@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pathlib import Path
 from quant.live.signal_generator import SignalGenerator
-from quant.config import BinanceAPIConfig, get_research_config
+from quant.config import BinanceAPIConfig
 from quant.telebot.engine import AsyncEngine
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ class BotManager:
         self.model_dir = model_dir
         self.sessions = {} # user_id -> AsyncEngine
 
-    async def start_session(self, user_id: int, creds: dict, on_signal):
+    async def start_session(self, user_id: int, creds: dict, on_signal, *, execute_orders: bool = True):
         """
         Start a trading session for a user.
         creds: {binance_api_key, binance_api_secret, live}
@@ -24,16 +24,10 @@ class BotManager:
 
         live = creds.get('live', False)
         mode_label = "LIVE" if live else "DEMO"
-        rcfg = get_research_config()
-
-        logger.info(f"Starting session for user {user_id} in {mode_label} mode ({rcfg.mode}).")
+        exec_label = "trading" if execute_orders else "signal-only"
+        logger.info(f"Starting session for user {user_id} in {mode_label} mode ({exec_label}).")
 
         try:
-            if rcfg.mode != "crypto":
-                raise RuntimeError(
-                    "Legacy FX mode is disabled. Configure MODE=crypto and use Binance credentials."
-                )
-
             # Crypto mode: Binance client
             binance_cfg = None
             if creds.get('binance_api_key') and creds.get('binance_api_secret'):
@@ -57,6 +51,7 @@ class BotManager:
                 horizon=4,
                 binance_config=binance_cfg,
                 live=live,
+                auto_execute=execute_orders,
             )
 
             if live:

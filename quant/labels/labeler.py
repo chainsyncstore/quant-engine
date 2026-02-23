@@ -45,12 +45,8 @@ def add_labels(df: pd.DataFrame, horizons: List[int] | None = None) -> pd.DataFr
     out = df.copy()
     max_horizon = max(horizons)
 
-    # Determine dead zone: percentage-based for crypto, absolute for FX
-    if cfg.mode == "crypto" and cfg.dead_zone_pct > 0:
-        # Dynamic dead zone: percentage of close price per bar
-        dead_zone_series = out["close"] * cfg.dead_zone_pct
-    else:
-        dead_zone_series = cfg.dead_zone_price
+    # Crypto-only dynamic dead zone: percentage of close price per bar
+    dead_zone_series = out["close"] * cfg.dead_zone_pct
 
     for h in horizons:
         future_close = out["close"].shift(-h)
@@ -71,7 +67,7 @@ def add_labels(df: pd.DataFrame, horizons: List[int] | None = None) -> pd.DataFr
         n_down = (labels == 0).sum()
         n_flat = (labels == -1).sum()
         total = len(labels)
-        dz_info = f"dead_zone_pct={cfg.dead_zone_pct}" if cfg.mode == "crypto" else f"dead_zone={cfg.dead_zone_price:.5f}"
+        dz_info = f"dead_zone_pct={cfg.dead_zone_pct}"
         logger.info(
             "Label %dh: %d rows — UP=%.1f%%, DOWN=%.1f%%, FLAT=%.1f%% (%s)",
             h, total,

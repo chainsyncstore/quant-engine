@@ -97,6 +97,6 @@ scp -i "quant-key.pem" -r "C:\Users\HP\Downloads\hypothesis-research-engine" ubu
 5.  **Verify:**
     - Open Telegram -> Start Bot.
     - Check `/status` and `/stats`.
-    - Setup Capital.com Credentials using `/setup`.
+    - Setup Binance credentials using `/setup BINANCE_API_KEY BINANCE_API_SECRET`.
 
 If you see **"Bot is polling..."**, you are LIVE! 🚀

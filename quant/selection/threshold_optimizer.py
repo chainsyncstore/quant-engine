@@ -21,6 +21,7 @@ def optimize_threshold(
     threshold_min: float = 0.50,
     threshold_max: float = 0.80,
     threshold_step: float = 0.05,
+    allow_short: bool = False,
 ) -> Tuple[float, float]:
     """
     Find the probability threshold that maximizes spread-adjusted EV.
@@ -32,6 +33,7 @@ def optimize_threshold(
         threshold_min: Lower bound of sweep.
         threshold_max: Upper bound of sweep.
         threshold_step: Step size.
+        allow_short: When True, optimize bidirectional long/short EV.
 
     Returns:
         (best_threshold, best_ev) — best threshold and its EV.
@@ -41,19 +43,35 @@ def optimize_threshold(
     best_ev = -np.inf
     best_n = 0
 
+    if isinstance(spread, np.ndarray) and len(spread) != len(predictions):
+        raise ValueError("Spread array length must match predictions length")
+
     thresholds = np.round(np.arange(threshold_min, threshold_max + threshold_step / 2, threshold_step), 2)
 
     for t in thresholds:
-        mask = predictions >= t
-        n_trades = mask.sum()
+        long_mask = predictions >= t
+        if allow_short:
+            short_mask = predictions <= (1.0 - t)
+            mask = long_mask | short_mask
+        else:
+            mask = long_mask
+
+        n_trades = int(mask.sum())
 
         if n_trades < 10:  # minimum trade count for reliability
             continue
 
-        if isinstance(spread, np.ndarray):
-            pnl = price_moves[mask] - spread[mask]
+        traded_moves = price_moves[mask]
+        if allow_short:
+            directions = np.where(long_mask[mask], 1.0, -1.0)
+            gross_pnl = traded_moves * directions
         else:
-            pnl = price_moves[mask] - spread
+            gross_pnl = traded_moves
+
+        if isinstance(spread, np.ndarray):
+            pnl = gross_pnl - spread[mask]
+        else:
+            pnl = gross_pnl - spread
         ev = float(np.mean(pnl))
 
         if ev > best_ev:

@@ -204,11 +204,6 @@ def main() -> None:
     args = parser.parse_args()
 
     get_path_config()
-    cfg = get_research_config()
-
-    if cfg.mode != "crypto":
-        logger.error("Legacy FX training mode is disabled. Set mode=crypto in ResearchConfig.")
-        sys.exit(1)
 
     if args.fetch:
         df = fetch_binance_data(months=args.months)

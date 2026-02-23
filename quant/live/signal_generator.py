@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 import logging
 import signal
@@ -24,7 +25,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Deque, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -52,6 +53,14 @@ logger = logging.getLogger(__name__)
 WARMUP_BARS = 200
 # Lookback window for regime model context
 REGIME_LOOKBACK = 500
+# Drift monitoring defaults
+DRIFT_BASELINE_BARS = 500
+DRIFT_Z_SCORE_THRESHOLD = 4.0
+DRIFT_MIN_FEATURE_FRACTION = 0.15
+CONFIDENCE_WINDOW = 24
+CONFIDENCE_NEUTRAL_BAND = 0.04
+CONFIDENCE_STD_FLOOR = 0.03
+DRIFT_ALERT_COOLDOWN_SECONDS = 6 * 3600
 
 
 class SignalGenerator:
@@ -64,12 +73,14 @@ class SignalGenerator:
         horizon: int = 10,
         binance_config: Optional[BinanceAPIConfig] = None,
         live: bool = False,
+        auto_execute: bool = True,
     ):
         self.model_dir = model_dir
         self.capital = capital
         self.horizon = horizon
         self.binance_config = binance_config
         self.live = live
+        self.auto_execute = auto_execute
 
         # Load config
         with open(model_dir / "config.json") as f:
@@ -164,6 +175,12 @@ class SignalGenerator:
         )
         self.guardrails.initialize(capital)
 
+        # Drift monitoring state
+        self._feature_baseline_mean: Optional[pd.Series] = None
+        self._feature_baseline_std: Optional[pd.Series] = None
+        self._proba_history: Deque[float] = deque(maxlen=CONFIDENCE_WINDOW)
+        self._last_drift_alert_epoch: float = 0.0
+
         logger.info(
             "Signal generator initialized: horizon=%dm, capital=$%.0f, tradeable regimes=%s",
             self.horizon,
@@ -238,6 +255,85 @@ class SignalGenerator:
             "reason": pos.reason,
         }
 
+    def _init_drift_baseline(self, df_features: pd.DataFrame) -> None:
+        """Initialize feature distribution baseline from recent history."""
+        if self._feature_baseline_mean is not None and self._feature_baseline_std is not None:
+            return
+
+        available = [c for c in self.feature_cols if c in df_features.columns]
+        if not available:
+            return
+
+        baseline = df_features[available].tail(min(len(df_features), DRIFT_BASELINE_BARS))
+        if len(baseline) < 100:
+            return
+
+        baseline_mean = baseline.mean()
+        baseline_std = baseline.std().replace(0.0, np.nan)
+        if int(baseline_std.notna().sum()) == 0:
+            return
+
+        self._feature_baseline_mean = baseline_mean
+        self._feature_baseline_std = baseline_std
+
+    def _check_feature_drift(self, latest: pd.DataFrame) -> str | None:
+        """Return feature-drift alert message when latest bar is out-of-distribution."""
+        if self._feature_baseline_mean is None or self._feature_baseline_std is None:
+            return None
+
+        latest_row = latest.reindex(columns=self._feature_baseline_mean.index).iloc[0]
+        z_scores = ((latest_row - self._feature_baseline_mean).abs() / self._feature_baseline_std)
+        z_scores = z_scores.replace([np.inf, -np.inf], np.nan).dropna()
+        if z_scores.empty:
+            return None
+
+        drifted = z_scores[z_scores >= DRIFT_Z_SCORE_THRESHOLD]
+        drift_fraction = float(len(drifted) / len(z_scores))
+        if drift_fraction < DRIFT_MIN_FEATURE_FRACTION:
+            return None
+
+        top_outliers = ", ".join(
+            f"{col}:{float(val):.1f}σ"
+            for col, val in drifted.sort_values(ascending=False).head(3).items()
+        )
+        return (
+            "Feature drift detected "
+            f"({drift_fraction * 100:.1f}% features > {DRIFT_Z_SCORE_THRESHOLD:.1f}σ). "
+            f"Top outliers: {top_outliers}"
+        )
+
+    def _check_confidence_drift(self, proba: float) -> str | None:
+        """Return confidence-collapse alert when probabilities cluster near 0.5."""
+        self._proba_history.append(float(proba))
+        if len(self._proba_history) < CONFIDENCE_WINDOW:
+            return None
+
+        history = np.array(self._proba_history, dtype=float)
+        mean_proba = float(np.mean(history))
+        std_proba = float(np.std(history))
+        if abs(mean_proba - 0.5) <= CONFIDENCE_NEUTRAL_BAND and std_proba <= CONFIDENCE_STD_FLOOR:
+            return (
+                "Confidence drift detected "
+                f"(mean P(up)={mean_proba:.3f}, std={std_proba:.3f}, window={len(history)})."
+            )
+        return None
+
+    def _check_drift_alert(self, latest: pd.DataFrame, proba: float) -> str | None:
+        """Combine drift signals and rate-limit alerts."""
+        feature_alert = self._check_feature_drift(latest)
+        confidence_alert = self._check_confidence_drift(proba)
+
+        alerts = [a for a in (feature_alert, confidence_alert) if a]
+        if not alerts:
+            return None
+
+        now = time.time()
+        if (now - self._last_drift_alert_epoch) < DRIFT_ALERT_COOLDOWN_SECONDS:
+            return None
+
+        self._last_drift_alert_epoch = now
+        return " | ".join(alerts)
+
     def generate_signal(self, df: pd.DataFrame) -> dict:
         """
         Generate a trading signal from recent bar data.
@@ -250,6 +346,7 @@ class SignalGenerator:
         df_filtered = filter_sessions(df)
         df_features = build_features(df_filtered)
         feature_cols = get_feature_columns(df_features)
+        self._init_drift_baseline(df_features)
 
         # Verify feature alignment — fill missing columns with 0
         missing = set(self.feature_cols) - set(feature_cols)
@@ -291,6 +388,7 @@ class SignalGenerator:
                     "horizon": self.horizon,
                     "position": {},
                     "risk_status": risk_status,
+                    "drift_alert": False,
                 }
                 self.signal_log.append(result)
                 return result
@@ -307,6 +405,28 @@ class SignalGenerator:
         # Generate prediction
         X = latest[self.feature_cols]
         proba = float(predict_proba(self.model, X)[0])
+
+        drift_reason = self._check_drift_alert(latest, proba)
+        if drift_reason:
+            logger.warning("%s", drift_reason)
+            risk_status = self.guardrails.get_status()
+            result = {
+                "timestamp": str(latest_ts),
+                "close_price": close_price,
+                "signal": "DRIFT_ALERT",
+                "probability": round(proba, 4),
+                "regime": current_regime,
+                "regime_probability": round(regime_prob, 4),
+                "regime_tradeable": False,
+                "threshold": threshold,
+                "reason": drift_reason,
+                "horizon": self.horizon,
+                "position": {},
+                "risk_status": risk_status,
+                "drift_alert": True,
+            }
+            self.signal_log.append(result)
+            return result
 
         # Check risk guardrails
         can_trade, risk_reason = self.guardrails.can_trade()
@@ -356,6 +476,7 @@ class SignalGenerator:
             "horizon": self.horizon,
             "position": position,
             "risk_status": risk_status,
+            "drift_alert": False,
         }
 
         self.signal_log.append(result)
@@ -460,7 +581,7 @@ class SignalGenerator:
         In live mode, executes via Binance Futures.
         """
         sig_type = signal["signal"]
-        if sig_type == "HOLD":
+        if sig_type not in ("BUY", "SELL"):
             return
 
         size = signal.get("position", {}).get("lot_size", 0)
@@ -538,7 +659,7 @@ class SignalGenerator:
         for sig in self.signal_log:
             if sig.get("outcome") is not None:
                 continue
-            if sig["signal"] == "HOLD":
+            if sig["signal"] not in ("BUY", "SELL"):
                 sig["outcome"] = "skip"
                 continue
 
@@ -630,7 +751,7 @@ class SignalGenerator:
     def get_win_rate_stats(self) -> dict:
         """Return current win rate statistics."""
         total_signals = len(self.signal_log)
-        actionable = sum(1 for s in self.signal_log if s["signal"] != "HOLD")
+        actionable = sum(1 for s in self.signal_log if s["signal"] in ("BUY", "SELL"))
         buys = sum(1 for s in self.signal_log if s["signal"] == "BUY")
         sells = sum(1 for s in self.signal_log if s["signal"] == "SELL")
         holds = total_signals - actionable
@@ -725,13 +846,16 @@ class SignalGenerator:
         )
 
         # AUTO EXECUTION
-        try:
-            if risk["can_trade"]:
-                self.execute_trade(sig)
-            else:
-                logger.warning("Auto-execution skipped due to risk guardrails.")
-        except Exception as e:
-            logger.error("Trade execution failed: %s", e, exc_info=True)
+        if self.auto_execute:
+            try:
+                if risk["can_trade"]:
+                    self.execute_trade(sig)
+                else:
+                    logger.warning("Auto-execution skipped due to risk guardrails.")
+            except Exception as e:
+                logger.error("Trade execution failed: %s", e, exc_info=True)
+        else:
+            logger.info("Auto-execution disabled; signal emitted without order placement.")
 
         return sig
 

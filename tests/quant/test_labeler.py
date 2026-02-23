@@ -14,10 +14,7 @@ class TestLabeler:
         # Verify labels manually for first few rows
         for i in range(min(10, len(result))):
             move = synthetic_ohlcv["close"].iloc[i + 3] - synthetic_ohlcv["close"].iloc[i]
-            if cfg.mode == "crypto" and cfg.dead_zone_pct > 0:
-                dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
-            else:
-                dz = cfg.dead_zone_price
+            dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
             if move > dz:
                 expected = 1
             elif move < -dz:
@@ -32,10 +29,7 @@ class TestLabeler:
         result = add_labels(synthetic_ohlcv, horizons=[5])
         for i in range(min(10, len(result))):
             move = synthetic_ohlcv["close"].iloc[i + 5] - synthetic_ohlcv["close"].iloc[i]
-            if cfg.mode == "crypto" and cfg.dead_zone_pct > 0:
-                dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
-            else:
-                dz = cfg.dead_zone_price
+            dz = synthetic_ohlcv["close"].iloc[i] * cfg.dead_zone_pct
             if move > dz:
                 expected = 1
             elif move < -dz:

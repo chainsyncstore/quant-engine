@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -18,27 +18,6 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------------
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
-
-
-# ---------------------------------------------------------------------------
-# API Configuration
-# ---------------------------------------------------------------------------
-@dataclass(frozen=True)
-class CapitalAPIConfig:
-    """Legacy Capital.com REST API settings (deprecated, kept for compatibility)."""
-
-    api_key: str = field(default_factory=lambda: os.getenv("CAPITAL_API_KEY", ""))
-    password: str = field(default_factory=lambda: os.getenv("CAPITAL_PASSWORD", ""))
-    identifier: str = field(default_factory=lambda: os.getenv("CAPITAL_IDENTIFIER", ""))
-    base_url: str = field(
-        default_factory=lambda: os.getenv(
-            "CAPITAL_API_URL", "https://demo-api-capital.backend-capital.com"
-        )
-    )
-    epic: str = "EURUSD"
-    resolution: str = "MINUTE"
-    max_bars_per_request: int = 1000
-    rate_limit_per_sec: int = 10
 
 
 @dataclass(frozen=True)
@@ -58,30 +37,6 @@ class BinanceAPIConfig:
 
 
 # ---------------------------------------------------------------------------
-# Session Configuration
-# ---------------------------------------------------------------------------
-@dataclass(frozen=True)
-class SessionConfig:
-    """Legacy FX trading session windows (UTC hours)."""
-
-    # (start_hour, start_minute, end_hour, end_minute)
-    london: Tuple[int, int, int, int] = (8, 0, 16, 30)
-    new_york: Tuple[int, int, int, int] = (13, 0, 21, 0)
-
-    @property
-    def combined_start_hour(self) -> int:  # noqa: D401
-        return min(self.london[0], self.new_york[0])
-
-    @property
-    def combined_end_hour(self) -> int:  # noqa: D401
-        return max(self.london[2], self.new_york[2])
-
-    @property
-    def combined_end_minute(self) -> int:  # noqa: D401
-        return max(self.london[3], self.new_york[3])
-
-
-# ---------------------------------------------------------------------------
 # Research Configuration
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -91,15 +46,12 @@ class ResearchConfig:
     # Crypto-only runtime mode.
     mode: str = "crypto"
 
-    # Spread / transaction cost
-    # FX: 0.8 pips = 0.00008 price units
-    # Crypto: 0.04% taker fee per side = 0.08% round trip (set dynamically)
-    spread_pips: float = 0.0
-    spread_price: float = 0.0  # For crypto, computed dynamically from fee_rate
+    # Transaction cost assumptions
+    # Round-trip taker fee = close * taker_fee_rate * 2
+    spread_price: float = 0.0  # Optional fixed overlay for reporting/backward compatibility
     taker_fee_rate: float = 0.0004  # 0.04% per side (Binance default)
 
     # Pessimistic Execution (Stop Loss)
-    stop_loss_pips: float = 0.0
     stop_loss_pct: float = 0.02  # 2% stop loss for crypto
 
     # Horizons to evaluate (in bars: 1H bars for crypto)
@@ -110,6 +62,7 @@ class ResearchConfig:
     wf_train_bars: int = 2_000
     wf_test_bars: int = 500
     wf_step_bars: int = 500
+    wf_embargo_bars: int = 24
     wf_calibration_frac: float = 0.20
 
     # Minimum data requirement
@@ -137,11 +90,8 @@ class ResearchConfig:
     threshold_max: float = 0.80
     threshold_step: float = 0.05
 
-    # Dead zone for ternary labeling
-    # Crypto: percentage-based (0.10% of price)
+    # Dead zone for ternary labeling (percentage of close)
     dead_zone_pct: float = 0.0010
-    dead_zone_pips: float = 0.0  # unused in crypto mode
-    dead_zone_price: float = 0.0  # computed dynamically in crypto mode
 
 
 # ---------------------------------------------------------------------------
@@ -168,18 +118,9 @@ class PathConfig:
 # ---------------------------------------------------------------------------
 # Singleton accessors
 # ---------------------------------------------------------------------------
-_api_cfg: CapitalAPIConfig | None = None
 _binance_cfg: BinanceAPIConfig | None = None
-_session_cfg: SessionConfig | None = None
 _research_cfg: ResearchConfig | None = None
 _path_cfg: PathConfig | None = None
-
-
-def get_api_config() -> CapitalAPIConfig:
-    global _api_cfg
-    if _api_cfg is None:
-        _api_cfg = CapitalAPIConfig()
-    return _api_cfg
 
 
 def get_binance_config() -> BinanceAPIConfig:
@@ -187,13 +128,6 @@ def get_binance_config() -> BinanceAPIConfig:
     if _binance_cfg is None:
         _binance_cfg = BinanceAPIConfig()
     return _binance_cfg
-
-
-def get_session_config() -> SessionConfig:
-    global _session_cfg
-    if _session_cfg is None:
-        _session_cfg = SessionConfig()
-    return _session_cfg
 
 
 def get_research_config() -> ResearchConfig:

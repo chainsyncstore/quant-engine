@@ -63,11 +63,14 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     # Cost to trade vs potential reward (volatility)
     # High ratio = expensive to trade relative to market movement
     if "high" in df.columns and "low" in df.columns and "close" in df.columns:
-        tr = np.maximum(
-            df["high"] - df["low"],
-            np.abs(df["high"] - df["close"].shift(1)),
-            np.abs(df["low"] - df["close"].shift(1))
-        )
+        tr = pd.concat(
+            [
+                df["high"] - df["low"],
+                np.abs(df["high"] - df["close"].shift(1)),
+                np.abs(df["low"] - df["close"].shift(1)),
+            ],
+            axis=1,
+        ).max(axis=1)
         atr = tr.rolling(window=14).mean()
         out["spread_to_atr"] = np.where(atr > 0, spread / atr, np.nan)
 

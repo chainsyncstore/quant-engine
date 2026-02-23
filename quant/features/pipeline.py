@@ -18,9 +18,7 @@ from quant.features import (
     volume,
     time_encoding,
     microstructure,
-    session_context,
     cross_timeframe,
-    spread_features,
     order_flow,
     funding_rate,
     open_interest,
@@ -41,12 +39,6 @@ _OHLCV_MODULES = [
     time_encoding,
     microstructure,
     cross_timeframe,
-]
-
-# FX-only modules (session windows, bid/ask spread)
-_FX_MODULES = [
-    session_context,
-    spread_features,
 ]
 
 # Crypto-specific modules (order flow, funding, OI, liquidation, session)
@@ -74,7 +66,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Apply all feature modules sequentially and validate.
 
-    Selects modules based on research mode (crypto vs fx).
+    Crypto-only: applies OHLCV modules plus crypto-specific modules.
 
     Args:
         df: Raw OHLCV DataFrame (session-filtered).
@@ -88,13 +80,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     cfg = get_research_config()
     result = df.copy()
 
-    # OHLCV-based modules are always used
     modules = list(_OHLCV_MODULES)
-
-    if cfg.mode == "crypto":
-        modules.extend(_CRYPTO_MODULES)
-    else:
-        modules.extend(_FX_MODULES)
+    modules.extend(_CRYPTO_MODULES)
 
     for mod in modules:
         result = mod.compute(result)

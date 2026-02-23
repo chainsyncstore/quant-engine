@@ -15,8 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
+import numpy as np
+
 from quant.config import get_path_config, get_research_config
 from quant.risk.monte_carlo import MonteCarloResult
+from quant.validation.metrics import deflated_sharpe_ratio, probabilistic_sharpe_ratio
 from quant.validation.walk_forward import WalkForwardResult
 
 logger = logging.getLogger(__name__)
@@ -55,6 +58,7 @@ def save_experiment(
     mc_results: Dict[int, MonteCarloResult],
     snapshot_path: Optional[str] = None,
     duration_seconds: float = 0.0,
+    validation_mode: str = "walk_forward",
 ) -> Path:
     """
     Save experiment results to JSON.
@@ -80,12 +84,15 @@ def save_experiment(
         "timestamp": ts.isoformat(),
         "duration_seconds": duration_seconds,
         "config": {
-            "spread_pips": cfg.spread_pips,
+            "validation_mode": validation_mode,
+            "spread_price": cfg.spread_price,
+            "taker_fee_rate": cfg.taker_fee_rate,
             "horizons": cfg.horizons,
             "n_regimes": cfg.n_regimes,
             "wf_train_bars": cfg.wf_train_bars,
             "wf_test_bars": cfg.wf_test_bars,
             "wf_step_bars": cfg.wf_step_bars,
+            "wf_embargo_bars": cfg.wf_embargo_bars,
             "model_params": {
                 "n_estimators": cfg.lgbm_n_estimators,
                 "max_depth": cfg.lgbm_max_depth,
@@ -99,8 +106,17 @@ def save_experiment(
         "verdict": determine_verdict(result),
     }
 
+    threshold_count = int(
+        round((cfg.threshold_max - cfg.threshold_min) / cfg.threshold_step)
+    ) + 1
+    n_trials_assumed = max(1, threshold_count * cfg.n_regimes)
+
     # Per-horizon results
     for h, report in result.reports.items():
+        horizon_pnl = result.all_pnl.get(h, np.array([]))
+        psr = probabilistic_sharpe_ratio(horizon_pnl)
+        dsr = deflated_sharpe_ratio(horizon_pnl, n_trials=n_trials_assumed)
+
         experiment["results"][str(h)] = {
             "overall": {
                 "spread_adjusted_ev": report.overall_ev,
@@ -109,6 +125,11 @@ def save_experiment(
                 "max_drawdown": report.overall_max_drawdown,
                 "n_trades": report.overall_n_trades,
                 "worst_losing_streak": report.overall_worst_streak,
+            },
+            "robustness": {
+                "probabilistic_sharpe_ratio": psr,
+                "deflated_sharpe_ratio": dsr,
+                "n_trials_assumed": n_trials_assumed,
             },
             "per_regime": [asdict(rm) for rm in report.per_regime],
             "per_fold": [asdict(fm) for fm in report.per_fold],

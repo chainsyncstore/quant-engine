@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+
 # Mock dependencies before import if needed
 with patch("quant.live.signal_generator.BinanceClient"), \
      patch("quant.live.signal_generator.load_model"), \
@@ -112,3 +114,39 @@ def test_execution_same_direction_holds():
     # Should NOT close or open anything (Hold)
     gen.binance_client.close_position.assert_not_called()
     gen.binance_client.place_order.assert_not_called()
+
+
+def test_execution_drift_alert_does_nothing():
+    gen = setup_generator()
+
+    signal = {
+        "signal": "DRIFT_ALERT",
+        "position": {},
+    }
+
+    gen.execute_trade(signal)
+
+    gen.binance_client.place_order.assert_not_called()
+    gen.binance_client.close_position.assert_not_called()
+
+
+def test_feature_drift_detector_triggers_on_large_shift():
+    gen = setup_generator()
+    gen._feature_baseline_mean = pd.Series({"f1": 0.0, "f2": 0.0})
+    gen._feature_baseline_std = pd.Series({"f1": 1.0, "f2": 1.0})
+
+    msg = gen._check_feature_drift(pd.DataFrame({"f1": [9.0], "f2": [7.0]}))
+
+    assert msg is not None
+    assert "Feature drift detected" in msg
+
+
+def test_confidence_drift_detector_triggers_on_neutral_collapse():
+    gen = setup_generator()
+
+    msg = None
+    for _ in range(24):
+        msg = gen._check_confidence_drift(0.5)
+
+    assert msg is not None
+    assert "Confidence drift detected" in msg

@@ -19,6 +19,7 @@ from sklearn.model_selection import PredefinedSplit
 
 from quant.config import get_research_config
 from quant.features.pipeline import extract_feature_matrix, get_feature_columns
+from quant.risk.cost_model import PercentageCostModel
 from quant.validation.metrics import compute_trade_pnl
 
 logger = logging.getLogger(__name__)
@@ -101,12 +102,17 @@ def _fast_walk_forward_ev(
             cursor += cfg.wf_step_bars
             continue
 
+        cost_model = PercentageCostModel(fee_rate=cfg.taker_fee_rate)
+        cost_model.fit(train_df)
+        costs = test_df.apply(cost_model.estimate_cost, axis=1).values[:valid_len]
+
         pnl = compute_trade_pnl(
             predictions=probas_valid[eval_mask],
             actuals=y_valid[eval_mask],
             price_moves=price_moves[eval_mask],
             threshold=0.5,
-            spread=cfg.spread_price,
+            spread=costs[eval_mask],
+            allow_short=True,
         )
 
         if len(pnl) > 0:
