@@ -110,6 +110,9 @@ class ExecutionService(Protocol):
     def get_execution_diagnostics(self, user_id: int) -> ExecutionDiagnostics | None:
         """Return execution diagnostics for the session, if available."""
 
+    def clear_execution_diagnostics(self, user_id: int) -> bool:
+        """Reset execution diagnostics counters for the running session."""
+
     def set_monitoring_snapshot(
         self,
         user_id: int,
@@ -224,6 +227,9 @@ class InMemoryExecutionService:
         if user_id not in self._sessions:
             return None
         return ExecutionDiagnostics()
+
+    def clear_execution_diagnostics(self, user_id: int) -> bool:
+        return user_id in self._sessions
 
     def set_monitoring_snapshot(
         self,
@@ -917,6 +923,29 @@ class RoutedExecutionService:
         if state is None:
             return None
         return state.diagnostics
+
+    def clear_execution_diagnostics(self, user_id: int) -> bool:
+        """Reset execution telemetry counters while keeping the session and positions intact."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            return False
+
+        state.diagnostics = self._build_initial_diagnostics(state.effective_risk_policy)
+        merged_anomaly = max(
+            state.external_execution_anomaly_rate,
+            state.diagnostics.reject_rate,
+        )
+        if state.monitoring_snapshot.execution_anomaly_rate != merged_anomaly:
+            state.monitoring_snapshot = replace(
+                state.monitoring_snapshot,
+                execution_anomaly_rate=merged_anomaly,
+            )
+        self._apply_snapshot_risk_monitoring(
+            state,
+            risk_policy=state.effective_risk_policy,
+        )
+        return True
 
     def get_session_mode(self, user_id: int) -> str | None:
         """Return running mode label for diagnostics (live/paper)."""

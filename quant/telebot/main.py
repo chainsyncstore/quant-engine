@@ -1110,22 +1110,27 @@ async def _start_v2_primary_sessions(
     )
 
 
-async def _notify_maintenance_update_complete(application) -> None:
-    """Notify users that deploy/update completed and continuation commands are available."""
+async def _notify_maintenance_update_complete(
+    application,
+    *,
+    force: bool = False,
+) -> tuple[int, int]:
+    """Notify users that deploy/update completed and fallback continuation commands are available."""
 
     session = SessionLocal()
     notify_targets: list[tuple[int, str, int]] = []
     try:
-        pending_users = (
+        pending_query = (
             session.query(User)
             .join(UserContext, UserContext.telegram_id == User.telegram_id)
             .filter(
                 User.status.in_(("active", "approved")),
                 UserContext.maintenance_resume_pending.is_(True),
-                UserContext.maintenance_post_notified.is_(False),
             )
-            .all()
         )
+        if not force:
+            pending_query = pending_query.filter(UserContext.maintenance_post_notified.is_(False))
+        pending_users = pending_query.all()
 
         for db_user in pending_users:
             ctx = db_user.context
@@ -1141,32 +1146,23 @@ async def _notify_maintenance_update_complete(application) -> None:
             notify_targets.append((db_user.telegram_id, mode, len(positions)))
     except Exception as exc:
         logger.warning("Failed preparing maintenance completion notifications: %s", exc)
-        return
+        return 0, 0
     finally:
         session.close()
 
     if not notify_targets:
-        return
+        return 0, 0
 
     delivered_user_ids: list[int] = []
     for user_id, mode, open_count in notify_targets:
         resume_cmd = "/continue_live" if mode == "live" else "/continue_demo"
-        start_cmd = "/start_live" if mode == "live" else "/start_demo"
-        if open_count > 0:
-            message = (
-                "✅ **System Update Complete**\n\n"
-                f"A maintenance snapshot was saved with `{open_count}` open symbol(s).\n"
-                f"Run `{resume_cmd}` to restore previous positions, "
-                f"or `{start_cmd}` to begin fresh."
-                + FOOTER
-            )
-        else:
-            message = (
-                "✅ **System Update Complete**\n\n"
-                "No open-position snapshot was captured before maintenance.\n"
-                f"Run `{start_cmd}` to start a new session."
-                + FOOTER
-            )
+        message = (
+            "✅ **System Update Complete**\n\n"
+            f"Safety snapshot saved symbols: `{open_count}`.\n"
+            "Run `/status` or `/stats` to confirm your engine is still running and your session continued.\n"
+            f"If it is not running, run `{resume_cmd}` to restore from your snapshot."
+            + FOOTER
+        )
 
         try:
             await application.bot.send_message(chat_id=user_id, text=message)
@@ -1175,7 +1171,7 @@ async def _notify_maintenance_update_complete(application) -> None:
             logger.warning("Failed sending maintenance complete notice to user %s: %s", user_id, notify_err)
 
     if not delivered_user_ids:
-        return
+        return len(notify_targets), 0
 
     session = SessionLocal()
     try:
@@ -1195,11 +1191,11 @@ async def _notify_maintenance_update_complete(application) -> None:
     finally:
         session.close()
 
+    return len(notify_targets), len(delivered_user_ids)
+
 
 async def _restore_active_sessions(application):
     """Restore active sessions from DB on bot startup."""
-    await _notify_maintenance_update_complete(application)
-
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
 
@@ -1226,7 +1222,6 @@ async def _restore_active_sessions(application):
             .filter(
                 User.status.in_(("active", "approved")),
                 UserContext.is_active.is_(True),
-                UserContext.maintenance_resume_pending.is_(False),
             )
             .all()
         )
@@ -1467,7 +1462,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "\n\nAdmin\n"
                 "/approve <id> - Approve user\n"
                 "/revoke <id> - Freeze user\n"
-                "/prepare_update - Snapshot/close positions before deploy\n"
+                "/prepare_update - Save user snapshots and send pre-update notice\n"
+                "/update_complete - Notify users deploy is done and share recovery steps\n"
                 "/model_active - Show runtime model routing\n"
                 "/model_versions - List registered model versions\n"
                 "/model_rollback [version_id] - Switch active pointer (default: previous)"
@@ -1925,6 +1921,7 @@ async def _continue_from_maintenance(
             target_positions=target_positions,
             prices=target_prices,
         )
+        bridge.clear_execution_diagnostics(user_id)
 
         if source_manager is not None:
             source_started = await source_manager.start_session(
@@ -1992,7 +1989,7 @@ async def continue_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin-only: snapshot/close active sessions before deploy restart."""
+    """Admin-only: snapshot active sessions before deploy restart without force-stopping them."""
 
     global V2_DEGRADED_ALERTED_USERS
 
@@ -2007,7 +2004,7 @@ async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     session = SessionLocal()
-    targets: list[tuple[int, str, dict[str, float], dict[str, float]]] = []
+    targets: list[tuple[int, str, dict[str, float], dict[str, float], bool]] = []
     try:
         active_users = (
             session.query(User)
@@ -2029,27 +2026,10 @@ async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prices: dict[str, float] = {}
             bridge_running = bool(bridge and bridge.is_running(user_id))
             source_running = bool(source_manager and source_manager.is_running(user_id))
+            session_running = bridge_running or source_running
 
             if bridge is not None and bridge_running:
                 positions, prices = _capture_resume_snapshot_from_bridge(bridge, user_id)
-                if positions:
-                    try:
-                        await bridge.sync_positions(
-                            user_id,
-                            target_positions={},
-                            prices=prices,
-                        )
-                    except Exception as flatten_err:
-                        logger.warning(
-                            "Maintenance flatten failed for user %s: %s",
-                            user_id,
-                            flatten_err,
-                        )
-
-            if source_manager is not None and source_running:
-                await source_manager.stop_session(user_id)
-            if bridge is not None and bridge_running:
-                await bridge.stop_session(user_id)
 
             payload = _build_maintenance_resume_payload(
                 mode=mode,
@@ -2059,8 +2039,7 @@ async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ctx.maintenance_resume_payload = payload
             ctx.maintenance_resume_pending = True
             ctx.maintenance_post_notified = False
-            ctx.is_active = False
-            targets.append((user_id, mode, positions, prices))
+            targets.append((user_id, mode, positions, prices, session_running))
             V2_DEGRADED_ALERTED_USERS.discard(user_id)
 
         session.commit()
@@ -2073,15 +2052,18 @@ async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.close()
 
     notified = 0
-    for user_id, mode, positions, _prices in targets:
+    for user_id, mode, positions, _prices, session_running in targets:
         resume_cmd = "/continue_live" if mode == "live" else "/continue_demo"
-        start_cmd = "/start_live" if mode == "live" else "/start_demo"
+        runtime_note = (
+            "Your session is currently running and should auto-continue after restart."
+            if session_running
+            else "Your engine is currently offline, but your snapshot was still saved."
+        )
         message = (
             "⚠️ **System Update Starting**\n\n"
-            "A maintenance deploy is in progress. Your current session has been stopped.\n"
-            f"Snapshot captured symbols: `{len(positions)}`.\n"
-            f"After update completion run `{resume_cmd}` to restore, "
-            f"or `{start_cmd}` to start a new session."
+            f"Safety snapshot saved symbols: `{len(positions)}`.\n"
+            f"{runtime_note}\n"
+            f"If your engine is not running after update, run `{resume_cmd}` to restore from snapshot."
             + FOOTER
         )
         try:
@@ -2094,7 +2076,30 @@ async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ **Maintenance preparation complete**\n\n"
         f"Users prepared: `{len(targets)}`\n"
         f"Users notified: `{notified}`\n"
-        "Safe to deploy/restart now."
+        "Snapshots saved. Sessions were NOT force-stopped. Safe to deploy/restart now."
+        + FOOTER
+    )
+
+
+async def update_complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: notify users that deployment finished and share verification/recovery steps."""
+
+    admin_user_id = update.effective_user.id
+    if not _is_admin_user(admin_user_id):
+        return
+
+    targeted, notified = await _notify_maintenance_update_complete(context.application)
+    if targeted == 0:
+        await update.message.reply_text(
+            "ℹ️ No users with pending maintenance snapshots to notify." + FOOTER
+        )
+        return
+
+    await update.message.reply_text(
+        "✅ **Update-complete notices sent**\n\n"
+        f"Users targeted: `{targeted}`\n"
+        f"Users notified: `{notified}`\n"
+        "Users were instructed to run `/status` or `/stats` first, then `/continue_demo` or `/continue_live` if needed."
         + FOOTER
     )
 
@@ -2747,6 +2752,7 @@ def main():
     application.add_handler(CommandHandler('stop', stop_trading))
     application.add_handler(CommandHandler('reset_demo', reset_demo))
     application.add_handler(CommandHandler('prepare_update', prepare_update))
+    application.add_handler(CommandHandler('update_complete', update_complete))
     application.add_handler(CommandHandler('status', status))
     application.add_handler(CommandHandler('stats', stats))
     

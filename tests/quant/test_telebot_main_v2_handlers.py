@@ -458,7 +458,8 @@ def test_help_command_admin_lists_prepare_update(monkeypatch) -> None:
 
     assert update.message.replies
     msg = update.message.replies[-1]
-    assert "/prepare_update - Snapshot/close positions before deploy" in msg
+    assert "/prepare_update - Save user snapshots and send pre-update notice" in msg
+    assert "/update_complete - Notify users deploy is done and share recovery steps" in msg
 
 
 def test_execution_diagnostics_text_includes_activity_and_caps() -> None:

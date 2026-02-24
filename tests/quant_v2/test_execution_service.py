@@ -843,6 +843,39 @@ def test_routed_execution_service_reset_session_state_reinitializes_paper_sessio
     assert len(routed_after) == 1
 
 
+def test_routed_execution_service_clear_execution_diagnostics_keeps_session_running() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4091, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.8,
+    )
+    prices = {"BTCUSDT": 50000.0}
+
+    routed_before = asyncio.run(service.route_signals(4091, signals=(signal,), prices=prices))
+    assert len(routed_before) == 1
+
+    diagnostics_before = service.get_execution_diagnostics(4091)
+    assert diagnostics_before is not None
+    assert diagnostics_before.total_orders == 1
+
+    assert service.clear_execution_diagnostics(4091) is True
+    assert service.is_running(4091) is True
+
+    diagnostics_after = service.get_execution_diagnostics(4091)
+    assert diagnostics_after is not None
+    assert diagnostics_after.total_orders == 0
+    assert diagnostics_after.accepted_orders == 0
+    assert diagnostics_after.rejected_orders == 0
+
+    routed_after = asyncio.run(service.route_signals(4091, signals=(signal,), prices=prices))
+    assert len(routed_after) == 0
+
+
 def test_routed_execution_service_reset_session_state_rejects_live_and_missing() -> None:
     class FakeAdapter:
         def get_positions(self):

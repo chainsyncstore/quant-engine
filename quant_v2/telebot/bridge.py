@@ -58,8 +58,10 @@ def format_portfolio_snapshot(snapshot: PortfolioSnapshot, *, mode_label: str) -
 
     if snapshot.symbol_pnl_usd:
         top = sorted(snapshot.symbol_pnl_usd.items(), key=lambda kv: kv[1], reverse=True)
+        total_symbol_pnl = float(sum(snapshot.symbol_pnl_usd.values()))
         lines.append("")
         lines.append("Top Symbol PnL:")
+        lines.append(f"- Total Symbol PnL: `${total_symbol_pnl:+.2f}`")
         for symbol, pnl in top:
             lines.append(f"- {symbol}: `${pnl:+.2f}`")
 
@@ -235,6 +237,14 @@ class V2ExecutionBridge:
         """Return execution diagnostics when supported by the bound service."""
 
         return self.service.get_execution_diagnostics(user_id)
+
+    def clear_execution_diagnostics(self, user_id: int) -> bool:
+        """Reset execution diagnostics counters when supported by the bound service."""
+
+        clearer = getattr(self.service, "clear_execution_diagnostics", None)
+        if not callable(clearer):
+            return False
+        return bool(clearer(user_id))
 
     def set_lifecycle_rules(
         self,

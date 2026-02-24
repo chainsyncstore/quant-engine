@@ -130,6 +130,41 @@ def test_v2_execution_bridge_exposes_execution_diagnostics() -> None:
     assert diagnostics.rejected_orders == 0
 
 
+def test_v2_execution_bridge_clear_execution_diagnostics_resets_counters() -> None:
+    service = RoutedExecutionService()
+    bridge = V2ExecutionBridge(service, default_universe=("BTCUSDT",))
+
+    assert asyncio.run(bridge.start_session(user_id=580, live=False)) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.8,
+    )
+    routed = asyncio.run(
+        bridge.route_signals(
+            580,
+            signals=(signal,),
+            prices={"BTCUSDT": 50000.0},
+        )
+    )
+    assert len(routed) == 1
+
+    before = bridge.get_execution_diagnostics(580)
+    assert before is not None
+    assert before.total_orders == 1
+
+    assert bridge.clear_execution_diagnostics(580) is True
+
+    after = bridge.get_execution_diagnostics(580)
+    assert after is not None
+    assert after.total_orders == 0
+    assert after.accepted_orders == 0
+    assert after.rejected_orders == 0
+
+
 def test_v2_execution_bridge_sync_positions_via_service() -> None:
     service = RoutedExecutionService()
     bridge = V2ExecutionBridge(service, default_universe=("BTCUSDT", "ETHUSDT"))
@@ -234,6 +269,42 @@ def test_v2_execution_bridge_reset_session_state_returns_false_when_unsupported(
 
     bridge = V2ExecutionBridge(NoResetService())
     assert bridge.reset_session_state(777) is False
+
+
+def test_v2_execution_bridge_clear_execution_diagnostics_returns_false_when_unsupported() -> None:
+    class NoResetService:
+        async def start_session(self, request):
+            return True
+
+        async def stop_session(self, user_id: int) -> bool:
+            return True
+
+        def is_running(self, user_id: int) -> bool:
+            return False
+
+        def get_portfolio_snapshot(self, user_id: int):
+            return None
+
+        def get_active_count(self) -> int:
+            return 0
+
+        def get_session_mode(self, user_id: int) -> str | None:
+            return None
+
+        def get_execution_diagnostics(self, user_id: int):
+            return None
+
+        def set_monitoring_snapshot(self, user_id: int, snapshot):
+            return None
+
+        def get_kill_switch_evaluation(self, user_id: int):
+            return None
+
+        async def route_signals(self, user_id: int, *, signals, prices, monitoring_snapshot=None):
+            return ()
+
+    bridge = V2ExecutionBridge(NoResetService())
+    assert bridge.clear_execution_diagnostics(777) is False
 
 
 def test_v2_execution_bridge_sync_positions_raises_when_unsupported() -> None:
@@ -418,6 +489,7 @@ def test_format_portfolio_snapshot_includes_symbol_pnl_when_available() -> None:
     )
     text = format_portfolio_snapshot(custom, mode_label="PAPER")
     assert "Top Symbol PnL" in text
+    assert "- Total Symbol PnL: `$+19.00`" in text
 
     pnl_section = text.split("Top Symbol PnL:\n", 1)[1]
     expected_order = ["XRPUSDT", "BTCUSDT", "LTCUSDT", "SOLUSDT", "ETHUSDT", "ADAUSDT"]
