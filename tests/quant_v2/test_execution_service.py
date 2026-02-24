@@ -1080,6 +1080,8 @@ def test_routed_execution_service_trips_rollback_gate_after_consecutive_live_fai
 
     diagnostics = service.get_execution_diagnostics(413)
     assert diagnostics is not None
+    assert diagnostics.paused_cycles == 3
+    assert diagnostics.blocked_actionable_signals == 3
     assert diagnostics.rollback_required is True
     assert diagnostics.rollout_failure_streak >= 2
     assert "rollback_required" in diagnostics.rollout_gate_reasons

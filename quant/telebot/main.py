@@ -173,6 +173,17 @@ def _ensure_user_context_schema() -> None:
         ("maintenance_resume_payload", "TEXT"),
         ("maintenance_resume_pending", "BOOLEAN DEFAULT 0"),
         ("maintenance_post_notified", "BOOLEAN DEFAULT 0"),
+        ("lifetime_demo_pnl_usd", "FLOAT DEFAULT 0.0"),
+        ("lifetime_live_pnl_usd", "FLOAT DEFAULT 0.0"),
+        ("current_demo_equity_usd", "FLOAT DEFAULT 0.0"),
+        ("current_live_equity_usd", "FLOAT DEFAULT 0.0"),
+        ("current_demo_notional_usd", "FLOAT DEFAULT 0.0"),
+        ("current_live_notional_usd", "FLOAT DEFAULT 0.0"),
+        ("current_demo_symbols", "INTEGER DEFAULT 0"),
+        ("current_live_symbols", "INTEGER DEFAULT 0"),
+        ("last_demo_equity_usd", "FLOAT"),
+        ("last_live_equity_usd", "FLOAT"),
+        ("lifetime_stats_updated_at", "DATETIME"),
     )
 
     with ENGINE.connect() as conn:
@@ -564,6 +575,148 @@ def _format_lifecycle_stop_loss(stop_loss_pct: float) -> str:
     return f"Close trade if loss reaches {stop_loss_pct*100:.2f}%"
 
 
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _format_usd(value: float, *, signed: bool = False) -> str:
+    if signed:
+        return f"${value:+,.2f}"
+    return f"${value:,.2f}"
+
+
+def _format_lifetime_timestamp(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return "n/a"
+
+
+def _persist_lifetime_snapshot_metrics(
+    user_id: int,
+    *,
+    live: bool,
+    snapshot,
+) -> None:
+    """Persist per-mode equity/notional and cumulative PnL deltas from a runtime snapshot."""
+
+    if snapshot is None:
+        return
+
+    equity_usd = _safe_float(getattr(snapshot, "equity_usd", 0.0), 0.0)
+    symbol_notionals = getattr(snapshot, "symbol_notional_usd", {}) or {}
+    if isinstance(symbol_notionals, dict):
+        total_notional_usd = sum(abs(_safe_float(v, 0.0)) for v in symbol_notionals.values())
+    else:
+        total_notional_usd = 0.0
+    symbol_count = int(getattr(snapshot, "symbol_count", 0) or 0)
+
+    if equity_usd <= 0.0:
+        return
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None:
+            return
+
+        ctx = db_user.context
+        if ctx is None:
+            ctx = UserContext(telegram_id=user_id)
+            db_user.context = ctx
+
+        if live:
+            previous_equity = _safe_float(getattr(ctx, "last_live_equity_usd", 0.0), 0.0)
+            lifetime_pnl = _safe_float(getattr(ctx, "lifetime_live_pnl_usd", 0.0), 0.0)
+            if previous_equity > 0.0:
+                lifetime_pnl += equity_usd - previous_equity
+            ctx.lifetime_live_pnl_usd = lifetime_pnl
+            ctx.last_live_equity_usd = equity_usd
+            ctx.current_live_equity_usd = equity_usd
+            ctx.current_live_notional_usd = max(total_notional_usd, 0.0)
+            ctx.current_live_symbols = max(symbol_count, 0)
+        else:
+            previous_equity = _safe_float(getattr(ctx, "last_demo_equity_usd", 0.0), 0.0)
+            lifetime_pnl = _safe_float(getattr(ctx, "lifetime_demo_pnl_usd", 0.0), 0.0)
+            if previous_equity > 0.0:
+                lifetime_pnl += equity_usd - previous_equity
+            ctx.lifetime_demo_pnl_usd = lifetime_pnl
+            ctx.last_demo_equity_usd = equity_usd
+            ctx.current_demo_equity_usd = equity_usd
+            ctx.current_demo_notional_usd = max(total_notional_usd, 0.0)
+            ctx.current_demo_symbols = max(symbol_count, 0)
+
+        ctx.lifetime_stats_updated_at = datetime.utcnow()
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Failed persisting lifetime metrics for user %s: %s", user_id, exc)
+    finally:
+        session.close()
+
+
+def _load_lifetime_stats_summary(user_id: int) -> dict[str, Any] | None:
+    """Return persisted lifetime stats summary payload for a user."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None:
+            return None
+
+        ctx = db_user.context
+        if ctx is None:
+            ctx = UserContext(telegram_id=user_id)
+            db_user.context = ctx
+            session.commit()
+
+        active_mode = "OFFLINE"
+        if bool(getattr(ctx, "is_active", False)):
+            active_mode = "LIVE" if bool(getattr(ctx, "live_mode", False)) else "DEMO"
+
+        return {
+            "current_demo_equity_usd": max(_safe_float(getattr(ctx, "current_demo_equity_usd", 0.0), 0.0), 0.0),
+            "current_live_equity_usd": max(_safe_float(getattr(ctx, "current_live_equity_usd", 0.0), 0.0), 0.0),
+            "current_demo_notional_usd": max(_safe_float(getattr(ctx, "current_demo_notional_usd", 0.0), 0.0), 0.0),
+            "current_live_notional_usd": max(_safe_float(getattr(ctx, "current_live_notional_usd", 0.0), 0.0), 0.0),
+            "current_demo_symbols": max(int(getattr(ctx, "current_demo_symbols", 0) or 0), 0),
+            "current_live_symbols": max(int(getattr(ctx, "current_live_symbols", 0) or 0), 0),
+            "lifetime_demo_pnl_usd": _safe_float(getattr(ctx, "lifetime_demo_pnl_usd", 0.0), 0.0),
+            "lifetime_live_pnl_usd": _safe_float(getattr(ctx, "lifetime_live_pnl_usd", 0.0), 0.0),
+            "active_mode": active_mode,
+            "created_at": getattr(db_user, "created_at", None),
+            "last_updated_at": getattr(ctx, "lifetime_stats_updated_at", None),
+            "strategy_profile": str(getattr(ctx, "strategy_profile", "core_v2") or "core_v2"),
+        }
+    except Exception as exc:
+        logger.warning("Failed loading lifetime stats for user %s: %s", user_id, exc)
+        return None
+    finally:
+        session.close()
+
+
+def _refresh_lifetime_stats_from_runtime(user_id: int, *, bridge: V2ExecutionBridge | None) -> None:
+    """Refresh persisted lifetime stats using the latest running bridge snapshot."""
+
+    if bridge is None or not bridge.is_running(user_id):
+        return
+
+    service = getattr(bridge, "service", None)
+    snapshot_getter = getattr(service, "get_portfolio_snapshot", None)
+    if not callable(snapshot_getter):
+        return
+
+    snapshot = snapshot_getter(user_id)
+    if snapshot is None:
+        return
+
+    session_mode = bridge.get_session_mode(user_id)
+    live_mode = session_mode == "live"
+    _persist_lifetime_snapshot_metrics(user_id, live=live_mode, snapshot=snapshot)
+
+
 def _resolve_runtime_metadata(*, bridge: V2ExecutionBridge | None) -> tuple[str, str | None, str]:
     """Return strategy/model metadata for session persistence."""
 
@@ -936,6 +1089,10 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
     exit_orders = int(getattr(diagnostics, "exit_orders", 0) or 0)
     skipped_by_filter = int(getattr(diagnostics, "skipped_by_filter", 0) or 0)
     skipped_by_deadband = int(getattr(diagnostics, "skipped_by_deadband", 0) or 0)
+    paused_cycles = int(getattr(diagnostics, "paused_cycles", 0) or 0)
+    blocked_actionable_signals = int(
+        getattr(diagnostics, "blocked_actionable_signals", 0) or 0
+    )
     total_orders = int(getattr(diagnostics, "total_orders", 0) or 0)
 
     lines = [
@@ -947,6 +1104,10 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
             f"entries={entry_orders}, rebalances={rebalance_orders}, exits={exit_orders}"
         ),
         f"- Skipped: filter={skipped_by_filter}, deadband={skipped_by_deadband}",
+        (
+            "- Kill-switch blocks: "
+            f"cycles={paused_cycles}, actionable_signals={blocked_actionable_signals}"
+        ),
         f"- Reject rate: {diagnostics.reject_rate*100:.2f}%",
         f"- Avg adverse slippage: {diagnostics.avg_adverse_slippage_bps:.2f} bps "
         f"across {diagnostics.slippage_sample_count} fills",
@@ -1448,6 +1609,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/reset_demo - Reset paper state\n"
             "/status - Check if running\n"
             "/stats - View live performance\n"
+            "/lifetime_stats - View lifetime demo/live equity, notional, and PnL\n"
             "/lifecycle - Show your auto-close safety settings\n"
             "/set_horizon <hours|off> - Auto-close open trades after N hours\n"
             "/set_stoploss <percent|off> - Auto-close a trade at your max loss %\n\n"
@@ -2531,6 +2693,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No production model found. Contact admin." + FOOTER)
         return
     user_id = update.effective_user.id
+    _refresh_lifetime_stats_from_runtime(user_id, bridge=bridge)
 
     if manager and manager.is_running(user_id) and _using_v1_primary_backend():
         engine = manager.sessions[user_id]
@@ -2669,6 +2832,57 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("⚠️ Engine not running." + FOOTER)
 
+
+async def lifetime_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show persisted cross-mode lifetime stats for demo/live activity."""
+
+    _ = context
+    user_id = update.effective_user.id
+    bridge = _get_v2_bridge()
+    source_manager = _get_signal_source_manager()
+
+    _refresh_lifetime_stats_from_runtime(user_id, bridge=bridge)
+    summary = _load_lifetime_stats_summary(user_id)
+    if summary is None:
+        await update.message.reply_text("⛔ Account not found. Run `/start` first." + FOOTER)
+        return
+
+    demo_equity = float(summary.get("current_demo_equity_usd", 0.0) or 0.0)
+    live_equity = float(summary.get("current_live_equity_usd", 0.0) or 0.0)
+    demo_notional = float(summary.get("current_demo_notional_usd", 0.0) or 0.0)
+    live_notional = float(summary.get("current_live_notional_usd", 0.0) or 0.0)
+    demo_symbols = int(summary.get("current_demo_symbols", 0) or 0)
+    live_symbols = int(summary.get("current_live_symbols", 0) or 0)
+    lifetime_demo_pnl = float(summary.get("lifetime_demo_pnl_usd", 0.0) or 0.0)
+    lifetime_live_pnl = float(summary.get("lifetime_live_pnl_usd", 0.0) or 0.0)
+    combined_pnl = lifetime_demo_pnl + lifetime_live_pnl
+
+    running = bool(bridge and bridge.is_running(user_id)) or bool(
+        source_manager and source_manager.is_running(user_id)
+    )
+    engine_status = "RUNNING" if running else "STOPPED"
+
+    msg = (
+        "📚 **Lifetime Trading Stats**\n\n"
+        "Current Snapshot\n"
+        f"- Demo equity: `{_format_usd(demo_equity)}`\n"
+        f"- Demo active notional: `{_format_usd(demo_notional)}` across `{demo_symbols}` symbol(s)\n"
+        f"- Live equity: `{_format_usd(live_equity)}`\n"
+        f"- Live active notional: `{_format_usd(live_notional)}` across `{live_symbols}` symbol(s)\n\n"
+        "Lifetime PnL\n"
+        f"- Demo total: `{_format_usd(lifetime_demo_pnl, signed=True)}`\n"
+        f"- Live total: `{_format_usd(lifetime_live_pnl, signed=True)}`\n"
+        f"- Combined total: `{_format_usd(combined_pnl, signed=True)}`\n\n"
+        "Session Context\n"
+        f"- Engine status: `{engine_status}`\n"
+        f"- Active mode: `{summary.get('active_mode', 'OFFLINE')}`\n"
+        f"- Strategy profile: `{summary.get('strategy_profile', 'core_v2')}`\n"
+        f"- Account created: `{_format_lifetime_timestamp(summary.get('created_at'))}`\n"
+        f"- Last stats refresh: `{_format_lifetime_timestamp(summary.get('last_updated_at'))}`"
+        + FOOTER
+    )
+    await update.message.reply_text(msg)
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global V2_DEGRADED_ALERTED_USERS
 
@@ -2755,6 +2969,8 @@ def main():
     application.add_handler(CommandHandler('update_complete', update_complete))
     application.add_handler(CommandHandler('status', status))
     application.add_handler(CommandHandler('stats', stats))
+    application.add_handler(CommandHandler('lifetime_stats', lifetime_stats))
+    application.add_handler(CommandHandler('lifetime', lifetime_stats))
     
     # Debug: Log all updates
     async def debug_log(update: Update, context: ContextTypes.DEFAULT_TYPE):

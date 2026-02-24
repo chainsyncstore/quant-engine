@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
@@ -329,6 +330,7 @@ def test_help_command_v2_clarifies_rebalancer_behavior(monkeypatch) -> None:
     assert "/lifecycle - Show your auto-close safety settings" in msg
     assert "/set_horizon <hours|off> - Auto-close open trades after N hours" in msg
     assert "/set_stoploss <percent|off> - Auto-close a trade at your max loss %" in msg
+    assert "/lifetime_stats - View lifetime demo/live equity, notional, and PnL" in msg
 
 
 def test_lifecycle_command_reports_persisted_and_runtime_rules(monkeypatch) -> None:
@@ -462,6 +464,84 @@ def test_help_command_admin_lists_prepare_update(monkeypatch) -> None:
     assert "/update_complete - Notify users deploy is done and share recovery steps" in msg
 
 
+def test_lifetime_stats_renders_summary(monkeypatch) -> None:
+    user_id = 8091
+    update = _FakeUpdate(user_id)
+    context = _FakeContext()
+
+    class _Bridge:
+        def is_running(self, requested_user_id: int) -> bool:
+            _ = requested_user_id
+            return True
+
+    class _SourceManager:
+        def is_running(self, requested_user_id: int) -> bool:
+            _ = requested_user_id
+            return False
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: _Bridge())
+    monkeypatch.setattr(telebot_main, "_get_signal_source_manager", lambda: _SourceManager())
+    monkeypatch.setattr(
+        telebot_main,
+        "_refresh_lifetime_stats_from_runtime",
+        lambda requested_user_id, *, bridge: None,
+    )
+    monkeypatch.setattr(
+        telebot_main,
+        "_load_lifetime_stats_summary",
+        lambda requested_user_id: {
+            "current_demo_equity_usd": 10_250.0,
+            "current_live_equity_usd": 9_700.0,
+            "current_demo_notional_usd": 1_000.0,
+            "current_live_notional_usd": 2_200.0,
+            "current_demo_symbols": 2,
+            "current_live_symbols": 3,
+            "lifetime_demo_pnl_usd": 250.0,
+            "lifetime_live_pnl_usd": -300.0,
+            "active_mode": "LIVE",
+            "created_at": datetime(2026, 1, 1, 12, 0, 0),
+            "last_updated_at": datetime(2026, 1, 2, 13, 30, 0),
+            "strategy_profile": "core_v2",
+        },
+    )
+
+    asyncio.run(telebot_main.lifetime_stats(update, context))
+
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "Lifetime Trading Stats" in msg
+    assert "Demo equity" in msg
+    assert "$10,250.00" in msg
+    assert "Live active notional" in msg
+    assert "$2,200.00" in msg
+    assert "Demo total" in msg
+    assert "$+250.00" in msg
+    assert "Live total" in msg
+    assert "$-300.00" in msg
+    assert "Combined total" in msg
+    assert "$-50.00" in msg
+    assert "Engine status: `RUNNING`" in msg
+
+
+def test_lifetime_stats_returns_not_found_for_missing_user(monkeypatch) -> None:
+    update = _FakeUpdate(8092)
+    context = _FakeContext()
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: None)
+    monkeypatch.setattr(telebot_main, "_get_signal_source_manager", lambda: None)
+    monkeypatch.setattr(
+        telebot_main,
+        "_refresh_lifetime_stats_from_runtime",
+        lambda requested_user_id, *, bridge: None,
+    )
+    monkeypatch.setattr(telebot_main, "_load_lifetime_stats_summary", lambda requested_user_id: None)
+
+    asyncio.run(telebot_main.lifetime_stats(update, context))
+
+    assert update.message.replies
+    assert "Account not found" in update.message.replies[-1]
+
+
 def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
     class _DiagBridge:
         def get_execution_diagnostics(self, user_id: int):
@@ -478,6 +558,8 @@ def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
                 exit_orders=0,
                 skipped_by_filter=1,
                 skipped_by_deadband=2,
+                paused_cycles=3,
+                blocked_actionable_signals=7,
                 effective_symbol_cap_frac=0.05,
                 effective_gross_cap_frac=0.15,
                 effective_net_cap_frac=0.10,
@@ -491,4 +573,5 @@ def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
     assert "Order Activity" in text
     assert "entries=2, rebalances=2, exits=0" in text
     assert "Skipped: filter=1, deadband=2" in text
+    assert "Kill-switch blocks: cycles=3, actionable_signals=7" in text
     assert "Effective caps" in text

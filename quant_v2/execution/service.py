@@ -60,6 +60,8 @@ class ExecutionDiagnostics:
     exit_orders: int = 0
     skipped_by_filter: int = 0
     skipped_by_deadband: int = 0
+    paused_cycles: int = 0
+    blocked_actionable_signals: int = 0
     live_go_no_go_passed: bool = True
     rollback_required: bool = False
     rollout_failure_streak: int = 0
@@ -449,10 +451,20 @@ class RoutedExecutionService:
         if min_qty < 0.0:
             raise ValueError("min_qty must be >= 0")
 
+        signal_list = tuple(signals)
+
         if state.mode == "live":
             self._refresh_runtime_rollout_controls()
             gate_reasons = self._current_live_rollout_gate_reasons()
             if gate_reasons:
+                blocked_actionable = sum(1 for signal in signal_list if signal.actionable)
+                state.diagnostics = replace(
+                    state.diagnostics,
+                    paused_cycles=state.diagnostics.paused_cycles + 1,
+                    blocked_actionable_signals=(
+                        state.diagnostics.blocked_actionable_signals + blocked_actionable
+                    ),
+                )
                 logger.error(
                     "Live routing blocked by rollout gates for user %s: %s",
                     user_id,
@@ -493,6 +505,14 @@ class RoutedExecutionService:
             risk_policy=precheck_policy,
         )
         if state.kill_switch.pause_trading:
+            blocked_actionable = sum(1 for signal in signal_list if signal.actionable)
+            state.diagnostics = replace(
+                state.diagnostics,
+                paused_cycles=state.diagnostics.paused_cycles + 1,
+                blocked_actionable_signals=(
+                    state.diagnostics.blocked_actionable_signals + blocked_actionable
+                ),
+            )
             logger.warning(
                 "Kill-switch paused v2 execution for user %s; reasons=%s",
                 user_id,
@@ -506,7 +526,6 @@ class RoutedExecutionService:
                 self._sync_rollout_diagnostics(state, gate_reasons=state.kill_switch.reasons)
             return ()
 
-        signal_list = tuple(signals)
         if not signal_list:
             return ()
 
@@ -1457,6 +1476,8 @@ class RoutedExecutionService:
             exit_orders=exit_orders,
             skipped_by_filter=skipped_by_filter,
             skipped_by_deadband=skipped_by_deadband,
+            paused_cycles=current.paused_cycles,
+            blocked_actionable_signals=current.blocked_actionable_signals,
             live_go_no_go_passed=current.live_go_no_go_passed,
             rollback_required=current.rollback_required,
             rollout_failure_streak=current.rollout_failure_streak,

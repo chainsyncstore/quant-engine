@@ -96,7 +96,12 @@ def build_session_health_summary(
         [
             "Session Health:",
             f"- User: {int(user_id)}",
-            f"- Orders: {int(getattr(diagnostics, 'total_orders', 0) or 0)}",
+            f"- Orders: {int(getattr(diagnostics, 'total_orders', 0) or 0)} (session cumulative)",
+            (
+                "- Kill-switch blocks: "
+                f"cycles={int(getattr(diagnostics, 'paused_cycles', 0) or 0)}, "
+                f"actionable_signals={int(getattr(diagnostics, 'blocked_actionable_signals', 0) or 0)}"
+            ),
             f"- Reject rate: {float(getattr(diagnostics, 'reject_rate', 0.0) or 0.0)*100:.2f}%",
             f"- Go/No-Go: {'PASS' if bool(getattr(diagnostics, 'live_go_no_go_passed', True)) else 'FAIL'}",
             f"- Rollback required: {bool(getattr(diagnostics, 'rollback_required', False))}",
