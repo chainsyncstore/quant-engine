@@ -194,6 +194,46 @@ def test_start_demo_delegates_to_start_engine_with_demo_mode(monkeypatch) -> Non
     assert captured["live"] is False
 
 
+def test_continue_demo_delegates_to_continue_helper(monkeypatch) -> None:
+    update = _FakeUpdate(8041)
+    context = _FakeContext()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_continue(update_arg, context_arg, *, live: bool) -> None:
+        captured["update"] = update_arg
+        captured["context"] = context_arg
+        captured["live"] = live
+
+    monkeypatch.setattr(telebot_main, "_continue_from_maintenance", _fake_continue)
+
+    asyncio.run(telebot_main.continue_demo(update, context))
+
+    assert captured["update"] is update
+    assert captured["context"] is context
+    assert captured["live"] is False
+
+
+def test_continue_live_delegates_to_continue_helper(monkeypatch) -> None:
+    update = _FakeUpdate(8042)
+    context = _FakeContext()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_continue(update_arg, context_arg, *, live: bool) -> None:
+        captured["update"] = update_arg
+        captured["context"] = context_arg
+        captured["live"] = live
+
+    monkeypatch.setattr(telebot_main, "_continue_from_maintenance", _fake_continue)
+
+    asyncio.run(telebot_main.continue_live(update, context))
+
+    assert captured["update"] is update
+    assert captured["context"] is context
+    assert captured["live"] is True
+
+
 def test_stop_trading_v2_stops_source_and_bridge_and_clears_alert(monkeypatch) -> None:
     user_id = 805
     update = _FakeUpdate(user_id)
@@ -283,8 +323,142 @@ def test_help_command_v2_clarifies_rebalancer_behavior(monkeypatch) -> None:
 
     assert update.message.replies
     msg = update.message.replies[-1]
-    assert "rebalances exposure as new signals arrive" in msg
-    assert "does not auto-close by 4H horizon or stop-loss" in msg
+    assert "/start_demo - Start PAPER trading (v2 multi-symbol)" in msg
+    assert "/continue_demo - Resume after maintenance from snapshot" in msg
+    assert "practice balance" in msg
+    assert "/lifecycle - Show your auto-close safety settings" in msg
+    assert "/set_horizon <hours|off> - Auto-close open trades after N hours" in msg
+    assert "/set_stoploss <percent|off> - Auto-close a trade at your max loss %" in msg
+
+
+def test_lifecycle_command_reports_persisted_and_runtime_rules(monkeypatch) -> None:
+    update = _FakeUpdate(8081)
+    context = _FakeContext()
+
+    class _LifecycleBridge:
+        def is_running(self, user_id: int) -> bool:
+            _ = user_id
+            return True
+
+        def get_lifecycle_rules(self, user_id: int):
+            _ = user_id
+            return SimpleNamespace(auto_close_horizon_bars=4, stop_loss_pct=0.02)
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: _LifecycleBridge())
+    monkeypatch.setattr(
+        telebot_main,
+        "_load_persisted_lifecycle_preferences",
+        lambda user_id: (8, 0.03),
+    )
+
+    asyncio.run(telebot_main.lifecycle(update, context))
+
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "Saved time limit" in msg
+    assert "8 hour(s)" in msg
+    assert "Saved loss limit" in msg
+    assert "Close trade if loss reaches 3.00%" in msg
+    assert "Active time limit" in msg
+    assert "4 hour(s)" in msg
+    assert "Active loss limit" in msg
+    assert "Close trade if loss reaches 2.00%" in msg
+    assert "Applied right now to your active session." in msg
+
+
+def test_set_horizon_persists_and_applies_to_active_session(monkeypatch) -> None:
+    update = _FakeUpdate(8082)
+    context = _FakeContext()
+    context.args = ["4"]
+
+    class _LifecycleBridge:
+        def is_running(self, user_id: int) -> bool:
+            _ = user_id
+            return True
+
+    persisted: dict[str, object] = {}
+
+    def _fake_persist(user_id: int, *, auto_close_horizon_bars=None, stop_loss_pct=None):
+        persisted["user_id"] = user_id
+        persisted["horizon"] = auto_close_horizon_bars
+        persisted["stop_loss"] = stop_loss_pct
+        return 4, 0.02
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: _LifecycleBridge())
+    monkeypatch.setattr(telebot_main, "_persist_lifecycle_preferences", _fake_persist)
+    monkeypatch.setattr(
+        telebot_main,
+        "_apply_lifecycle_preferences_to_running_session",
+        lambda *args, **kwargs: True,
+    )
+
+    asyncio.run(telebot_main.set_horizon(update, context))
+
+    assert persisted == {
+        "user_id": 8082,
+        "horizon": 4,
+        "stop_loss": None,
+    }
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "Trade Safety Updated" in msg
+    assert "4 hour(s)" in msg
+    assert "Close trade if loss reaches 2.00%" in msg
+    assert "Applied now to your active session." in msg
+
+
+def test_set_stoploss_accepts_percent_and_persists_fraction(monkeypatch) -> None:
+    update = _FakeUpdate(8083)
+    context = _FakeContext()
+    context.args = ["2"]
+
+    class _LifecycleBridge:
+        def is_running(self, user_id: int) -> bool:
+            _ = user_id
+            return False
+
+    persisted: dict[str, object] = {}
+
+    def _fake_persist(user_id: int, *, auto_close_horizon_bars=None, stop_loss_pct=None):
+        persisted["user_id"] = user_id
+        persisted["horizon"] = auto_close_horizon_bars
+        persisted["stop_loss"] = stop_loss_pct
+        return 6, float(stop_loss_pct)
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: _LifecycleBridge())
+    monkeypatch.setattr(telebot_main, "_persist_lifecycle_preferences", _fake_persist)
+    monkeypatch.setattr(
+        telebot_main,
+        "_apply_lifecycle_preferences_to_running_session",
+        lambda *args, **kwargs: False,
+    )
+
+    asyncio.run(telebot_main.set_stoploss(update, context))
+
+    assert persisted["user_id"] == 8083
+    assert persisted["horizon"] is None
+    assert persisted["stop_loss"] == 0.02
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "Trade Safety Updated" in msg
+    assert "6 hour(s)" in msg
+    assert "Close trade if loss reaches 2.00%" in msg
+    assert "Saved for your next `/start_demo` or `/start_live`." in msg
+
+
+def test_help_command_admin_lists_prepare_update(monkeypatch) -> None:
+    update = _FakeUpdate(809)
+    context = _FakeContext()
+
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: object())
+    monkeypatch.setattr(telebot_main, "_using_shadow_backend", lambda: False)
+    monkeypatch.setattr(telebot_main, "_is_admin_user", lambda user_id: True)
+
+    asyncio.run(telebot_main.help_command(update, context))
+
+    assert update.message.replies
+    msg = update.message.replies[-1]
+    assert "/prepare_update - Snapshot/close positions before deploy" in msg
 
 
 def test_execution_diagnostics_text_includes_activity_and_caps() -> None:

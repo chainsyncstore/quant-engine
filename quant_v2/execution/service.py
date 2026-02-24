@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from typing import Callable, Protocol
 
 from quant_v2.config import get_runtime_profile
-from quant_v2.contracts import PortfolioSnapshot, RiskSnapshot, StrategySignal
+from quant_v2.contracts import OrderPlan, PortfolioSnapshot, RiskSnapshot, StrategySignal
 from quant_v2.execution.adapters import ExecutionResult
 from quant_v2.execution.idempotency import build_idempotency_key
 from quant_v2.execution.planner import PlannerConfig, build_execution_intents
@@ -67,6 +67,20 @@ class ExecutionDiagnostics:
     effective_symbol_cap_frac: float = 0.0
     effective_gross_cap_frac: float = 0.0
     effective_net_cap_frac: float = 0.0
+
+
+@dataclass(frozen=True)
+class LifecycleRules:
+    """Configurable position lifecycle controls for auto-exit behaviors."""
+
+    auto_close_horizon_bars: int = 0
+    stop_loss_pct: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.auto_close_horizon_bars < 0:
+            raise ValueError("auto_close_horizon_bars must be >= 0")
+        if not 0.0 <= self.stop_loss_pct < 1.0:
+            raise ValueError("stop_loss_pct must be within [0, 1)")
 
 
 class ExecutionService(Protocol):
@@ -126,11 +140,16 @@ class _SessionState:
     mode: str
     snapshot: PortfolioSnapshot
     effective_risk_policy: PortfolioRiskPolicy
+    equity_baseline_usd: float = 10_000.0
     last_prices: dict[str, float] = field(default_factory=dict)
+    latest_signals: dict[str, StrategySignal] = field(default_factory=dict)
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
     paper_entry_price: dict[str, float] = field(default_factory=dict)
+    position_opened_at: dict[str, datetime] = field(default_factory=dict)
     last_rebalance_at: dict[str, datetime] = field(default_factory=dict)
     external_execution_anomaly_rate: float = 0.0
+    external_hard_risk_breach: bool = False
+    lifecycle_rules: LifecycleRules = field(default_factory=LifecycleRules)
     monitoring_snapshot: MonitoringSnapshot = field(default_factory=MonitoringSnapshot)
     kill_switch: KillSwitchEvaluation = field(
         default_factory=lambda: KillSwitchEvaluation(pause_trading=False)
@@ -341,6 +360,7 @@ class RoutedExecutionService:
             mode=mode,
             snapshot=snapshot,
             effective_risk_policy=session_policy,
+            equity_baseline_usd=self._initial_equity_usd,
             last_prices={},
             diagnostics=diagnostics,
         )
@@ -374,6 +394,7 @@ class RoutedExecutionService:
             mode=state.mode,
             snapshot=snapshot,
             effective_risk_policy=state.effective_risk_policy,
+            equity_baseline_usd=self._initial_equity_usd,
             last_prices={},
             diagnostics=diagnostics,
         )
@@ -393,21 +414,11 @@ class RoutedExecutionService:
             return None
 
         try:
-            state.snapshot = self._build_snapshot(
-                state.adapter,
-                equity_usd=state.snapshot.equity_usd,
+            self._refresh_snapshot_state(
+                state,
                 risk_policy=state.effective_risk_policy,
                 prices=state.last_prices,
             )
-            if state.snapshot.open_positions:
-                state.snapshot = replace(
-                    state.snapshot,
-                    symbol_pnl_usd=self._resolve_symbol_pnl(
-                        state,
-                        open_positions=state.snapshot.open_positions,
-                        prices=state.last_prices,
-                    ),
-                )
         except Exception as exc:
             logger.warning("Failed refreshing v2 snapshot for user %s: %s", user_id, exc)
 
@@ -447,6 +458,7 @@ class RoutedExecutionService:
 
         if monitoring_snapshot is not None:
             state.external_execution_anomaly_rate = monitoring_snapshot.execution_anomaly_rate
+            state.external_hard_risk_breach = bool(monitoring_snapshot.hard_risk_breach)
             state.monitoring_snapshot = replace(
                 monitoring_snapshot,
                 execution_anomaly_rate=max(
@@ -465,9 +477,14 @@ class RoutedExecutionService:
                     execution_anomaly_rate=merged_anomaly,
                 )
 
-        state.kill_switch = evaluate_kill_switch(
-            state.monitoring_snapshot,
-            config=self._kill_switch_config,
+        precheck_policy = (
+            self._apply_canary_risk_cap(risk_policy)
+            if (risk_policy is not None and state.request.live)
+            else (risk_policy or state.effective_risk_policy)
+        )
+        self._apply_snapshot_risk_monitoring(
+            state,
+            risk_policy=precheck_policy,
         )
         if state.kill_switch.pause_trading:
             logger.warning(
@@ -486,8 +503,38 @@ class RoutedExecutionService:
         signal_list = tuple(signals)
         if not signal_list:
             return ()
-        if not any(signal.actionable for signal in signal_list):
-            return ()
+
+        incoming_prices = {
+            symbol: float(price)
+            for symbol, price in prices.items()
+            if float(price) > 0.0
+        }
+        if incoming_prices:
+            state.last_prices = {
+                **state.last_prices,
+                **incoming_prices,
+            }
+        planning_prices = state.last_prices
+
+        for signal in signal_list:
+            symbol = str(signal.symbol).strip().upper()
+            if not symbol:
+                continue
+            normalized_signal = signal if signal.symbol == symbol else replace(signal, symbol=symbol)
+            if normalized_signal.actionable:
+                state.latest_signals[symbol] = normalized_signal
+
+        current_positions = self._safe_get_positions(state.adapter)
+        forced_exits = self._evaluate_lifecycle_forced_exits(
+            state,
+            current_positions=current_positions,
+            prices=planning_prices,
+        )
+        if forced_exits:
+            for symbol in forced_exits:
+                state.latest_signals.pop(symbol, None)
+
+        planning_signals = tuple(state.latest_signals.values())
 
         if risk_policy is None:
             policy = state.effective_risk_policy
@@ -505,19 +552,26 @@ class RoutedExecutionService:
             if equity_usd <= 0.0:
                 raise ValueError("equity_usd must be positive")
             state.snapshot = replace(state.snapshot, equity_usd=float(equity_usd))
+            if state.mode != "live":
+                state.equity_baseline_usd = float(equity_usd)
+
+        planning_equity = self._resolve_snapshot_equity(
+            state,
+            open_positions=current_positions,
+            prices=planning_prices,
+        )
 
         intent_plan = build_execution_intents(
-            signal_list,
+            planning_signals,
             policy=policy,
             config=cfg,
             bucket_map=bucket_map,
         )
-        current_positions = self._safe_get_positions(state.adapter)
         order_plans = reconcile_target_exposures(
             intent_plan.policy_result.exposures,
             current_positions_qty=current_positions,
-            prices=prices,
-            equity_usd=state.snapshot.equity_usd,
+            prices=planning_prices,
+            equity_usd=planning_equity,
             min_qty=min_qty,
         )
 
@@ -532,7 +586,7 @@ class RoutedExecutionService:
                 plan=plan,
                 epoch_minute=epoch_minute,
             )
-            mark_price = float(prices.get(plan.symbol, 0.0) or 0.0)
+            mark_price = float(planning_prices.get(plan.symbol, 0.0) or 0.0)
             current_qty = float(current_positions.get(plan.symbol, 0.0))
             activity = self._classify_order_activity(
                 current_qty=current_qty,
@@ -617,7 +671,7 @@ class RoutedExecutionService:
         state.diagnostics = self._update_execution_diagnostics(
             state.diagnostics,
             results=results,
-            prices=prices,
+            prices=planning_prices,
             activity_by_key=activity_by_key,
         )
 
@@ -630,20 +684,9 @@ class RoutedExecutionService:
             self._update_paper_entry_price(
                 state,
                 results=results,
-                prices=prices,
+                prices=planning_prices,
                 starting_positions=current_positions,
             )
-
-        incoming_prices = {
-            symbol: float(price)
-            for symbol, price in prices.items()
-            if float(price) > 0.0
-        }
-        if incoming_prices:
-            state.last_prices = {
-                **state.last_prices,
-                **incoming_prices,
-            }
         merged_anomaly = max(
             state.external_execution_anomaly_rate,
             state.diagnostics.reject_rate,
@@ -654,9 +697,10 @@ class RoutedExecutionService:
                 execution_anomaly_rate=merged_anomaly,
             )
 
-        state.kill_switch = evaluate_kill_switch(
-            state.monitoring_snapshot,
-            config=self._kill_switch_config,
+        self._refresh_snapshot_state(
+            state,
+            risk_policy=policy,
+            prices=planning_prices,
         )
         if state.kill_switch.pause_trading and "execution_anomaly" in state.kill_switch.reasons:
             logger.warning(
@@ -674,22 +718,154 @@ class RoutedExecutionService:
                 state,
                 gate_reasons=state.kill_switch.reasons if state.kill_switch.pause_trading else (),
             )
+        return tuple(results)
 
-        state.snapshot = self._build_snapshot(
-            state.adapter,
-            equity_usd=state.snapshot.equity_usd,
-            risk_policy=policy,
-            prices=state.last_prices,
-        )
-        if state.snapshot.open_positions:
-            state.snapshot = replace(
-                state.snapshot,
-                symbol_pnl_usd=self._resolve_symbol_pnl(
-                    state,
-                    open_positions=state.snapshot.open_positions,
-                    prices=state.last_prices,
-                ),
+    async def sync_positions(
+        self,
+        user_id: int,
+        *,
+        target_positions: dict[str, float],
+        prices: dict[str, float] | None = None,
+    ) -> tuple[ExecutionResult, ...]:
+        """Place direct delta orders to align adapter positions with target quantities."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            raise KeyError(f"No active session for user {user_id}")
+
+        incoming_prices = {
+            str(symbol).strip().upper(): float(price)
+            for symbol, price in (prices or {}).items()
+            if str(symbol).strip() and float(price) > 0.0
+        }
+        if incoming_prices:
+            state.last_prices = {
+                **state.last_prices,
+                **incoming_prices,
+            }
+        planning_prices = state.last_prices
+
+        normalized_target: dict[str, float] = {}
+        for symbol, qty in target_positions.items():
+            clean_symbol = str(symbol).strip().upper()
+            if not clean_symbol:
+                continue
+            clean_qty = float(qty)
+            if abs(clean_qty) <= 1e-12:
+                continue
+            normalized_target[clean_symbol] = clean_qty
+
+        if normalized_target:
+            state.latest_signals = {
+                symbol: StrategySignal(
+                    symbol=symbol,
+                    timeframe="1h",
+                    horizon_bars=4,
+                    signal="BUY" if qty > 0.0 else "SELL",
+                    confidence=1.0,
+                    uncertainty=0.0,
+                    reason="maintenance_resume_seed",
+                )
+                for symbol, qty in normalized_target.items()
+            }
+        else:
+            state.latest_signals.clear()
+
+        current_positions = self._safe_get_positions(state.adapter)
+        now_utc = datetime.now(timezone.utc)
+        epoch_minute = int(now_utc.timestamp() // 60)
+        results: list[ExecutionResult] = []
+        activity_by_key: dict[str, str] = {}
+
+        for symbol in sorted(set(current_positions) | set(normalized_target)):
+            current_qty = float(current_positions.get(symbol, 0.0))
+            target_qty = float(normalized_target.get(symbol, 0.0))
+            delta_qty = target_qty - current_qty
+            if abs(delta_qty) <= 1e-12:
+                continue
+
+            side = "BUY" if delta_qty > 0.0 else "SELL"
+            quantity = abs(delta_qty)
+            plan = OrderPlan(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                reduce_only=False,
             )
+            idempotency_key = build_idempotency_key(
+                user_id=user_id,
+                plan=plan,
+                epoch_minute=epoch_minute,
+            )
+            mark_price = float(planning_prices.get(symbol, 0.0) or 0.0)
+            activity = self._classify_order_activity(
+                current_qty=current_qty,
+                side=side,
+                quantity=quantity,
+            )
+
+            try:
+                result = state.adapter.place_order(
+                    plan,
+                    idempotency_key=idempotency_key,
+                    mark_price=mark_price,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Adapter manual sync placement failed for user %s symbol=%s side=%s: %s",
+                    user_id,
+                    symbol,
+                    side,
+                    exc,
+                )
+                result = ExecutionResult(
+                    accepted=False,
+                    order_id="",
+                    idempotency_key=idempotency_key,
+                    symbol=symbol,
+                    side=side,
+                    requested_qty=quantity,
+                    filled_qty=0.0,
+                    avg_price=mark_price,
+                    status="error",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    reason=f"adapter_exception:{exc.__class__.__name__}",
+                )
+
+            results.append(result)
+            activity_by_key[idempotency_key] = activity
+
+        state.diagnostics = self._update_execution_diagnostics(
+            state.diagnostics,
+            results=results,
+            prices=planning_prices,
+            activity_by_key=activity_by_key,
+        )
+
+        if state.mode != "live":
+            self._update_paper_entry_price(
+                state,
+                results=results,
+                prices=planning_prices,
+                starting_positions=current_positions,
+            )
+
+        merged_anomaly = max(
+            state.external_execution_anomaly_rate,
+            state.diagnostics.reject_rate,
+        )
+        if merged_anomaly != state.monitoring_snapshot.execution_anomaly_rate:
+            state.monitoring_snapshot = replace(
+                state.monitoring_snapshot,
+                execution_anomaly_rate=merged_anomaly,
+            )
+
+        self._refresh_snapshot_state(
+            state,
+            risk_policy=state.effective_risk_policy,
+            prices=planning_prices,
+        )
+
         return tuple(results)
 
     def set_monitoring_snapshot(
@@ -704,6 +880,7 @@ class RoutedExecutionService:
             raise KeyError(f"No active session for user {user_id}")
 
         state.external_execution_anomaly_rate = snapshot.execution_anomaly_rate
+        state.external_hard_risk_breach = bool(snapshot.hard_risk_breach)
         merged_anomaly = max(
             state.external_execution_anomaly_rate,
             state.diagnostics.reject_rate,
@@ -711,10 +888,11 @@ class RoutedExecutionService:
         state.monitoring_snapshot = replace(
             snapshot,
             execution_anomaly_rate=merged_anomaly,
+            hard_risk_breach=state.external_hard_risk_breach,
         )
-        state.kill_switch = evaluate_kill_switch(
-            state.monitoring_snapshot,
-            config=self._kill_switch_config,
+        self._apply_snapshot_risk_monitoring(
+            state,
+            risk_policy=state.effective_risk_policy,
         )
         if state.kill_switch.pause_trading:
             logger.warning(
@@ -747,6 +925,223 @@ class RoutedExecutionService:
         if state is None:
             return None
         return state.mode
+
+    def get_last_prices(self, user_id: int) -> dict[str, float]:
+        """Return latest merged mark-price cache for the session."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            return {}
+        return dict(state.last_prices)
+
+    def set_lifecycle_rules(
+        self,
+        user_id: int,
+        *,
+        auto_close_horizon_bars: int | None = None,
+        stop_loss_pct: float | None = None,
+    ) -> LifecycleRules:
+        """Set per-session lifecycle rules for horizon and stop-loss auto exits."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            raise KeyError(f"No active session for user {user_id}")
+
+        current = state.lifecycle_rules
+        horizon = (
+            current.auto_close_horizon_bars
+            if auto_close_horizon_bars is None
+            else int(auto_close_horizon_bars)
+        )
+        stop = current.stop_loss_pct if stop_loss_pct is None else float(stop_loss_pct)
+
+        rules = LifecycleRules(
+            auto_close_horizon_bars=horizon,
+            stop_loss_pct=stop,
+        )
+        state.lifecycle_rules = rules
+        return rules
+
+    def get_lifecycle_rules(self, user_id: int) -> LifecycleRules | None:
+        """Return configured lifecycle rules for a session."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            return None
+        return state.lifecycle_rules
+
+    def _refresh_snapshot_state(
+        self,
+        state: _SessionState,
+        *,
+        risk_policy: PortfolioRiskPolicy,
+        prices: dict[str, float],
+    ) -> None:
+        current_positions = self._safe_get_positions(state.adapter)
+        resolved_equity = self._resolve_snapshot_equity(
+            state,
+            open_positions=current_positions,
+            prices=prices,
+        )
+        state.snapshot = self._build_snapshot(
+            state.adapter,
+            equity_usd=resolved_equity,
+            risk_policy=risk_policy,
+            prices=prices,
+            open_positions=current_positions,
+        )
+        if state.snapshot.open_positions:
+            state.snapshot = replace(
+                state.snapshot,
+                symbol_pnl_usd=self._resolve_symbol_pnl(
+                    state,
+                    open_positions=state.snapshot.open_positions,
+                    prices=prices,
+                ),
+            )
+
+        self._apply_snapshot_risk_monitoring(
+            state,
+            risk_policy=risk_policy,
+        )
+
+    @classmethod
+    def _resolve_snapshot_equity(
+        cls,
+        state: _SessionState,
+        *,
+        open_positions: dict[str, float],
+        prices: dict[str, float],
+    ) -> float:
+        if state.mode == "live":
+            return max(float(state.snapshot.equity_usd), 1.0)
+
+        baseline = max(float(state.equity_baseline_usd), 1.0)
+        if not open_positions:
+            return baseline
+
+        unrealized = cls._resolve_symbol_pnl(
+            state,
+            open_positions=open_positions,
+            prices=prices,
+        )
+        mark_to_market_equity = baseline + float(sum(unrealized.values()))
+        return max(mark_to_market_equity, 1.0)
+
+    @staticmethod
+    def _compute_hard_risk_breach(
+        snapshot: PortfolioSnapshot,
+        *,
+        risk_policy: PortfolioRiskPolicy,
+    ) -> bool:
+        risk = snapshot.risk
+        if risk is None:
+            return False
+
+        eps = 1e-9
+        if risk.gross_exposure_frac > float(risk_policy.max_gross_exposure_frac) + eps:
+            return True
+        if abs(risk.net_exposure_frac) > float(risk_policy.max_net_exposure_frac) + eps:
+            return True
+
+        equity = float(snapshot.equity_usd)
+        if equity <= 0.0:
+            return False
+        symbol_cap = float(risk_policy.max_symbol_exposure_frac)
+        for notional in (snapshot.symbol_notional_usd or {}).values():
+            if (float(notional) / equity) > symbol_cap + eps:
+                return True
+        return False
+
+    def _apply_snapshot_risk_monitoring(
+        self,
+        state: _SessionState,
+        *,
+        risk_policy: PortfolioRiskPolicy,
+    ) -> None:
+        computed_breach = self._compute_hard_risk_breach(
+            state.snapshot,
+            risk_policy=risk_policy,
+        )
+        combined_hard_breach = bool(state.external_hard_risk_breach or computed_breach)
+        if combined_hard_breach != state.monitoring_snapshot.hard_risk_breach:
+            state.monitoring_snapshot = replace(
+                state.monitoring_snapshot,
+                hard_risk_breach=combined_hard_breach,
+            )
+
+        state.kill_switch = evaluate_kill_switch(
+            state.monitoring_snapshot,
+            config=self._kill_switch_config,
+        )
+
+    @classmethod
+    def _evaluate_lifecycle_forced_exits(
+        cls,
+        state: _SessionState,
+        *,
+        current_positions: dict[str, float],
+        prices: dict[str, float],
+    ) -> set[str]:
+        rules = state.lifecycle_rules
+        if rules.auto_close_horizon_bars <= 0 and rules.stop_loss_pct <= 0.0:
+            return set()
+
+        now_utc = datetime.now(timezone.utc)
+        forced: set[str] = set()
+        active_symbols = {
+            symbol
+            for symbol, qty in current_positions.items()
+            if abs(float(qty)) > 1e-12
+        }
+        for symbol in tuple(state.position_opened_at):
+            if symbol not in active_symbols:
+                state.position_opened_at.pop(symbol, None)
+
+        live_metrics: dict[str, dict[str, float]] = {}
+        if state.mode == "live" and rules.stop_loss_pct > 0.0:
+            try:
+                live_metrics = cls._safe_get_position_metrics(state.adapter)
+            except Exception:
+                live_metrics = {}
+
+        for symbol, qty in current_positions.items():
+            signed_qty = float(qty)
+            if abs(signed_qty) <= 1e-12:
+                continue
+
+            opened_at = state.position_opened_at.get(symbol)
+            if opened_at is None:
+                opened_at = now_utc
+                state.position_opened_at[symbol] = opened_at
+
+            if rules.auto_close_horizon_bars > 0:
+                max_age = timedelta(hours=float(rules.auto_close_horizon_bars))
+                if now_utc - opened_at >= max_age:
+                    forced.add(symbol)
+                    continue
+
+            if rules.stop_loss_pct <= 0.0:
+                continue
+
+            if state.mode == "live":
+                entry_price = float((live_metrics.get(symbol) or {}).get("entry_price", 0.0) or 0.0)
+            else:
+                entry_price = float(state.paper_entry_price.get(symbol, 0.0) or 0.0)
+            mark_price = float(prices.get(symbol, 0.0) or 0.0)
+            if entry_price <= 0.0 or mark_price <= 0.0:
+                continue
+
+            if signed_qty > 0.0:
+                stop_level = entry_price * (1.0 - rules.stop_loss_pct)
+                if mark_price <= stop_level:
+                    forced.add(symbol)
+            else:
+                stop_level = entry_price * (1.0 + rules.stop_loss_pct)
+                if mark_price >= stop_level:
+                    forced.add(symbol)
+
+        return forced
 
     def _enforce_live_start_rollout_gate(self) -> None:
         self._refresh_runtime_rollout_controls()
@@ -1054,6 +1449,7 @@ class RoutedExecutionService:
             symbol: float(qty)
             for symbol, qty in starting_positions.items()
         }
+        now_utc = datetime.now(timezone.utc)
 
         for result in results:
             if not result.accepted or result.filled_qty <= 0.0:
@@ -1062,6 +1458,7 @@ class RoutedExecutionService:
             symbol = result.symbol
             current_qty = float(running_positions.get(symbol, 0.0))
             entry_price = float(state.paper_entry_price.get(symbol, 0.0) or 0.0)
+            previous_opened_at = state.position_opened_at.get(symbol)
 
             fill_price = float(result.avg_price)
             if fill_price <= 0.0:
@@ -1069,19 +1466,30 @@ class RoutedExecutionService:
             if fill_price <= 0.0:
                 continue
 
-            next_qty, next_entry = RoutedExecutionService._apply_paper_fill(
+            next_qty, next_entry, realized_pnl = RoutedExecutionService._apply_paper_fill(
                 current_qty=current_qty,
                 current_entry_price=entry_price,
                 side=result.side,
                 fill_qty=float(result.filled_qty),
                 fill_price=fill_price,
             )
+            if realized_pnl != 0.0:
+                state.equity_baseline_usd = max(1.0, float(state.equity_baseline_usd + realized_pnl))
+
             if abs(next_qty) <= 1e-12:
                 state.paper_entry_price.pop(symbol, None)
                 running_positions.pop(symbol, None)
+                state.position_opened_at.pop(symbol, None)
             else:
                 state.paper_entry_price[symbol] = next_entry
                 running_positions[symbol] = next_qty
+                flipped_direction = (current_qty > 0.0 > next_qty) or (current_qty < 0.0 < next_qty)
+                if abs(current_qty) <= 1e-12 or flipped_direction:
+                    state.position_opened_at[symbol] = now_utc
+                elif previous_opened_at is not None:
+                    state.position_opened_at[symbol] = previous_opened_at
+                else:
+                    state.position_opened_at[symbol] = now_utc
 
     @staticmethod
     def _apply_paper_fill(
@@ -1091,31 +1499,42 @@ class RoutedExecutionService:
         side: str,
         fill_qty: float,
         fill_price: float,
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, float]:
         eps = 1e-12
         if fill_qty <= 0.0 or fill_price <= 0.0:
-            return float(current_qty), float(current_entry_price)
+            return float(current_qty), float(current_entry_price), 0.0
 
         side_sign = 1.0 if side == "BUY" else -1.0
         next_qty = float(current_qty) + (side_sign * float(fill_qty))
+        realized_pnl = 0.0
+
+        if abs(current_qty) > eps:
+            reducing_long = current_qty > 0.0 and side_sign < 0.0
+            reducing_short = current_qty < 0.0 and side_sign > 0.0
+            if reducing_long or reducing_short:
+                closed_qty = min(abs(current_qty), float(fill_qty))
+                if reducing_long:
+                    realized_pnl = (float(fill_price) - float(current_entry_price)) * closed_qty
+                else:
+                    realized_pnl = (float(current_entry_price) - float(fill_price)) * closed_qty
 
         if abs(current_qty) <= eps:
-            return next_qty, float(fill_price)
+            return next_qty, float(fill_price), realized_pnl
 
         same_direction = (current_qty > 0 and side_sign > 0) or (current_qty < 0 and side_sign < 0)
         if same_direction:
             total_abs = abs(current_qty) + float(fill_qty)
             if total_abs <= eps:
-                return 0.0, 0.0
+                return 0.0, 0.0, realized_pnl
             weighted = (abs(current_qty) * float(current_entry_price)) + (float(fill_qty) * float(fill_price))
-            return next_qty, (weighted / total_abs)
+            return next_qty, (weighted / total_abs), realized_pnl
 
         remaining = abs(current_qty) - float(fill_qty)
         if remaining > eps:
-            return next_qty, float(current_entry_price)
+            return next_qty, float(current_entry_price), realized_pnl
         if abs(remaining) <= eps:
-            return 0.0, 0.0
-        return next_qty, float(fill_price)
+            return 0.0, 0.0, realized_pnl
+        return next_qty, float(fill_price), realized_pnl
 
     @classmethod
     def _resolve_symbol_pnl(
@@ -1182,14 +1601,19 @@ class RoutedExecutionService:
         equity_usd: float,
         risk_policy: PortfolioRiskPolicy,
         prices: dict[str, float],
+        open_positions: dict[str, float] | None = None,
     ) -> PortfolioSnapshot:
-        open_positions = cls._safe_get_positions(adapter)
+        resolved_positions = (
+            {symbol: float(qty) for symbol, qty in open_positions.items()}
+            if open_positions is not None
+            else cls._safe_get_positions(adapter)
+        )
 
         gross = 0.0
         net = 0.0
         symbol_notionals: dict[str, float] = {}
         if equity_usd > 0.0 and prices:
-            for symbol, qty in open_positions.items():
+            for symbol, qty in resolved_positions.items():
                 mark_price = float(prices.get(symbol, 0.0))
                 if mark_price <= 0.0:
                     continue
@@ -1200,12 +1624,12 @@ class RoutedExecutionService:
 
         risk_budget = 0.0
         if risk_policy.max_gross_exposure_frac > 0.0:
-            risk_budget = min(1.0, gross / risk_policy.max_gross_exposure_frac)
+            risk_budget = gross / risk_policy.max_gross_exposure_frac
 
         return PortfolioSnapshot(
             timestamp=datetime.now(timezone.utc),
             equity_usd=equity_usd,
-            open_positions=open_positions,
+            open_positions=resolved_positions,
             symbol_notional_usd=symbol_notionals,
             risk=RiskSnapshot(
                 gross_exposure_frac=float(gross),

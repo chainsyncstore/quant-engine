@@ -1,6 +1,6 @@
 
 import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -26,5 +26,10 @@ class UserContext(Base):
     strategy_profile = Column(String, default='core_v2')
     active_model_version = Column(String)
     active_model_source = Column(String)
+    auto_close_horizon_bars = Column(Integer, default=0)
+    stop_loss_pct = Column(Float, default=0.0)
+    maintenance_resume_payload = Column(Text)
+    maintenance_resume_pending = Column(Boolean, default=False)
+    maintenance_post_notified = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="context")

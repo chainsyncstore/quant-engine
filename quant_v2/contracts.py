@@ -89,8 +89,8 @@ class RiskSnapshot:
             raise ValueError("|net_exposure_frac| cannot exceed gross_exposure_frac")
         if not 0.0 <= self.max_drawdown_frac <= 1.0:
             raise ValueError("max_drawdown_frac must be within [0, 1]")
-        if not 0.0 <= self.risk_budget_used_frac <= 1.0:
-            raise ValueError("risk_budget_used_frac must be within [0, 1]")
+        if self.risk_budget_used_frac < 0.0:
+            raise ValueError("risk_budget_used_frac cannot be negative")
 
 
 @dataclass(frozen=True)

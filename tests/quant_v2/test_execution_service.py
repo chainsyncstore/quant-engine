@@ -718,6 +718,83 @@ def test_routed_execution_service_merges_prices_for_symbol_notional_snapshot() -
     assert "ETHUSDT" in snapshot.symbol_notional_usd
 
 
+def test_routed_execution_service_enforces_aggregate_caps_across_sequential_symbol_callbacks() -> None:
+    service = RoutedExecutionService(
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.05,
+            max_gross_exposure_frac=0.20,
+            max_net_exposure_frac=0.10,
+        )
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=514, live=False))) is True
+
+    planner_cfg = PlannerConfig(
+        total_risk_budget_frac=0.15,
+        max_symbol_exposure_frac=0.05,
+        min_confidence=0.0,
+    )
+    for symbol, price in (
+        ("BTCUSDT", 100.0),
+        ("ETHUSDT", 200.0),
+        ("SOLUSDT", 50.0),
+    ):
+        signal = StrategySignal(
+            symbol=symbol,
+            timeframe="1h",
+            horizon_bars=4,
+            signal="SELL",
+            confidence=0.9,
+        )
+        asyncio.run(
+            service.route_signals(
+                514,
+                signals=(signal,),
+                prices={symbol: price},
+                planner_config=planner_cfg,
+            )
+        )
+
+    snapshot = service.get_portfolio_snapshot(514)
+    assert snapshot is not None
+    assert snapshot.risk is not None
+    assert snapshot.risk.gross_exposure_frac == pytest.approx(0.10, rel=0.03)
+    assert snapshot.risk.net_exposure_frac == pytest.approx(-0.10, rel=0.03)
+
+
+def test_routed_execution_service_sync_positions_restores_and_flattens_snapshot() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=515, live=False))) is True
+
+    restored = asyncio.run(
+        service.sync_positions(
+            515,
+            target_positions={"BTCUSDT": 2.5, "ETHUSDT": -3.0},
+            prices={"BTCUSDT": 100.0, "ETHUSDT": 200.0},
+        )
+    )
+    assert len(restored) == 2
+    assert all(item.accepted for item in restored)
+
+    snapshot = service.get_portfolio_snapshot(515)
+    assert snapshot is not None
+    assert float(snapshot.open_positions.get("BTCUSDT", 0.0)) == pytest.approx(2.5)
+    assert float(snapshot.open_positions.get("ETHUSDT", 0.0)) == pytest.approx(-3.0)
+
+    flattened = asyncio.run(
+        service.sync_positions(
+            515,
+            target_positions={},
+            prices={"BTCUSDT": 100.0, "ETHUSDT": 200.0},
+        )
+    )
+    assert len(flattened) == 2
+    assert all(item.accepted for item in flattened)
+
+    flat_snapshot = service.get_portfolio_snapshot(515)
+    assert flat_snapshot is not None
+    assert flat_snapshot.open_positions == {}
+
+
 def test_routed_execution_service_reset_session_state_reinitializes_paper_session() -> None:
     service = RoutedExecutionService()
     assert asyncio.run(service.start_session(SessionRequest(user_id=409, live=False))) is True

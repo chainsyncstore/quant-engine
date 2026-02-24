@@ -4,6 +4,8 @@ import asyncio
 
 from dataclasses import replace
 
+import pytest
+
 from quant_v2.contracts import StrategySignal
 from quant_v2.execution.service import InMemoryExecutionService, RoutedExecutionService, SessionRequest
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
@@ -128,6 +130,48 @@ def test_v2_execution_bridge_exposes_execution_diagnostics() -> None:
     assert diagnostics.rejected_orders == 0
 
 
+def test_v2_execution_bridge_sync_positions_via_service() -> None:
+    service = RoutedExecutionService()
+    bridge = V2ExecutionBridge(service, default_universe=("BTCUSDT", "ETHUSDT"))
+
+    assert asyncio.run(bridge.start_session(user_id=581, live=False)) is True
+    restored = asyncio.run(
+        bridge.sync_positions(
+            581,
+            target_positions={"BTCUSDT": 1.0, "ETHUSDT": -2.0},
+            prices={"BTCUSDT": 100.0, "ETHUSDT": 200.0},
+        )
+    )
+    assert len(restored) == 2
+    assert all(item.accepted for item in restored)
+
+    snapshot = service.get_portfolio_snapshot(581)
+    assert snapshot is not None
+    assert float(snapshot.open_positions.get("BTCUSDT", 0.0)) == 1.0
+    assert float(snapshot.open_positions.get("ETHUSDT", 0.0)) == -2.0
+
+
+def test_v2_execution_bridge_sets_and_gets_lifecycle_rules() -> None:
+    service = RoutedExecutionService()
+    bridge = V2ExecutionBridge(service, default_universe=("BTCUSDT", "ETHUSDT"))
+
+    assert asyncio.run(bridge.start_session(user_id=582, live=False)) is True
+
+    rules = bridge.set_lifecycle_rules(
+        582,
+        auto_close_horizon_bars=4,
+        stop_loss_pct=0.02,
+    )
+    assert rules is not None
+    assert rules.auto_close_horizon_bars == 4
+    assert rules.stop_loss_pct == 0.02
+
+    fetched = bridge.get_lifecycle_rules(582)
+    assert fetched is not None
+    assert fetched.auto_close_horizon_bars == 4
+    assert fetched.stop_loss_pct == 0.02
+
+
 def test_v2_execution_bridge_reset_session_state_for_demo_session() -> None:
     service = InMemoryExecutionService()
     bridge = V2ExecutionBridge(service)
@@ -190,6 +234,80 @@ def test_v2_execution_bridge_reset_session_state_returns_false_when_unsupported(
 
     bridge = V2ExecutionBridge(NoResetService())
     assert bridge.reset_session_state(777) is False
+
+
+def test_v2_execution_bridge_sync_positions_raises_when_unsupported() -> None:
+    class NoSyncService:
+        async def start_session(self, request):
+            return True
+
+        async def stop_session(self, user_id: int) -> bool:
+            return True
+
+        def is_running(self, user_id: int) -> bool:
+            return False
+
+        def get_portfolio_snapshot(self, user_id: int):
+            return None
+
+        def get_active_count(self) -> int:
+            return 0
+
+        def get_session_mode(self, user_id: int) -> str | None:
+            return None
+
+        def get_execution_diagnostics(self, user_id: int):
+            return None
+
+        def set_monitoring_snapshot(self, user_id: int, snapshot):
+            return None
+
+        def get_kill_switch_evaluation(self, user_id: int):
+            return None
+
+        async def route_signals(self, user_id: int, *, signals, prices, monitoring_snapshot=None):
+            return ()
+
+    bridge = V2ExecutionBridge(NoSyncService())
+    with pytest.raises(RuntimeError, match="does not support manual position sync"):
+        asyncio.run(bridge.sync_positions(777, target_positions={"BTCUSDT": 1.0}))
+
+
+def test_v2_execution_bridge_lifecycle_helpers_return_none_when_unsupported() -> None:
+    class NoLifecycleService:
+        async def start_session(self, request):
+            return True
+
+        async def stop_session(self, user_id: int) -> bool:
+            return True
+
+        def is_running(self, user_id: int) -> bool:
+            return False
+
+        def get_portfolio_snapshot(self, user_id: int):
+            return None
+
+        def get_active_count(self) -> int:
+            return 0
+
+        def get_session_mode(self, user_id: int) -> str | None:
+            return None
+
+        def get_execution_diagnostics(self, user_id: int):
+            return None
+
+        def set_monitoring_snapshot(self, user_id: int, snapshot):
+            return None
+
+        def get_kill_switch_evaluation(self, user_id: int):
+            return None
+
+        async def route_signals(self, user_id: int, *, signals, prices, monitoring_snapshot=None):
+            return ()
+
+    bridge = V2ExecutionBridge(NoLifecycleService())
+    assert bridge.set_lifecycle_rules(777, auto_close_horizon_bars=4, stop_loss_pct=0.02) is None
+    assert bridge.get_lifecycle_rules(777) is None
 
 
 def test_convert_legacy_signal_payload_maps_buy_signal() -> None:

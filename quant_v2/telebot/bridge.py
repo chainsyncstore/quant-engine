@@ -7,7 +7,12 @@ from typing import Any
 
 from quant_v2.contracts import PortfolioSnapshot, StrategySignal
 from quant_v2.execution.adapters import ExecutionResult
-from quant_v2.execution.service import ExecutionDiagnostics, ExecutionService, SessionRequest
+from quant_v2.execution.service import (
+    ExecutionDiagnostics,
+    ExecutionService,
+    LifecycleRules,
+    SessionRequest,
+)
 from quant_v2.monitoring.kill_switch import KillSwitchEvaluation, MonitoringSnapshot
 
 
@@ -194,6 +199,24 @@ class V2ExecutionBridge:
             monitoring_snapshot=monitoring_snapshot,
         )
 
+    async def sync_positions(
+        self,
+        user_id: int,
+        *,
+        target_positions: dict[str, float],
+        prices: dict[str, float] | None = None,
+    ) -> tuple[ExecutionResult, ...]:
+        """Align running session positions to explicit target quantities when supported."""
+
+        syncer = getattr(self.service, "sync_positions", None)
+        if not callable(syncer):
+            raise RuntimeError("Bound execution service does not support manual position sync")
+        return await syncer(
+            user_id,
+            target_positions=target_positions,
+            prices=prices,
+        )
+
     def set_monitoring_snapshot(
         self,
         user_id: int,
@@ -212,6 +235,32 @@ class V2ExecutionBridge:
         """Return execution diagnostics when supported by the bound service."""
 
         return self.service.get_execution_diagnostics(user_id)
+
+    def set_lifecycle_rules(
+        self,
+        user_id: int,
+        *,
+        auto_close_horizon_bars: int | None = None,
+        stop_loss_pct: float | None = None,
+    ) -> LifecycleRules | None:
+        """Update lifecycle auto-exit rules when supported by the bound service."""
+
+        setter = getattr(self.service, "set_lifecycle_rules", None)
+        if not callable(setter):
+            return None
+        return setter(
+            user_id,
+            auto_close_horizon_bars=auto_close_horizon_bars,
+            stop_loss_pct=stop_loss_pct,
+        )
+
+    def get_lifecycle_rules(self, user_id: int) -> LifecycleRules | None:
+        """Return current lifecycle rules when supported by the bound service."""
+
+        getter = getattr(self.service, "get_lifecycle_rules", None)
+        if not callable(getter):
+            return None
+        return getter(user_id)
 
     def build_stats_text(self, user_id: int, *, mode_label: str) -> str | None:
         """Build formatted stats string for the user, if snapshot exists."""

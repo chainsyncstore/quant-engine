@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from sqlalchemy import create_engine, text
@@ -166,6 +168,11 @@ def _ensure_user_context_schema() -> None:
         ("strategy_profile", "VARCHAR DEFAULT 'core_v2'"),
         ("active_model_version", "VARCHAR"),
         ("active_model_source", "VARCHAR"),
+        ("auto_close_horizon_bars", "INTEGER DEFAULT 0"),
+        ("stop_loss_pct", "FLOAT DEFAULT 0.0"),
+        ("maintenance_resume_payload", "TEXT"),
+        ("maintenance_resume_pending", "BOOLEAN DEFAULT 0"),
+        ("maintenance_post_notified", "BOOLEAN DEFAULT 0"),
     )
 
     with ENGINE.connect() as conn:
@@ -417,6 +424,146 @@ def _persist_user_session_flags(
         session.close()
 
 
+def _normalize_lifecycle_horizon(value: object) -> int:
+    """Normalize lifecycle horizon value into a non-negative int."""
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("horizon must be an integer") from exc
+    if parsed < 0:
+        raise ValueError("horizon must be >= 0")
+    return parsed
+
+
+def _normalize_lifecycle_stop_loss_pct(value: object) -> float:
+    """Normalize lifecycle stop-loss value into [0, 1)."""
+
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stop-loss must be a number") from exc
+    if parsed < 0.0 or parsed >= 1.0:
+        raise ValueError("stop-loss must be within [0, 1)")
+    return parsed
+
+
+def _load_persisted_lifecycle_preferences(user_id: int) -> tuple[int, float]:
+    """Load persisted lifecycle settings from user context."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if not db_user or not db_user.context:
+            return 0, 0.0
+        ctx = db_user.context
+        horizon = _normalize_lifecycle_horizon(getattr(ctx, "auto_close_horizon_bars", 0) or 0)
+        stop_loss = _normalize_lifecycle_stop_loss_pct(
+            getattr(ctx, "stop_loss_pct", 0.0) or 0.0
+        )
+        return horizon, stop_loss
+    except Exception as exc:
+        logger.warning("Failed loading lifecycle preferences for user %s: %s", user_id, exc)
+        return 0, 0.0
+    finally:
+        session.close()
+
+
+def _persist_lifecycle_preferences(
+    user_id: int,
+    *,
+    auto_close_horizon_bars: int | None = None,
+    stop_loss_pct: float | None = None,
+) -> tuple[int, float]:
+    """Persist lifecycle settings on user context and return normalized values."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if not db_user:
+            raise RuntimeError("User not found")
+
+        ctx = db_user.context
+        if ctx is None:
+            ctx = UserContext(telegram_id=user_id)
+            db_user.context = ctx
+
+        horizon = _normalize_lifecycle_horizon(
+            auto_close_horizon_bars
+            if auto_close_horizon_bars is not None
+            else getattr(ctx, "auto_close_horizon_bars", 0) or 0
+        )
+        stop_loss = _normalize_lifecycle_stop_loss_pct(
+            stop_loss_pct
+            if stop_loss_pct is not None
+            else getattr(ctx, "stop_loss_pct", 0.0) or 0.0
+        )
+
+        ctx.auto_close_horizon_bars = horizon
+        ctx.stop_loss_pct = stop_loss
+        session.commit()
+        return horizon, stop_loss
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _apply_lifecycle_preferences_to_running_session(
+    user_id: int,
+    *,
+    bridge: V2ExecutionBridge | None,
+    auto_close_horizon_bars: int | None = None,
+    stop_loss_pct: float | None = None,
+) -> bool:
+    """Apply lifecycle settings to active v2 execution session when available."""
+
+    if bridge is None or not bridge.is_running(user_id):
+        return False
+
+    try:
+        applied = bridge.set_lifecycle_rules(
+            user_id,
+            auto_close_horizon_bars=auto_close_horizon_bars,
+            stop_loss_pct=stop_loss_pct,
+        )
+        return applied is not None
+    except Exception as exc:
+        logger.warning(
+            "Failed applying lifecycle settings to running session for user %s: %s",
+            user_id,
+            exc,
+        )
+        return False
+
+
+def _apply_saved_lifecycle_preferences(user_id: int, bridge: V2ExecutionBridge | None) -> None:
+    """Apply persisted lifecycle settings to active session when bridge is running."""
+
+    if bridge is None or not bridge.is_running(user_id):
+        return
+    horizon, stop_loss = _load_persisted_lifecycle_preferences(user_id)
+    _apply_lifecycle_preferences_to_running_session(
+        user_id,
+        bridge=bridge,
+        auto_close_horizon_bars=horizon,
+        stop_loss_pct=stop_loss,
+    )
+
+
+def _format_lifecycle_horizon(horizon_bars: int) -> str:
+    if horizon_bars <= 0:
+        return "Off (no time-based auto-close)"
+    return f"{horizon_bars} hour(s) before auto-close"
+
+
+def _format_lifecycle_stop_loss(stop_loss_pct: float) -> str:
+    if stop_loss_pct <= 0.0:
+        return "Off (no loss-limit auto-close)"
+    return f"Close trade if loss reaches {stop_loss_pct*100:.2f}%"
+
+
 def _resolve_runtime_metadata(*, bridge: V2ExecutionBridge | None) -> tuple[str, str | None, str]:
     """Return strategy/model metadata for session persistence."""
 
@@ -430,6 +577,126 @@ def _resolve_runtime_metadata(*, bridge: V2ExecutionBridge | None) -> tuple[str,
     active_model_version = MODEL_RESOLUTION.active_version_id
     active_model_source = MODEL_RESOLUTION.source
     return strategy_profile, active_model_version, active_model_source
+
+
+def _normalize_symbol_float_map(raw: object) -> dict[str, float]:
+    """Normalize loose symbol->number payloads into uppercase float map."""
+
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: dict[str, float] = {}
+    for symbol, value in raw.items():
+        clean_symbol = str(symbol).strip().upper()
+        if not clean_symbol:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if abs(number) <= 1e-12:
+            continue
+        normalized[clean_symbol] = number
+    return normalized
+
+
+def _build_maintenance_resume_payload(
+    *,
+    mode: str,
+    positions: dict[str, float],
+    prices: dict[str, float],
+) -> str:
+    payload = {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "positions": _normalize_symbol_float_map(positions),
+        "prices": {
+            symbol: float(price)
+            for symbol, price in _normalize_symbol_float_map(prices).items()
+            if float(price) > 0.0
+        },
+    }
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def _parse_maintenance_resume_payload(raw_payload: str | None) -> dict[str, Any] | None:
+    if not raw_payload:
+        return None
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    mode = str(payload.get("mode", "")).strip().lower()
+    if mode not in {"demo", "live"}:
+        mode = "demo"
+
+    return {
+        "captured_at": str(payload.get("captured_at", "")),
+        "mode": mode,
+        "positions": _normalize_symbol_float_map(payload.get("positions")),
+        "prices": {
+            symbol: float(price)
+            for symbol, price in _normalize_symbol_float_map(payload.get("prices")).items()
+            if float(price) > 0.0
+        },
+    }
+
+
+def _clear_maintenance_resume_state(ctx: UserContext) -> None:
+    ctx.maintenance_resume_payload = None
+    ctx.maintenance_resume_pending = False
+    ctx.maintenance_post_notified = False
+
+
+def _capture_resume_snapshot_from_bridge(bridge: V2ExecutionBridge, user_id: int) -> tuple[dict[str, float], dict[str, float]]:
+    """Capture currently held positions and merged mark prices from v2 bridge session."""
+
+    service = getattr(bridge, "service", None)
+    if service is None:
+        return {}, {}
+
+    snapshot_getter = getattr(service, "get_portfolio_snapshot", None)
+    snapshot = snapshot_getter(user_id) if callable(snapshot_getter) else None
+    if snapshot is None:
+        return {}, {}
+
+    positions = {
+        str(symbol).strip().upper(): float(qty)
+        for symbol, qty in dict(getattr(snapshot, "open_positions", {}) or {}).items()
+        if str(symbol).strip() and abs(float(qty)) > 1e-12
+    }
+
+    prices_getter = getattr(service, "get_last_prices", None)
+    if callable(prices_getter):
+        prices = {
+            str(symbol).strip().upper(): float(price)
+            for symbol, price in dict(prices_getter(user_id) or {}).items()
+            if str(symbol).strip() and float(price) > 0.0
+        }
+    else:
+        prices = {}
+
+    return positions, prices
+
+
+def _clear_user_maintenance_resume_state(user_id: int) -> None:
+    """Clear persisted maintenance resume metadata for a user context."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if not db_user or not db_user.context:
+            return
+        _clear_maintenance_resume_state(db_user.context)
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Failed clearing maintenance resume state for user %s: %s", user_id, exc)
+    finally:
+        session.close()
 
 
 def _build_creds_from_context(ctx: UserContext | None, *, live: bool) -> dict:
@@ -843,8 +1110,96 @@ async def _start_v2_primary_sessions(
     )
 
 
+async def _notify_maintenance_update_complete(application) -> None:
+    """Notify users that deploy/update completed and continuation commands are available."""
+
+    session = SessionLocal()
+    notify_targets: list[tuple[int, str, int]] = []
+    try:
+        pending_users = (
+            session.query(User)
+            .join(UserContext, UserContext.telegram_id == User.telegram_id)
+            .filter(
+                User.status.in_(("active", "approved")),
+                UserContext.maintenance_resume_pending.is_(True),
+                UserContext.maintenance_post_notified.is_(False),
+            )
+            .all()
+        )
+
+        for db_user in pending_users:
+            ctx = db_user.context
+            if not ctx:
+                continue
+            parsed = _parse_maintenance_resume_payload(ctx.maintenance_resume_payload)
+            mode = (
+                str(parsed.get("mode", "demo"))
+                if parsed is not None
+                else ("live" if bool(ctx.live_mode) else "demo")
+            )
+            positions = parsed.get("positions", {}) if parsed is not None else {}
+            notify_targets.append((db_user.telegram_id, mode, len(positions)))
+    except Exception as exc:
+        logger.warning("Failed preparing maintenance completion notifications: %s", exc)
+        return
+    finally:
+        session.close()
+
+    if not notify_targets:
+        return
+
+    delivered_user_ids: list[int] = []
+    for user_id, mode, open_count in notify_targets:
+        resume_cmd = "/continue_live" if mode == "live" else "/continue_demo"
+        start_cmd = "/start_live" if mode == "live" else "/start_demo"
+        if open_count > 0:
+            message = (
+                "✅ **System Update Complete**\n\n"
+                f"A maintenance snapshot was saved with `{open_count}` open symbol(s).\n"
+                f"Run `{resume_cmd}` to restore previous positions, "
+                f"or `{start_cmd}` to begin fresh."
+                + FOOTER
+            )
+        else:
+            message = (
+                "✅ **System Update Complete**\n\n"
+                "No open-position snapshot was captured before maintenance.\n"
+                f"Run `{start_cmd}` to start a new session."
+                + FOOTER
+            )
+
+        try:
+            await application.bot.send_message(chat_id=user_id, text=message)
+            delivered_user_ids.append(int(user_id))
+        except Exception as notify_err:
+            logger.warning("Failed sending maintenance complete notice to user %s: %s", user_id, notify_err)
+
+    if not delivered_user_ids:
+        return
+
+    session = SessionLocal()
+    try:
+        delivered_users = (
+            session.query(User)
+            .join(UserContext, UserContext.telegram_id == User.telegram_id)
+            .filter(User.telegram_id.in_(delivered_user_ids))
+            .all()
+        )
+        for db_user in delivered_users:
+            if db_user.context:
+                db_user.context.maintenance_post_notified = True
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Failed marking maintenance completion notices as delivered: %s", exc)
+    finally:
+        session.close()
+
+
 async def _restore_active_sessions(application):
     """Restore active sessions from DB on bot startup."""
+    await _notify_maintenance_update_complete(application)
+
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
 
@@ -868,7 +1223,11 @@ async def _restore_active_sessions(application):
         active_users = (
             session.query(User)
             .join(UserContext, UserContext.telegram_id == User.telegram_id)
-            .filter(User.status.in_(("active", "approved")), UserContext.is_active.is_(True))
+            .filter(
+                User.status.in_(("active", "approved")),
+                UserContext.is_active.is_(True),
+                UserContext.maintenance_resume_pending.is_(False),
+            )
             .all()
         )
 
@@ -959,6 +1318,8 @@ async def _restore_active_sessions(application):
                 )
 
             if started_primary:
+                if bridge is not None and bridge.is_running(user_id):
+                    _apply_saved_lifecycle_preferences(user_id, bridge)
                 strategy_profile, active_model_version, active_model_source = _resolve_runtime_metadata(
                     bridge=bridge
                 )
@@ -1066,12 +1427,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         v2_enabled = _get_v2_bridge() is not None
         shadow_enabled = _using_shadow_backend()
         trading_caption = (
-            "v1 execution enabled with v2 shadow portfolio diagnostics (1H anchor + 4H context)."
+            "Stable live engine is on, with extra v2 safety diagnostics running in parallel."
             if shadow_enabled
             else (
-                "Multi-symbol v2 portfolio mode enabled (1H anchor + 4H context)."
+                "Portfolio mode is on: the bot can manage multiple symbols at once."
                 if v2_enabled
-                else "System trades BTCUSDT perpetual futures at 1H timeframe."
+                else "Bot is set to trade BTCUSDT perpetual futures on an hourly cycle."
             )
         )
 
@@ -1084,15 +1445,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/setup key secret - Connect Binance (optional for paper)\n"
             "  Paper trading works without credentials!\n\n"
             "Trading\n"
-            "/start_demo - Start PAPER trading (BTCUSDT 1H)\n"
-            "/start_live - Start REAL trading\n"
+            "/start_demo - Start PAPER trading (v2 multi-symbol)\n"
+            "/start_live - Start REAL trading (v2 multi-symbol)\n"
+            "/continue_demo - Resume after maintenance from snapshot\n"
+            "/continue_live - Resume LIVE after maintenance from snapshot\n"
             "/stop - Stop execution\n"
             "/reset_demo - Reset paper state\n"
             "/status - Check if running\n"
-            "/stats - View live performance\n\n"
+            "/stats - View live performance\n"
+            "/lifecycle - Show your auto-close safety settings\n"
+            "/set_horizon <hours|off> - Auto-close open trades after N hours\n"
+            "/set_stoploss <percent|off> - Auto-close a trade at your max loss %\n\n"
             + trading_caption + "\n"
-            "Paper trading starts at $10,000 and rebalances exposure as new signals arrive.\n"
-            "v2 does not auto-close by 4H horizon or stop-loss unless you explicitly add lifecycle rules.\n"
+            "Paper trading starts with a $10,000 practice balance and adjusts positions as new signals arrive.\n"
             "Risk budget: spreads up to 15% of equity across signals (max 5% per symbol) while capping gross at 20% and net at 10%."
         )
         
@@ -1102,6 +1467,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "\n\nAdmin\n"
                 "/approve <id> - Approve user\n"
                 "/revoke <id> - Freeze user\n"
+                "/prepare_update - Snapshot/close positions before deploy\n"
                 "/model_active - Show runtime model routing\n"
                 "/model_versions - List registered model versions\n"
                 "/model_rollback [version_id] - Switch active pointer (default: previous)"
@@ -1231,6 +1597,8 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
                 active_model_version=active_model_version,
                 active_model_source=active_model_source,
             )
+            _clear_user_maintenance_resume_state(user_id)
+            _apply_saved_lifecycle_preferences(user_id, bridge)
 
             extra_parts: list[str] = []
             if _using_shadow_backend():
@@ -1260,6 +1628,8 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
                 active_model_version=active_model_version,
                 active_model_source=active_model_source,
             )
+            _clear_user_maintenance_resume_state(user_id)
+            _apply_saved_lifecycle_preferences(user_id, bridge)
             await update.message.reply_text("⚠️ Engine already running." + FOOTER)
     except Exception as e:
         _persist_user_session_flags(user_id, is_active=False)
@@ -1271,6 +1641,462 @@ async def start_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _start_engine(update, context, live=True)
+
+
+async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show current lifecycle auto-exit settings for the user."""
+
+    bridge = _get_v2_bridge()
+    if bridge is None:
+        await update.message.reply_text(
+            "❌ Lifecycle commands require v2 execution bridge. Contact admin." + FOOTER
+        )
+        return
+
+    user_id = update.effective_user.id
+    persisted_horizon, persisted_stop_loss = _load_persisted_lifecycle_preferences(user_id)
+    runtime_state = "Saved. Will apply next time you start trading."
+
+    runtime_horizon = persisted_horizon
+    runtime_stop_loss = persisted_stop_loss
+    if bridge.is_running(user_id):
+        runtime_rules = bridge.get_lifecycle_rules(user_id)
+        if runtime_rules is not None:
+            runtime_horizon = int(runtime_rules.auto_close_horizon_bars)
+            runtime_stop_loss = float(runtime_rules.stop_loss_pct)
+            runtime_state = "Applied right now to your active session."
+        else:
+            runtime_state = "Session is running, but this backend cannot update lifecycle settings live."
+
+    await update.message.reply_text(
+        "🧭 **Trade Safety Auto-Close Settings**\n\n"
+        f"Saved time limit: `{_format_lifecycle_horizon(persisted_horizon)}`\n"
+        f"Saved loss limit: `{_format_lifecycle_stop_loss(persisted_stop_loss)}`\n"
+        f"Active time limit: `{_format_lifecycle_horizon(runtime_horizon)}`\n"
+        f"Active loss limit: `{_format_lifecycle_stop_loss(runtime_stop_loss)}`\n"
+        f"Status: {runtime_state}\n\n"
+        "Change with `/set_horizon <hours|off>` (example: `/set_horizon 4`) and "
+        "`/set_stoploss <percent|off>` (example: `/set_stoploss 2`)."
+        + FOOTER
+    )
+
+
+async def set_horizon(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Set auto-close lifecycle horizon in 1H bars."""
+
+    bridge = _get_v2_bridge()
+    if bridge is None:
+        await update.message.reply_text(
+            "❌ Lifecycle commands require v2 execution bridge. Contact admin." + FOOTER
+        )
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: `/set_horizon <hours|off>`\n"
+            "Example: `/set_horizon 4` closes open trades after about 4 hours."
+            + FOOTER
+        )
+        return
+
+    raw = str(context.args[0]).strip().lower()
+    try:
+        horizon = 0 if raw in {"off", "none", "0"} else _normalize_lifecycle_horizon(raw)
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Invalid time limit. Use a whole number of hours (like `4`) or `off`."
+            + FOOTER
+        )
+        return
+
+    user_id = update.effective_user.id
+    try:
+        persisted_horizon, persisted_stop_loss = _persist_lifecycle_preferences(
+            user_id,
+            auto_close_horizon_bars=horizon,
+        )
+    except RuntimeError:
+        await update.message.reply_text("⛔ User not found. Run `/start` first." + FOOTER)
+        return
+    except Exception as exc:
+        logger.error("Failed saving lifecycle horizon for user %s: %s", user_id, exc)
+        await update.message.reply_text("❌ Failed to save lifecycle horizon setting." + FOOTER)
+        return
+
+    session_running = bridge.is_running(user_id)
+    applied = _apply_lifecycle_preferences_to_running_session(
+        user_id,
+        bridge=bridge,
+        auto_close_horizon_bars=persisted_horizon,
+    )
+    if applied:
+        runtime_note = "Applied now to your active session."
+    elif session_running:
+        runtime_note = "Saved, but this running backend cannot update it live."
+    else:
+        runtime_note = "Saved for your next `/start_demo` or `/start_live`."
+
+    await update.message.reply_text(
+        "✅ **Trade Safety Updated**\n\n"
+        f"Time-based auto-close: `{_format_lifecycle_horizon(persisted_horizon)}`\n"
+        f"Loss-limit auto-close: `{_format_lifecycle_stop_loss(persisted_stop_loss)}`\n"
+        f"Status: {runtime_note}"
+        + FOOTER
+    )
+
+
+async def set_stoploss(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Set lifecycle stop-loss auto-close threshold."""
+
+    bridge = _get_v2_bridge()
+    if bridge is None:
+        await update.message.reply_text(
+            "❌ Lifecycle commands require v2 execution bridge. Contact admin." + FOOTER
+        )
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: `/set_stoploss <percent|off>`\n"
+            "Examples: `/set_stoploss 2` (2%), `/set_stoploss 0.02`, `/set_stoploss off`"
+            + FOOTER
+        )
+        return
+
+    token = str(context.args[0]).strip().lower()
+    try:
+        if token in {"off", "none", "0", "0%"}:
+            stop_loss_pct = 0.0
+        else:
+            clean = token[:-1] if token.endswith("%") else token
+            parsed = float(clean)
+            if parsed < 0.0:
+                raise ValueError
+            stop_loss_pct = parsed / 100.0 if parsed >= 1.0 else parsed
+            stop_loss_pct = _normalize_lifecycle_stop_loss_pct(stop_loss_pct)
+    except (TypeError, ValueError):
+        await update.message.reply_text(
+            "❌ Invalid loss limit. Use `2` for 2%, `0.02`, or `off` to disable."
+            + FOOTER
+        )
+        return
+
+    user_id = update.effective_user.id
+    try:
+        persisted_horizon, persisted_stop_loss = _persist_lifecycle_preferences(
+            user_id,
+            stop_loss_pct=stop_loss_pct,
+        )
+    except RuntimeError:
+        await update.message.reply_text("⛔ User not found. Run `/start` first." + FOOTER)
+        return
+    except Exception as exc:
+        logger.error("Failed saving lifecycle stop-loss for user %s: %s", user_id, exc)
+        await update.message.reply_text("❌ Failed to save lifecycle stop-loss setting." + FOOTER)
+        return
+
+    session_running = bridge.is_running(user_id)
+    applied = _apply_lifecycle_preferences_to_running_session(
+        user_id,
+        bridge=bridge,
+        stop_loss_pct=persisted_stop_loss,
+    )
+    if applied:
+        runtime_note = "Applied now to your active session."
+    elif session_running:
+        runtime_note = "Saved, but this running backend cannot update it live."
+    else:
+        runtime_note = "Saved for your next `/start_demo` or `/start_live`."
+
+    await update.message.reply_text(
+        "✅ **Trade Safety Updated**\n\n"
+        f"Time-based auto-close: `{_format_lifecycle_horizon(persisted_horizon)}`\n"
+        f"Loss-limit auto-close: `{_format_lifecycle_stop_loss(persisted_stop_loss)}`\n"
+        f"Status: {runtime_note}"
+        + FOOTER
+    )
+
+
+async def _continue_from_maintenance(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    live: bool,
+) -> None:
+    """Continue session after maintenance by restoring snapshot positions."""
+
+    global V2_DEGRADED_ALERTED_USERS
+
+    bridge = _get_v2_bridge()
+    source_manager = _get_signal_source_manager()
+    if bridge is None:
+        await update.message.reply_text(
+            "❌ Continue commands require v2 execution bridge. Contact admin." + FOOTER
+        )
+        return
+
+    if _using_v2_primary_backend() and source_manager is None:
+        await update.message.reply_text(
+            "❌ v2 primary mode requires both signal source and execution bridge. Contact admin."
+            + FOOTER
+        )
+        return
+
+    user_id = update.effective_user.id
+    expected_mode = "live" if live else "demo"
+    expected_cmd = "/continue_live" if live else "/continue_demo"
+    start_cmd = "/start_live" if live else "/start_demo"
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if not db_user or db_user.status in {"pending", "banned"}:
+            await update.message.reply_text("⛔ Account not approved." + FOOTER)
+            return
+
+        if not db_user.context:
+            await update.message.reply_text(
+                "⚠️ No maintenance snapshot found. Start a fresh session with "
+                f"`{start_cmd}`."
+                + FOOTER
+            )
+            return
+
+        ctx = db_user.context
+        parsed_snapshot = _parse_maintenance_resume_payload(ctx.maintenance_resume_payload)
+        if not ctx.maintenance_resume_pending or parsed_snapshot is None:
+            await update.message.reply_text(
+                "⚠️ No pending maintenance snapshot found. Start a fresh session with "
+                f"`{start_cmd}`."
+                + FOOTER
+            )
+            return
+
+        snapshot_mode = str(parsed_snapshot.get("mode", "demo"))
+        if snapshot_mode != expected_mode:
+            mismatch_cmd = "/continue_live" if snapshot_mode == "live" else "/continue_demo"
+            await update.message.reply_text(
+                f"⚠️ Snapshot is for `{snapshot_mode}` mode. Run `{mismatch_cmd}` instead."
+                + FOOTER
+            )
+            return
+
+        target_positions = dict(parsed_snapshot.get("positions", {}))
+        target_prices = dict(parsed_snapshot.get("prices", {}))
+        creds = _build_creds_from_context(ctx, live=live)
+    except Exception as exc:
+        if live and "Binance API credentials required for live trading" in str(exc):
+            await update.message.reply_text(
+                "❌ Binance API credentials are required for `/continue_live`.\n"
+                "Run `/setup BINANCE_API_KEY BINANCE_API_SECRET` first."
+                + FOOTER
+            )
+            return
+
+        logger.error("Failed loading maintenance snapshot for user %s: %s", user_id, exc)
+        await update.message.reply_text("❌ Failed to load maintenance snapshot." + FOOTER)
+        return
+    finally:
+        session.close()
+
+    source_running = bool(source_manager and source_manager.is_running(user_id))
+    bridge_running = bridge.is_running(user_id)
+    if source_running or bridge_running:
+        await update.message.reply_text(
+            "⚠️ Session already running. Use `/stop` first, then run "
+            f"`{expected_cmd}` to restore from maintenance snapshot."
+            + FOOTER
+        )
+        return
+
+    notify_signal = _build_signal_notifier(context.bot, user_id)
+    bridge_started = False
+    source_started = False
+
+    try:
+        bridge_started = await bridge.start_session(
+            user_id,
+            live=live,
+            credentials=creds,
+        )
+
+        restore_results = await bridge.sync_positions(
+            user_id,
+            target_positions=target_positions,
+            prices=target_prices,
+        )
+
+        if source_manager is not None:
+            source_started = await source_manager.start_session(
+                user_id,
+                creds,
+                on_signal=notify_signal,
+                execute_orders=False,
+            )
+
+            if _using_v2_primary_backend() and (
+                not source_manager.is_running(user_id) or not bridge.is_running(user_id)
+            ):
+                raise RuntimeError("v2 primary pair did not reach running state after continue")
+
+        strategy_profile, active_model_version, active_model_source = _resolve_runtime_metadata(
+            bridge=bridge
+        )
+        _apply_saved_lifecycle_preferences(user_id, bridge)
+        _persist_user_session_flags(
+            user_id,
+            live_mode=live,
+            is_active=True,
+            strategy_profile=strategy_profile,
+            active_model_version=active_model_version,
+            active_model_source=active_model_source,
+        )
+        _clear_user_maintenance_resume_state(user_id)
+        V2_DEGRADED_ALERTED_USERS.discard(user_id)
+
+        accepted = sum(1 for item in restore_results if item.accepted)
+        rejected = sum(1 for item in restore_results if not item.accepted)
+        details: list[str] = []
+        if target_positions:
+            details.append(f"Snapshot symbols: `{len(target_positions)}`")
+            details.append(
+                "Restore orders: "
+                f"`{len(restore_results)}` (accepted=`{accepted}`, rejected=`{rejected}`)"
+            )
+        else:
+            details.append("Snapshot had no open positions; session resumed fresh.")
+
+        mode_label = "LIVE 🔴" if live else "DEMO 🟢"
+        await update.message.reply_text(
+            f"♻️ **Maintenance Continue Complete ({mode_label})**\n\n"
+            + "\n".join(details)
+            + "\nRun `/stats` to verify restoration."
+            + FOOTER
+        )
+    except Exception as exc:
+        logger.error("Maintenance continue failed for user %s: %s", user_id, exc)
+        if source_started and source_manager and source_manager.is_running(user_id):
+            await source_manager.stop_session(user_id)
+        if bridge_started and bridge.is_running(user_id):
+            await bridge.stop_session(user_id)
+        _persist_user_session_flags(user_id, is_active=False)
+        await update.message.reply_text(f"❌ Failed to continue session: {exc}" + FOOTER)
+
+
+async def continue_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _continue_from_maintenance(update, context, live=False)
+
+
+async def continue_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _continue_from_maintenance(update, context, live=True)
+
+
+async def prepare_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: snapshot/close active sessions before deploy restart."""
+
+    global V2_DEGRADED_ALERTED_USERS
+
+    admin_user_id = update.effective_user.id
+    if not _is_admin_user(admin_user_id):
+        return
+
+    bridge = _get_v2_bridge()
+    source_manager = _get_signal_source_manager()
+    if bridge is None and source_manager is None:
+        await update.message.reply_text("❌ No active runtime manager to prepare." + FOOTER)
+        return
+
+    session = SessionLocal()
+    targets: list[tuple[int, str, dict[str, float], dict[str, float]]] = []
+    try:
+        active_users = (
+            session.query(User)
+            .join(UserContext, UserContext.telegram_id == User.telegram_id)
+            .filter(User.status.in_(("active", "approved")), UserContext.is_active.is_(True))
+            .all()
+        )
+
+        for db_user in active_users:
+            user_id = int(db_user.telegram_id)
+            ctx = db_user.context
+            if ctx is None:
+                ctx = UserContext(telegram_id=user_id)
+                db_user.context = ctx
+
+            mode = "live" if bool(ctx.live_mode) else "demo"
+
+            positions: dict[str, float] = {}
+            prices: dict[str, float] = {}
+            bridge_running = bool(bridge and bridge.is_running(user_id))
+            source_running = bool(source_manager and source_manager.is_running(user_id))
+
+            if bridge is not None and bridge_running:
+                positions, prices = _capture_resume_snapshot_from_bridge(bridge, user_id)
+                if positions:
+                    try:
+                        await bridge.sync_positions(
+                            user_id,
+                            target_positions={},
+                            prices=prices,
+                        )
+                    except Exception as flatten_err:
+                        logger.warning(
+                            "Maintenance flatten failed for user %s: %s",
+                            user_id,
+                            flatten_err,
+                        )
+
+            if source_manager is not None and source_running:
+                await source_manager.stop_session(user_id)
+            if bridge is not None and bridge_running:
+                await bridge.stop_session(user_id)
+
+            payload = _build_maintenance_resume_payload(
+                mode=mode,
+                positions=positions,
+                prices=prices,
+            )
+            ctx.maintenance_resume_payload = payload
+            ctx.maintenance_resume_pending = True
+            ctx.maintenance_post_notified = False
+            ctx.is_active = False
+            targets.append((user_id, mode, positions, prices))
+            V2_DEGRADED_ALERTED_USERS.discard(user_id)
+
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.error("Failed preparing maintenance update snapshot: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Failed to prepare update: {exc}" + FOOTER)
+        return
+    finally:
+        session.close()
+
+    notified = 0
+    for user_id, mode, positions, _prices in targets:
+        resume_cmd = "/continue_live" if mode == "live" else "/continue_demo"
+        start_cmd = "/start_live" if mode == "live" else "/start_demo"
+        message = (
+            "⚠️ **System Update Starting**\n\n"
+            "A maintenance deploy is in progress. Your current session has been stopped.\n"
+            f"Snapshot captured symbols: `{len(positions)}`.\n"
+            f"After update completion run `{resume_cmd}` to restore, "
+            f"or `{start_cmd}` to start a new session."
+            + FOOTER
+        )
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message)
+            notified += 1
+        except Exception as notify_err:
+            logger.warning("Failed sending pre-update notice to user %s: %s", user_id, notify_err)
+
+    await update.message.reply_text(
+        "✅ **Maintenance preparation complete**\n\n"
+        f"Users prepared: `{len(targets)}`\n"
+        f"Users notified: `{notified}`\n"
+        "Safe to deploy/restart now."
+        + FOOTER
+    )
 
 async def reset_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -1912,8 +2738,15 @@ def main():
     application.add_handler(CommandHandler('star_demo', start_demo))
     application.add_handler(CommandHandler('start_live', start_live))
     application.add_handler(CommandHandler('star_live', start_live))
+    application.add_handler(CommandHandler('continue_demo', continue_demo))
+    application.add_handler(CommandHandler('continue_live', continue_live))
+    application.add_handler(CommandHandler('lifecycle', lifecycle))
+    application.add_handler(CommandHandler('set_horizon', set_horizon))
+    application.add_handler(CommandHandler('set_stoploss', set_stoploss))
+    application.add_handler(CommandHandler('set_stop_loss', set_stoploss))
     application.add_handler(CommandHandler('stop', stop_trading))
     application.add_handler(CommandHandler('reset_demo', reset_demo))
+    application.add_handler(CommandHandler('prepare_update', prepare_update))
     application.add_handler(CommandHandler('status', status))
     application.add_handler(CommandHandler('stats', stats))
     

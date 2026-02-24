@@ -1,125 +1,99 @@
-# Hypothesis Research Engine (HRE v0)
+# Hypothesis Research Engine (Current Runtime)
 
-A research-grade, deterministic market replay engine designed to evaluate trading hypotheses offline without look-ahead bias.
+This repository now runs a **multi-user Telegram trading platform** with modern v2 execution controls, safety checks, and deployment-ready operations.
 
-## Overview
+The project still includes research/evaluation tooling, but the active production workflow is centered on the Telegram bot + v2 execution stack.
 
-The Hypothesis Research Engine (HRE) replays historical market data bar-by-bar, advancing a single global clock and invoking user-defined hypotheses at each step. Hypotheses observe only past and present state and emit trade intents; they do not execute trades, store data, or access future information.
+## What the system does today
 
-All execution, cost modeling, evaluation, and persistence are handled outside the hypothesis layer and occur strictly after decisions are made.
+- Supports **paper** and **live** sessions per user.
+- Runs a **portfolio-style v2 executor** (multi-symbol exposure management).
+- Includes **maintenance continuity** (`/prepare_update`, `/continue_demo`, `/continue_live`).
+- Shows **risk budget overshoot** correctly (can exceed 100% when over budget).
+- Uses **mark-to-market paper equity** (not a static fixed baseline).
+- Provides user-facing lifecycle safety controls:
+  - `/set_horizon <hours|off>`
+  - `/set_stoploss <percent|off>`
+  - `/lifecycle`
+- Integrates lifecycle + exposure breaches into kill-switch safety behavior.
 
-## Key Features
+## Non-technical lifecycle controls (for end users)
 
-- **No Look-Ahead Bias**: Decisions made using only information available up to the current bar
-- **Deterministic**: Same inputs always produce identical outputs
-- **Separation of Concerns**: Hypothesis logic isolated from execution, storage, and evaluation
-- **Replay-First Architecture**: Time advances only through replayed market bars
-- **Write-Once Results**: Evaluation outputs are immutable
+Users can configure auto-close safety rules without trading jargon:
 
-## Quick Start
+- **Time limit**: close open trades automatically after N hours.
+  - Example: `/set_horizon 4`
+- **Loss limit**: close a trade when loss reaches your chosen percentage.
+  - Example: `/set_stoploss 2` (means 2%)
+- **View current settings**:
+  - `/lifecycle`
 
-### Installation
+## Core Telegram commands
+
+- `/start` - account check
+- `/start_demo` - start paper trading
+- `/start_live` - start live trading
+- `/stop` - stop trading
+- `/status` - current engine state
+- `/stats` - portfolio and risk stats
+- `/reset_demo` - reset paper session
+- `/prepare_update` - admin pre-deploy snapshot + safe stop
+- `/continue_demo` / `/continue_live` - restore after maintenance
+
+## Local development
+
+### Install
 
 ```bash
-# Install dependencies
 pip install -e .
-
-# Install development dependencies
 pip install -e ".[dev]"
 ```
 
-### Running an Evaluation
-
-```bash
-# Preferred wrapper (thin CLI that calls orchestrator.run_evaluation.main)
-python scripts/run_evaluation.py \
-    --hypothesis always_long \
-    --policy WF_V1 \
-    --data-path data/sample_market_data.csv \
-    --symbol SAMPLE \
-    --start-date 2020-01-01 \
-    --end-date 2023-12-31
-
-# Direct module execution is still available if you prefer:
-# python -m orchestrator.run_evaluation ...
-```
-
-### Other CLI Entry Points
-
-All operational CLIs now live under `scripts/` as thin wrappers around their respective package modules:
-
-```bash
-python scripts/run_batch.py --help         # orchestrator.run_batch
-python scripts/run_meta.py --help          # orchestrator.run_meta
-python scripts/run_portfolio.py --help     # orchestrator.run_portfolio
-python scripts/check_decay.py --help       # orchestrator.check_decay
-python scripts/run_batch_runner.py --help  # batch.run_batch (legacy batch runner)
-```
-
-### Creating a Custom Hypothesis
-
-```python
-from hypotheses.base import Hypothesis, TradeIntent, IntentType
-from state.market_state import MarketState
-from state.position_state import PositionState
-from clock.clock import Clock
-
-class MyHypothesis(Hypothesis):
-    @property
-    def hypothesis_id(self) -> str:
-        return "my_hypothesis"
-    
-    @property
-    def parameters(self) -> dict:
-        return {"version": "1.0"}
-    
-    def on_bar(
-        self, 
-        market_state: MarketState, 
-        position_state: PositionState, 
-        clock: Clock
-    ) -> TradeIntent | None:
-        # Your logic here
-        if not position_state.has_position:
-            return TradeIntent(type=IntentType.BUY, size=1.0)
-        return None
-```
-
-Register your hypothesis in `hypotheses/registry.py`.
-
-## Architecture
-
-The system follows a strict layered architecture:
-
-1. **Data Layer**: Loads and validates OHLCV market data
-2. **Clock Module**: Single source of time truth
-3. **State Management**: Tracks market history and positions
-4. **Hypothesis Layer**: User-defined trading logic (isolated)
-5. **Engine Core**: Main replay loop and decision queue
-6. **Execution Layer**: Simulates trade execution with costs
-7. **Evaluation Layer**: Computes metrics (Sharpe, drawdown, etc.)
-8. **Storage Layer**: Immutable persistence of results
-
-## Testing
+### Run tests
 
 ```bash
 pytest tests/ -v
 ```
 
-## Documentation
+### Run bot locally (env required)
 
-- **PRD.md**: Complete product requirements
-- **ARCHITECTURE.md**: System boundaries and contracts
+Set these environment variables:
 
-## Non-Goals
+- `TELEGRAM_TOKEN`
+- `ADMIN_ID`
+- `BOT_MASTER_KEY`
 
-This system does NOT:
-- Connect to live broker APIs or place real trades
-- Optimize for execution latency
-- Perform portfolio-level capital allocation
-- Use ML/RL techniques
-- Manage multiple concurrent positions (v0)
+Then start:
+
+```bash
+python -m quant.telebot.main
+```
+
+## Docker run
+
+```bash
+docker-compose up -d --build
+docker-compose logs -f
+```
+
+## AWS deployment (EC2)
+
+Use `AWS_DEPLOY.md` for full setup details. Typical restart/update flow on server:
+
+```bash
+git pull
+docker-compose down
+docker-compose up -d --build
+docker-compose logs -f --tail=200
+```
+
+## Important docs
+
+- `AWS_DEPLOY.md` - EC2 setup + deployment
+- `DEPLOY.md` - generic VPS deployment
+- `quant/telebot/main.py` - bot command handlers
+- `quant_v2/execution/service.py` - v2 execution + safety core
 
 ## License
 
-Research use only.
+Research and internal operations use.
