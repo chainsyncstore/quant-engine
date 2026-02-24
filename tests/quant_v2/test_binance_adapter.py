@@ -32,9 +32,21 @@ class FakeBinanceClient:
 
     def get_positions(self):
         return [
-            {"symbol": "BTCUSDT", "positionAmt": "0.25"},
+            {
+                "symbol": "BTCUSDT",
+                "positionAmt": "0.25",
+                "entryPrice": "48000",
+                "unrealizedProfit": "500",
+                "markPrice": "50000",
+            },
             {"symbol": "ETHUSDT", "positionAmt": "0"},
-            {"symbol": "SOLUSDT", "positionAmt": "-1.5"},
+            {
+                "symbol": "SOLUSDT",
+                "positionAmt": "-1.5",
+                "entryPrice": "150",
+                "unrealizedProfit": "15",
+                "markPrice": "140",
+            },
         ]
 
     def get_symbol_filters(self, symbol: str) -> dict[str, float]:
@@ -81,6 +93,24 @@ def test_binance_adapter_get_positions_mapping() -> None:
     positions = adapter.get_positions()
 
     assert positions == {"BTCUSDT": 0.25, "SOLUSDT": -1.5}
+
+
+def test_binance_adapter_get_position_metrics_includes_mark_price() -> None:
+    client = FakeBinanceClient()
+    adapter = BinanceExecutionAdapter(client)
+
+    metrics = adapter.get_position_metrics()
+
+    assert metrics["BTCUSDT"] == {
+        "entry_price": 48000.0,
+        "unrealized_pnl_usd": 500.0,
+        "mark_price": 50000.0,
+    }
+    assert metrics["SOLUSDT"] == {
+        "entry_price": 150.0,
+        "unrealized_pnl_usd": 15.0,
+        "mark_price": 140.0,
+    }
 
 
 def test_binance_adapter_normalizes_quantity_to_step_size() -> None:

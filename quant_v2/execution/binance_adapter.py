@@ -118,6 +118,7 @@ class BinanceExecutionAdapter:
             metrics[symbol] = {
                 "entry_price": float(pos.get("entryPrice", 0.0) or 0.0),
                 "unrealized_pnl_usd": float(pos.get("unrealizedProfit", 0.0) or 0.0),
+                "mark_price": float(pos.get("markPrice", 0.0) or 0.0),
             }
         return metrics
 

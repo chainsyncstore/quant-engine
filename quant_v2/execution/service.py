@@ -422,10 +422,22 @@ class RoutedExecutionService:
             return None
 
         try:
+            current_positions = self._safe_get_positions(state.adapter)
+            live_metrics: dict[str, dict[str, float]] | None = None
+            if current_positions:
+                live_metrics = self._safe_get_position_metrics(state.adapter)
+                self._refresh_last_prices_from_adapter(
+                    state,
+                    open_positions=current_positions,
+                    live_metrics=live_metrics,
+                )
+
             self._refresh_snapshot_state(
                 state,
                 risk_policy=state.effective_risk_policy,
                 prices=state.last_prices,
+                open_positions=current_positions,
+                live_metrics=live_metrics,
             )
         except Exception as exc:
             logger.warning("Failed refreshing v2 snapshot for user %s: %s", user_id, exc)
@@ -1024,8 +1036,14 @@ class RoutedExecutionService:
         *,
         risk_policy: PortfolioRiskPolicy,
         prices: dict[str, float],
+        open_positions: dict[str, float] | None = None,
+        live_metrics: dict[str, dict[str, float]] | None = None,
     ) -> None:
-        current_positions = self._safe_get_positions(state.adapter)
+        current_positions = (
+            {symbol: float(qty) for symbol, qty in open_positions.items()}
+            if open_positions is not None
+            else self._safe_get_positions(state.adapter)
+        )
         resolved_equity = self._resolve_snapshot_equity(
             state,
             open_positions=current_positions,
@@ -1045,6 +1063,7 @@ class RoutedExecutionService:
                     state,
                     open_positions=state.snapshot.open_positions,
                     prices=prices,
+                    live_metrics=live_metrics,
                 ),
             )
 
@@ -1367,11 +1386,53 @@ class RoutedExecutionService:
                 continue
             entry_price = float(payload.get("entry_price", 0.0) or 0.0)
             unrealized = float(payload.get("unrealized_pnl_usd", 0.0) or 0.0)
+            mark_price = float(payload.get("mark_price", 0.0) or 0.0)
             metrics[str(symbol)] = {
                 "entry_price": entry_price,
                 "unrealized_pnl_usd": unrealized,
+                "mark_price": mark_price,
             }
         return metrics
+
+    @classmethod
+    def _refresh_last_prices_from_adapter(
+        cls,
+        state: _SessionState,
+        *,
+        open_positions: dict[str, float],
+        live_metrics: dict[str, dict[str, float]] | None = None,
+    ) -> None:
+        if not open_positions:
+            return
+
+        metrics = live_metrics if live_metrics is not None else cls._safe_get_position_metrics(state.adapter)
+        if not metrics:
+            return
+
+        refreshed_prices: dict[str, float] = {}
+        for symbol, qty in open_positions.items():
+            signed_qty = float(qty)
+            if abs(signed_qty) <= 1e-12:
+                continue
+
+            payload = metrics.get(symbol, {})
+            mark_price = float(payload.get("mark_price", 0.0) or 0.0)
+            if mark_price <= 0.0:
+                entry_price = float(payload.get("entry_price", 0.0) or 0.0)
+                unrealized = float(payload.get("unrealized_pnl_usd", 0.0) or 0.0)
+                if entry_price > 0.0:
+                    derived_mark = entry_price + (unrealized / signed_qty)
+                    if derived_mark > 0.0:
+                        mark_price = float(derived_mark)
+
+            if mark_price > 0.0:
+                refreshed_prices[symbol] = mark_price
+
+        if refreshed_prices:
+            state.last_prices = {
+                **state.last_prices,
+                **refreshed_prices,
+            }
 
     @staticmethod
     def _classify_order_activity(*, current_qty: float, side: str, quantity: float) -> str:
@@ -1593,15 +1654,19 @@ class RoutedExecutionService:
         *,
         open_positions: dict[str, float],
         prices: dict[str, float],
+        live_metrics: dict[str, dict[str, float]] | None = None,
     ) -> dict[str, float]:
         symbol_pnl: dict[str, float] = {}
 
-        live_metrics: dict[str, dict[str, float]] = {}
+        resolved_live_metrics: dict[str, dict[str, float]] = {}
         if state.mode == "live":
-            try:
-                live_metrics = cls._safe_get_position_metrics(state.adapter)
-            except Exception:
-                live_metrics = {}
+            if live_metrics is not None:
+                resolved_live_metrics = live_metrics
+            else:
+                try:
+                    resolved_live_metrics = cls._safe_get_position_metrics(state.adapter)
+                except Exception:
+                    resolved_live_metrics = {}
 
         for symbol, qty in open_positions.items():
             signed_qty = float(qty)
@@ -1609,7 +1674,7 @@ class RoutedExecutionService:
                 continue
 
             if state.mode == "live":
-                metrics = live_metrics.get(symbol, {})
+                metrics = resolved_live_metrics.get(symbol, {})
                 unrealized = float(metrics.get("unrealized_pnl_usd", 0.0) or 0.0)
                 if unrealized != 0.0:
                     symbol_pnl[symbol] = unrealized

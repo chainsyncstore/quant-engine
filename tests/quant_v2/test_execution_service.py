@@ -718,6 +718,54 @@ def test_routed_execution_service_merges_prices_for_symbol_notional_snapshot() -
     assert "ETHUSDT" in snapshot.symbol_notional_usd
 
 
+def test_routed_execution_service_snapshot_refreshes_mark_prices_from_live_metrics() -> None:
+    class DynamicLiveAdapter:
+        def __init__(self) -> None:
+            self._positions = {"BTCUSDT": 2.0}
+            self._metric_calls = 0
+
+        def get_positions(self):
+            return dict(self._positions)
+
+        def get_position_metrics(self):
+            self._metric_calls += 1
+            mark_price = 100.0 if self._metric_calls == 1 else 120.0
+            qty = float(self._positions["BTCUSDT"])
+            entry_price = 90.0
+            return {
+                "BTCUSDT": {
+                    "entry_price": entry_price,
+                    "unrealized_pnl_usd": (mark_price - entry_price) * qty,
+                }
+            }
+
+    adapter = DynamicLiveAdapter()
+    service = RoutedExecutionService(
+        live_adapter_factory=lambda request: adapter,
+        allow_live_execution=True,
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=1.0,
+            max_gross_exposure_frac=1.0,
+            max_net_exposure_frac=1.0,
+        ),
+    )
+    req = SessionRequest(
+        user_id=5131,
+        live=True,
+        credentials={"binance_api_key": "k", "binance_api_secret": "s"},
+    )
+    assert asyncio.run(service.start_session(req)) is True
+
+    first_snapshot = service.get_portfolio_snapshot(5131)
+    assert first_snapshot is not None
+    assert first_snapshot.symbol_notional_usd["BTCUSDT"] == pytest.approx(200.0)
+
+    second_snapshot = service.get_portfolio_snapshot(5131)
+    assert second_snapshot is not None
+    assert second_snapshot.symbol_notional_usd["BTCUSDT"] == pytest.approx(240.0)
+    assert service.get_last_prices(5131)["BTCUSDT"] == pytest.approx(120.0)
+
+
 def test_routed_execution_service_enforces_aggregate_caps_across_sequential_symbol_callbacks() -> None:
     service = RoutedExecutionService(
         risk_policy=PortfolioRiskPolicy(
