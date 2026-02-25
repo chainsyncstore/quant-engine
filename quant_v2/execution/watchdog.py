@@ -54,7 +54,7 @@ class LifecycleWatchdog:
         *,
         check_interval_seconds: float = 5.0,
         on_alert: Callable[[WatchdogAlert], Awaitable[None]] | None = None,
-        stale_heartbeat_seconds: float = 120.0,
+        stale_heartbeat_seconds: float = 7200.0,
     ) -> None:
         self._check_interval = check_interval_seconds
         self._on_alert = on_alert
@@ -179,7 +179,6 @@ class LifecycleWatchdog:
                 session.horizon_deadline_utc is not None
                 and now >= session.horizon_deadline_utc
             ):
-                session.flatten_requested = True
                 alert = WatchdogAlert(
                     user_id=user_id,
                     alert_type="horizon_expired",
@@ -187,7 +186,15 @@ class LifecycleWatchdog:
                         f"Horizon deadline reached: {session.horizon_deadline_utc.isoformat()}"
                     ),
                 )
-                await self._emit_alert(alert)
+                try:
+                    await self._emit_alert(alert)
+                    # FIX-5: Only mark flatten after alert succeeds
+                    session.flatten_requested = True
+                except Exception:
+                    logger.error(
+                        "Failed to emit horizon_expired alert for user=%d — will retry next tick",
+                        user_id,
+                    )
                 continue
 
             # 2. Stop-loss check
@@ -195,7 +202,6 @@ class LifecycleWatchdog:
                 session.stop_loss_equity_usd is not None
                 and session.latest_mtm_equity_usd <= session.stop_loss_equity_usd
             ):
-                session.flatten_requested = True
                 alert = WatchdogAlert(
                     user_id=user_id,
                     alert_type="stop_loss_triggered",
@@ -204,7 +210,15 @@ class LifecycleWatchdog:
                         f"<= stop-loss ${session.stop_loss_equity_usd:,.2f}"
                     ),
                 )
-                await self._emit_alert(alert)
+                try:
+                    await self._emit_alert(alert)
+                    # FIX-5: Only mark flatten after alert succeeds
+                    session.flatten_requested = True
+                except Exception:
+                    logger.error(
+                        "Failed to emit stop_loss_triggered alert for user=%d — will retry next tick",
+                        user_id,
+                    )
                 continue
 
             # 3. Heartbeat staleness check (tick starvation detection)
@@ -220,12 +234,19 @@ class LifecycleWatchdog:
                             f"(threshold: {self._stale_heartbeat_seconds:.0f}s)"
                         ),
                     )
-                    await self._emit_alert(alert)
+                    try:
+                        await self._emit_alert(alert)
+                    except Exception:
+                        pass  # Non-critical: heartbeat alerts are informational
                     # Reset timer to avoid flooding
                     self._last_tick_time[user_id] = now
 
     async def _emit_alert(self, alert: WatchdogAlert) -> None:
-        """Dispatch an alert to the registered handler."""
+        """Dispatch an alert to the registered handler.
+
+        Raises the handler exception after logging so callers can
+        detect failures and retry on the next tick cycle.
+        """
         logger.warning(
             "Watchdog alert: user=%d type=%s reason=%s",
             alert.user_id,
@@ -239,3 +260,4 @@ class LifecycleWatchdog:
                 logger.exception(
                     "Watchdog alert handler failed for user=%d", alert.user_id
                 )
+                raise

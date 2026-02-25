@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from dataclasses import replace
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import functools
 import logging
 import os
 from typing import Callable, Protocol
@@ -689,18 +691,23 @@ class RoutedExecutionService:
                 # We want to route a Limit order near the mark price
                 # For a BUY, limit should be slightly above mark to ensure execution without reaching too far
                 # For a SELL, limit should be slightly below mark
-                
-                # To simplify spread capture for this institutional upgrade, we submit post-only 
+
+                # To simplify spread capture for this institutional upgrade, we submit post-only
                 # limit orders exactly at the observed mark price (assumed mid or side appropriate)
                 # and let it rest.
                 limit_price = mark_price
-                
-                result = state.adapter.place_order(
-                    plan,
-                    idempotency_key=idempotency_key,
-                    mark_price=mark_price,
-                    limit_price=limit_price,
-                    post_only=True,
+
+                # FIX-1: Run the synchronous adapter call in a thread pool so the asyncio
+                # event loop is never blocked by Binance API latency (can spike 500ms-2s).
+                result = await asyncio.to_thread(
+                    functools.partial(
+                        state.adapter.place_order,
+                        plan,
+                        idempotency_key=idempotency_key,
+                        mark_price=mark_price,
+                        limit_price=limit_price,
+                        post_only=True,
+                    )
                 )
             except Exception as exc:
                 logger.error(
@@ -863,10 +870,14 @@ class RoutedExecutionService:
             )
 
             try:
-                result = state.adapter.place_order(
-                    plan,
-                    idempotency_key=idempotency_key,
-                    mark_price=mark_price,
+                # FIX-1: Non-blocking adapter call for manual sync_positions path.
+                result = await asyncio.to_thread(
+                    functools.partial(
+                        state.adapter.place_order,
+                        plan,
+                        idempotency_key=idempotency_key,
+                        mark_price=mark_price,
+                    )
                 )
             except Exception as exc:
                 logger.error(
@@ -975,6 +986,15 @@ class RoutedExecutionService:
         if state is None:
             return None
         return state.diagnostics
+
+    def get_live_session_ids(self) -> list[int]:
+        """Return user_ids of all sessions with mode == 'live'."""
+        return [uid for uid, s in self._sessions.items() if s.mode == "live"]
+
+    def get_session_adapter(self, user_id: int) -> object | None:
+        """Return the raw adapter for a session (used by reconciliation loop)."""
+        state = self._sessions.get(user_id)
+        return state.adapter if state is not None else None
 
     def clear_execution_diagnostics(self, user_id: int) -> bool:
         """Reset execution telemetry counters while keeping the session and positions intact."""

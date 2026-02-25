@@ -1,29 +1,41 @@
 
+# ---- Stage 1: Builder ----
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY quant/ ./quant/
+COPY quant_v2/ ./quant_v2/
+
+RUN pip install --no-cache-dir --prefix=/install \
+    numpy pandas scikit-learn lightgbm \
+    requests python-dotenv sqlalchemy cryptography aiosqlite \
+    python-telegram-bot "redis[async]"
+
+# ---- Stage 2: Runtime (no compiler, no root) ----
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
-# Copy requirements
-# We don't have a requirements.txt in root? I'll assume one exists or I should create it.
-# For now, I'll install the key packages directly to be safe, or copy a mock one.
-# Best practice: Copy source and install via pip
-COPY . .
+# Copy only application code (no build tools, no .pem, no debug scripts)
+COPY quant/ ./quant/
+COPY quant_v2/ ./quant_v2/
+COPY pyproject.toml ./
 
-# Install dependencies
-# Install dependencies in stages to avoid OOM
-RUN pip install --no-cache-dir numpy pandas
-RUN pip install --no-cache-dir scikit-learn lightgbm
-RUN pip install --no-cache-dir requests python-dotenv sqlalchemy cryptography aiosqlite python-telegram-bot
+# Create non-root user
+RUN groupadd -r quantbot && useradd -r -g quantbot -s /sbin/nologin quantbot \
+    && chown -R quantbot:quantbot /app
 
-# Volume for DB and Models
-# VOLUME ["/app/models", "/app/quant_bot.db"]
+USER quantbot
 
-CMD ["python", "-m", "quant.telebot.main"]
+CMD ["python", "-m", "quant_v2.execution.main"]

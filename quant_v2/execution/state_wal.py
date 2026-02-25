@@ -9,7 +9,31 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
 
+import re
+
 logger = logging.getLogger(__name__)
+
+_SENSITIVE_KEYS = re.compile(
+    r"(api_key|api_secret|secret|password|token|credentials)",
+    re.IGNORECASE,
+)
+
+
+def _scrub_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Recursively strip sensitive keys from a payload dict.
+
+    Defense-in-depth: ensures no API keys, secrets, or credentials
+    ever reach the Redis WAL stream, even if upstream forgets to scrub.
+    """
+    scrubbed: dict[str, Any] = {}
+    for key, value in payload.items():
+        if _SENSITIVE_KEYS.search(key):
+            scrubbed[key] = "***REDACTED***"
+        elif isinstance(value, dict):
+            scrubbed[key] = _scrub_payload(value)
+        else:
+            scrubbed[key] = value
+    return scrubbed
 
 
 @dataclass(frozen=True)
@@ -22,7 +46,9 @@ class WALEntry:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), separators=(",", ":"), default=str)
+        data = asdict(self)
+        data["payload"] = _scrub_payload(data.get("payload", {}))
+        return json.dumps(data, separators=(",", ":"), default=str)
 
     @classmethod
     def from_json(cls, raw: str | bytes) -> "WALEntry":
@@ -55,9 +81,18 @@ class RedisWAL:
     the engine replays the stream to reconstruct all active sessions.
     """
 
-    def __init__(self, redis_url: str = "redis://localhost:6379") -> None:
+    # Default cap: ~100K entries ≈ 50MB. Approximate trim is O(1).
+    DEFAULT_MAX_STREAM_LEN = 100_000
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379",
+        *,
+        max_stream_len: int = DEFAULT_MAX_STREAM_LEN,
+    ) -> None:
         self._redis_url = redis_url
         self._redis: Any = None
+        self._max_stream_len = max(int(max_stream_len), 1000)
 
     async def connect(self) -> None:
         try:
@@ -88,6 +123,8 @@ class RedisWAL:
         entry_id = await self._redis.xadd(
             WAL_STREAM_KEY,
             {"data": entry.to_json()},
+            maxlen=self._max_stream_len,
+            approximate=True,
         )
         logger.debug(
             "WAL append: %s user=%d (id=%s)",

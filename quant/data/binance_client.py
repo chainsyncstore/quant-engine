@@ -28,22 +28,133 @@ class BinanceClient:
 
     # Binance rate limit: 2400 weight/min. Klines = 2 weight each.
     _MIN_REQUEST_INTERVAL = 0.1  # 100ms between requests
+    _BACKOFF_MAX_RETRIES = 5
+    _BACKOFF_BASE_DELAY = 1.0
+    _WEIGHT_THROTTLE_THRESHOLD = 1800  # 75% of 2400
+    _WEIGHT_ELEVATED_INTERVAL = 0.5  # 500ms when weight is elevated
 
     def __init__(self, config: Optional[BinanceAPIConfig] = None) -> None:
         self._cfg = config if config else get_binance_config()
         self._last_request_time: float = 0.0
         self._exchange_info_cache: tuple[float, dict[str, Any]] | None = None
+        self._used_weight_1m: int = 0
+        self._time_offset_ms: int = 0  # Clock drift vs Binance server
 
     def _throttle(self) -> None:
+        interval = (
+            self._WEIGHT_ELEVATED_INTERVAL
+            if self._used_weight_1m >= self._WEIGHT_THROTTLE_THRESHOLD
+            else self._MIN_REQUEST_INTERVAL
+        )
         elapsed = time.time() - self._last_request_time
-        if elapsed < self._MIN_REQUEST_INTERVAL:
-            time.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
         self._last_request_time = time.time()
 
+    def _update_rate_limit_weight(self, resp: requests.Response) -> None:
+        """Track Binance request weight from response headers."""
+        weight_str = resp.headers.get("X-MBX-USED-WEIGHT-1M", "")
+        if weight_str:
+            try:
+                self._used_weight_1m = int(weight_str)
+            except ValueError:
+                pass
+
+    def _request_with_backoff(
+        self,
+        method: str,
+        url: str,
+        params: dict,
+        headers: dict | None = None,
+    ) -> requests.Response:
+        """Execute an HTTP request with exponential backoff on 429/5xx.
+
+        - HTTP 429: honour Retry-After header, else exponential backoff.
+        - HTTP 418: Binance IP ban — raise immediately, do NOT retry.
+        - HTTP 5xx: retry with backoff up to 3 times.
+        """
+        delay = self._BACKOFF_BASE_DELAY
+        request_fn = getattr(requests, method.lower())
+        last_resp: requests.Response | None = None
+
+        for attempt in range(self._BACKOFF_MAX_RETRIES):
+            self._throttle()
+
+            # Guard against socket-level panics (DNS fail, TCP RST, TLS
+            # handshake failure, read timeout).  Without this, a transient
+            # network blip raises an uncaught exception that propagates
+            # through run_in_executor and kills the asyncio event loop.
+            try:
+                resp = request_fn(url, params=params, headers=headers, timeout=30)
+            except requests.exceptions.RequestException as net_err:
+                if attempt < self._BACKOFF_MAX_RETRIES - 1:
+                    logger.warning(
+                        "Network error (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt + 1,
+                        self._BACKOFF_MAX_RETRIES,
+                        net_err.__class__.__name__,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60.0)
+                    continue
+                logger.error(
+                    "Network error exhausted retries (%d): %s",
+                    self._BACKOFF_MAX_RETRIES,
+                    net_err,
+                )
+                raise
+
+            self._update_rate_limit_weight(resp)
+
+            if resp.status_code == 200:
+                return resp
+
+            last_resp = resp
+
+            # IP ban — abort immediately
+            if resp.status_code == 418:
+                logger.critical(
+                    "BINANCE IP BAN (HTTP 418) — DO NOT RETRY. URL=%s", url
+                )
+                resp.raise_for_status()
+
+            # Rate limit — back off
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", delay))
+                logger.warning(
+                    "HTTP 429 Rate Limit (attempt %d/%d). Backing off for %ds. weight=%d",
+                    attempt + 1,
+                    self._BACKOFF_MAX_RETRIES,
+                    retry_after,
+                    self._used_weight_1m,
+                )
+                time.sleep(retry_after)
+                delay = min(delay * 2, 60.0)
+                continue
+
+            # Server errors — retry with backoff (max 3)
+            if resp.status_code >= 500 and attempt < 3:
+                logger.warning(
+                    "HTTP %d server error (attempt %d/3). Retrying in %.1fs.",
+                    resp.status_code,
+                    attempt + 1,
+                    delay,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+                continue
+
+            # Any other non-200 — raise immediately
+            break
+
+        if last_resp is not None:
+            self._handle_binance_error(last_resp)
+            last_resp.raise_for_status()
+        raise RuntimeError("_request_with_backoff exhausted retries with no response")
+
     def _get(self, url: str, params: dict) -> dict | list:
-        self._throttle()
-        resp = requests.get(url, params=params, timeout=30)
-        resp.raise_for_status()
+        resp = self._request_with_backoff("get", url, params)
         return resp.json()
 
     def get_exchange_info(self, *, cache_ttl_seconds: float = 300.0) -> dict[str, Any]:
@@ -363,9 +474,30 @@ class BinanceClient:
     # Authenticated methods (order placement, positions, account)
     # ==================================================================
 
+    def sync_time(self) -> None:
+        """Calibrate local clock drift relative to Binance server time.
+
+        Measures round-trip time to ``/fapi/v1/time`` and computes an
+        offset so that ``_sign_params`` timestamps stay within the
+        Binance ``recvWindow`` even if the host NTP drifts.
+        """
+        url = f"{self._cfg.base_url}/fapi/v1/time"
+        t0 = int(time.time() * 1000)
+        resp = self._get(url, {})
+        t1 = int(time.time() * 1000)
+
+        server_time = int(resp["serverTime"])
+        rtt = t1 - t0
+        self._time_offset_ms = server_time - (t0 + rtt // 2)
+        logger.info(
+            "Clock synced with Binance. Drift offset: %d ms (rtt=%d ms)",
+            self._time_offset_ms,
+            rtt,
+        )
+
     def _sign_params(self, params: dict) -> dict:
         """Add timestamp and HMAC-SHA256 signature to request params."""
-        params["timestamp"] = int(time.time() * 1000)
+        params["timestamp"] = int(time.time() * 1000) + self._time_offset_ms
         params["recvWindow"] = self._cfg.recv_window
         query_string = urlencode(params)
         signature = hmac.new(
@@ -381,30 +513,24 @@ class BinanceClient:
         return {"X-MBX-APIKEY": self._cfg.api_key}
 
     def _signed_get(self, endpoint: str, params: dict | None = None) -> dict | list:
-        """Authenticated GET request."""
-        self._throttle()
+        """Authenticated GET request with backoff."""
         params = self._sign_params(params or {})
         url = f"{self._cfg.base_url}{endpoint}"
-        resp = requests.get(url, params=params, headers=self._auth_headers(), timeout=30)
-        self._handle_binance_error(resp)
+        resp = self._request_with_backoff("get", url, params, headers=self._auth_headers())
         return resp.json()
 
     def _signed_post(self, endpoint: str, params: dict | None = None) -> dict | list:
-        """Authenticated POST request."""
-        self._throttle()
+        """Authenticated POST request with backoff."""
         params = self._sign_params(params or {})
         url = f"{self._cfg.base_url}{endpoint}"
-        resp = requests.post(url, params=params, headers=self._auth_headers(), timeout=30)
-        self._handle_binance_error(resp)
+        resp = self._request_with_backoff("post", url, params, headers=self._auth_headers())
         return resp.json()
 
     def _signed_delete(self, endpoint: str, params: dict | None = None) -> dict | list:
-        """Authenticated DELETE request."""
-        self._throttle()
+        """Authenticated DELETE request with backoff."""
         params = self._sign_params(params or {})
         url = f"{self._cfg.base_url}{endpoint}"
-        resp = requests.delete(url, params=params, headers=self._auth_headers(), timeout=30)
-        self._handle_binance_error(resp)
+        resp = self._request_with_backoff("delete", url, params, headers=self._auth_headers())
         return resp.json()
 
     @staticmethod
@@ -437,6 +563,8 @@ class BinanceClient:
                 "Binance API key and secret are required for authenticated operations. "
                 "Set them via /setup or BINANCE_API_KEY/BINANCE_API_SECRET env vars."
             )
+        # Calibrate clock before any authenticated request
+        self.sync_time()
         account = self.get_account_info()
         logger.info(
             "Binance auth OK: USDT balance=%.2f, positions=%d",
@@ -464,6 +592,14 @@ class BinanceClient:
         if symbol:
             positions = [p for p in positions if p["symbol"] == symbol]
         return positions
+
+    # --- Orderbook ---
+
+    def get_orderbook(self, symbol: str, limit: int = 5) -> dict:
+        """Fetch depth-of-book (bids/asks). GET /fapi/v1/depth."""
+        url = f"{self._cfg.base_url}/fapi/v1/depth"
+        params = {"symbol": symbol, "limit": limit}
+        return self._get(url, params)
 
     # --- Orders ---
 

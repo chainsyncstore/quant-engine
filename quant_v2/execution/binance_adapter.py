@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 import math
 from typing import Any
 
@@ -37,16 +38,13 @@ class BinanceExecutionAdapter:
             return self.journal.get(idempotency_key)
 
         if plan.reduce_only:
-            # We pass limit_price here; client.close_position converts to LIMIT if provided
-            raw = self.client.close_position(plan.symbol, limit_price=limit_price)
-            accepted = raw is not None
-            filled_qty = float(raw.get("executedQty", 0.0)) if raw else 0.0
-            order_id = str(raw.get("orderId", "")) if raw else ""
-            status = str(raw.get("status", "no_position")) if raw else "no_position"
-            avg_price = float(raw.get("avgPrice", 0.0)) if raw else 0.0
-            price = float(raw.get("price", avg_price)) if raw else avg_price
-            reason = "" if accepted else "reduce_only_no_position"
-            requested_qty = float(plan.quantity)
+            # FIX-4: Use slippage-bounded exit instead of raw MARKET orders.
+            result = self.close_position_bounded(
+                plan.symbol,
+                max_slippage_bps=50,
+                idempotency_key=idempotency_key,
+            )
+            return result
         else:
             normalized_qty, skip_reason = self._normalize_quantity_with_filters(
                 plan.symbol,
@@ -91,12 +89,8 @@ class BinanceExecutionAdapter:
                         
                         fallback_limit = mark_price * slippage_factor
                         
-                        # Apply symbol price filters (tick size) if necessary
-                        if hasattr(self.client, "get_symbol_filters"):
-                            filters = dict(self.client.get_symbol_filters(plan.symbol) or {})
-                            tick_size = float(filters.get("tick_size", 0.0) or 0.0)
-                            if tick_size > 0:
-                                fallback_limit = round(fallback_limit / tick_size) * tick_size
+                        # Apply strict tick-size quantization via Decimal
+                        fallback_limit = self._quantize_price(plan.symbol, fallback_limit)
                                 
                         logger.warning(
                             "POST_ONLY order matched immediately for %s. Falling back to BOUNDED LIMIT (price=%.4f, max_slippage=15bps).", 
@@ -150,6 +144,209 @@ class BinanceExecutionAdapter:
         )
 
         self.journal.record(idempotency_key, result)
+        return result
+
+    def close_position_bounded(
+        self,
+        symbol: str,
+        *,
+        max_slippage_bps: float = 50.0,
+        idempotency_key: str = "",
+        fill_check_timeout_seconds: float = 5.0,
+    ) -> ExecutionResult:
+        """Close a position using aggressive limit orders, not raw MARKET.
+
+        1. Fetch current position from exchange.
+        2. Fetch top-of-book bid/ask.
+        3. Place a LIMIT order at bid * (1 - slippage) for sells, ask * (1 + slippage) for buys.
+        4. Wait fill_check_timeout_seconds then check fill status.
+        5. If unfilled, cancel and escalate to MARKET as last resort.
+        """
+        import time as _time
+
+        if idempotency_key and self.journal.seen(idempotency_key):
+            return self.journal.get(idempotency_key)
+
+        positions = self.client.get_positions(symbol=symbol)
+        if not positions:
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side="SELL",
+                requested_qty=0.0,
+                filled_qty=0.0,
+                avg_price=0.0,
+                status="no_position",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="reduce_only_no_position",
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
+
+        pos = positions[0]
+        pos_amt = float(pos.get("positionAmt", 0.0))
+        if pos_amt == 0.0:
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side="SELL",
+                requested_qty=0.0,
+                filled_qty=0.0,
+                avg_price=0.0,
+                status="no_position",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="reduce_only_no_position",
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
+
+        side = "SELL" if pos_amt > 0 else "BUY"
+        qty = abs(pos_amt)
+
+        # Fetch top-of-book for slippage-bounded pricing
+        top = self.get_orderbook_top(symbol)
+        bid, ask = top["bid"], top["ask"]
+
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+
+        base_slippage_bps = max_slippage_bps
+        reason = "bounded_limit_exit"
+        raw = None
+        max_chase_attempts = 3
+
+        for attempt in range(max_chase_attempts):
+            # Re-fetch orderbook on each chase attempt for fresh pricing
+            if attempt > 0:
+                top = self.get_orderbook_top(symbol)
+                bid, ask = top["bid"], top["ask"]
+
+            # Widen slippage by 25bps per retry
+            attempt_slippage_bps = base_slippage_bps + (attempt * 25.0)
+            slippage_factor = attempt_slippage_bps / 10_000.0
+
+            if side == "SELL":
+                aggressive_price = bid * (1.0 - slippage_factor) if bid > 0 else 0.0
+            else:
+                aggressive_price = ask * (1.0 + slippage_factor) if ask > 0 else 0.0
+
+            if aggressive_price <= 0:
+                _logger.warning(
+                    "No orderbook data for %s on chase attempt %d — cannot compute price",
+                    symbol, attempt + 1,
+                )
+                continue
+
+            # Apply strict tick-size quantization
+            aggressive_price = self._quantize_price(symbol, aggressive_price)
+
+            try:
+                raw = self.client.place_limit_order(
+                    symbol, side, qty, price=aggressive_price, post_only=False
+                )
+            except Exception as exc:
+                _logger.error(
+                    "Bounded limit exit attempt %d failed for %s: %s",
+                    attempt + 1, symbol, exc,
+                )
+                raw = None
+                continue
+
+            # Check if immediately filled
+            if str(raw.get("status", "")).upper() in {"FILLED"}:
+                reason = "bounded_limit_exit"
+                break
+
+            if str(raw.get("status", "")).upper() in {"CANCELED", "EXPIRED"}:
+                raw = None
+                continue
+
+            # Wait and check fill status
+            order_id = raw.get("orderId")
+            _time.sleep(min(fill_check_timeout_seconds, 5.0))
+
+            open_orders = self.get_open_orders(symbol)
+            still_open = any(
+                str(o.get("orderId")) == str(order_id) for o in open_orders
+            )
+            if not still_open:
+                # Order filled while we waited
+                reason = "bounded_limit_exit"
+                break
+
+            # Cancel with verification before chasing
+            _logger.warning(
+                "Bounded exit for %s unfilled after %.1fs (attempt %d/%d) — cancelling to chase",
+                symbol, fill_check_timeout_seconds, attempt + 1, max_chase_attempts,
+            )
+            try:
+                cancel_result = self.client.cancel_order(symbol, order_id)
+                cancel_status = str(cancel_result.get("status", "")).upper() if isinstance(cancel_result, dict) else ""
+                if cancel_status and cancel_status != "CANCELED":
+                    _logger.warning(
+                        "Cancel returned status=%s for %s order %s — aborting chase to prevent zombie",
+                        cancel_status, symbol, order_id,
+                    )
+                    reason = "cancel_verification_failed"
+                    raw = None
+                    break
+            except Exception as cancel_exc:
+                _logger.error(
+                    "Cancel failed for %s order %s: %s — aborting chase to prevent zombie",
+                    symbol, order_id, cancel_exc,
+                )
+                reason = "cancel_verification_failed"
+                raw = None
+                break
+
+            raw = None  # Reset for next attempt
+            reason = "bounded_limit_chase"
+
+        if raw is None:
+            # All chase attempts exhausted or aborted — return safe failure
+            _logger.error(
+                "Chase exhausted for %s after %d attempts — reason: %s",
+                symbol, max_chase_attempts, reason,
+            )
+            final_reason = reason if reason != "bounded_limit_exit" else "chase_exhausted"
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side=side,
+                requested_qty=qty,
+                filled_qty=0.0,
+                avg_price=0.0,
+                status="chase_exhausted",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason=final_reason,
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
+
+        result = ExecutionResult(
+            accepted=True,
+            order_id=str(raw.get("orderId", "")),
+            idempotency_key=idempotency_key,
+            symbol=symbol,
+            side=side,
+            requested_qty=qty,
+            filled_qty=float(raw.get("executedQty", qty)),
+            avg_price=float(raw.get("avgPrice", aggressive_price or 0.0)),
+            status=str(raw.get("status", "filled")).lower(),
+            created_at=datetime.now(timezone.utc).isoformat(),
+            reason=reason,
+        )
+        if idempotency_key:
+            self.journal.record(idempotency_key, result)
         return result
 
     def get_positions(self) -> dict[str, float]:
@@ -267,6 +464,26 @@ class BinanceExecutionAdapter:
             "mid_mtm_equity_usd": initial_equity_usd + total_mid_value,
         }
 
+    def _quantize_price(self, symbol: str, price: float) -> float:
+        """Round a price to the symbol's tick_size using Decimal arithmetic."""
+        filters_getter = getattr(self.client, "get_symbol_filters", None)
+        if not callable(filters_getter):
+            return price
+        try:
+            filters = dict(filters_getter(symbol) or {})
+        except Exception:
+            return price
+
+        raw_tick = filters.get("tick_size", 0.0)
+        tick_size = Decimal(str(raw_tick if raw_tick else 0))
+        if tick_size > 0:
+            price_dec = Decimal(str(price))
+            quantized = (price_dec / tick_size).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            ) * tick_size
+            return float(quantized)
+        return price
+
     def _normalize_quantity_with_filters(
         self,
         symbol: str,
@@ -283,14 +500,19 @@ class BinanceExecutionAdapter:
         except Exception:
             return float(quantity), None
 
-        step_size = max(float(filters.get("step_size", 0.0) or 0.0), 0.0)
+        raw_step = filters.get("step_size", 0.0)
+        step_size = Decimal(str(raw_step if raw_step else 0))
         min_qty = max(float(filters.get("min_qty", 0.0) or 0.0), 0.0)
         min_notional = max(float(filters.get("min_notional", 0.0) or 0.0), 0.0)
 
-        normalized = float(quantity)
-        if step_size > 0.0:
-            steps = math.floor((normalized / step_size) + 1e-12)
-            normalized = max(steps * step_size, 0.0)
+        qty_dec = Decimal(str(quantity))
+        if step_size > 0:
+            quantized = (qty_dec / step_size).quantize(
+                Decimal("1"), rounding=ROUND_DOWN
+            ) * step_size
+            normalized = float(quantized)
+        else:
+            normalized = float(quantity)
 
         if normalized <= 0.0:
             return 0.0, "skipped_by_filter:step_size"

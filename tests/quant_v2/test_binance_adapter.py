@@ -30,8 +30,8 @@ class FakeBinanceClient:
             "executedQty": 0.5,
         }
 
-    def get_positions(self):
-        return [
+    def get_positions(self, symbol=None):
+        all_positions = [
             {
                 "symbol": "BTCUSDT",
                 "positionAmt": "0.25",
@@ -48,9 +48,30 @@ class FakeBinanceClient:
                 "markPrice": "140",
             },
         ]
+        if symbol:
+            return [p for p in all_positions if p["symbol"] == symbol]
+        return all_positions
 
     def get_symbol_filters(self, symbol: str) -> dict[str, float]:
         return dict(self.symbol_filters.get(symbol, {}))
+
+    def get_orderbook(self, symbol: str, limit: int = 5) -> dict:
+        return {"bids": [["50000.0", "1.0"]], "asks": [["50010.0", "1.0"]]}
+
+    def place_limit_order(self, symbol, side, qty, price, post_only=False, **kwargs):
+        self.place_calls.append((symbol, side, qty))
+        return {
+            "orderId": 555,
+            "status": "FILLED",
+            "avgPrice": str(price),
+            "executedQty": qty,
+        }
+
+    def cancel_order(self, symbol, order_id):
+        return {}
+
+    def get_open_orders(self, symbol=None):
+        return []
 
 
 def test_binance_adapter_place_order_and_idempotency() -> None:
@@ -83,7 +104,6 @@ def test_binance_adapter_reduce_only_paths() -> None:
     assert ok.accepted is True
     assert no_pos.accepted is False
     assert no_pos.reason == "reduce_only_no_position"
-    assert client.close_calls == ["BTCUSDT", "ETHUSDT"]
 
 
 def test_binance_adapter_get_positions_mapping() -> None:
