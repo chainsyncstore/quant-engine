@@ -64,6 +64,10 @@ class ExecutionDiagnostics:
     skipped_by_deadband: int = 0
     paused_cycles: int = 0
     blocked_actionable_signals: int = 0
+    routed_signals_total: int = 0
+    routed_buy_signals: int = 0
+    routed_sell_signals: int = 0
+    routed_actionable_signals: int = 0
     live_go_no_go_passed: bool = True
     rollback_required: bool = False
     rollout_failure_streak: int = 0
@@ -554,6 +558,25 @@ class RoutedExecutionService:
             raise ValueError("min_qty must be >= 0")
 
         signal_list = tuple(signals)
+
+        _routed_buy = 0
+        _routed_sell = 0
+        _routed_actionable = 0
+        for _sig in signal_list:
+            _sig_type = str(getattr(_sig, "signal", "")).strip().upper()
+            if _sig_type == "BUY":
+                _routed_buy += 1
+            elif _sig_type == "SELL":
+                _routed_sell += 1
+            if _sig.actionable:
+                _routed_actionable += 1
+        state.diagnostics = replace(
+            state.diagnostics,
+            routed_signals_total=state.diagnostics.routed_signals_total + len(signal_list),
+            routed_buy_signals=state.diagnostics.routed_buy_signals + _routed_buy,
+            routed_sell_signals=state.diagnostics.routed_sell_signals + _routed_sell,
+            routed_actionable_signals=state.diagnostics.routed_actionable_signals + _routed_actionable,
+        )
 
         incoming_prices: dict[str, float] = {}
         for symbol, raw_price in prices.items():
@@ -1670,6 +1693,10 @@ class RoutedExecutionService:
             skipped_by_deadband=skipped_by_deadband,
             paused_cycles=current.paused_cycles,
             blocked_actionable_signals=current.blocked_actionable_signals,
+            routed_signals_total=current.routed_signals_total,
+            routed_buy_signals=current.routed_buy_signals,
+            routed_sell_signals=current.routed_sell_signals,
+            routed_actionable_signals=current.routed_actionable_signals,
             live_go_no_go_passed=current.live_go_no_go_passed,
             rollback_required=current.rollback_required,
             rollout_failure_streak=current.rollout_failure_streak,

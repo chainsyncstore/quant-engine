@@ -1207,3 +1207,69 @@ def test_routed_execution_service_trips_rollback_gate_after_consecutive_live_fai
     assert diagnostics.rollout_failure_streak >= 2
     assert "rollback_required" in diagnostics.rollout_gate_reasons
     assert adapter.place_calls == 0
+
+
+def test_routed_execution_service_routed_signal_funnel_counters() -> None:
+    """Routed signal funnel counters increment on every route_signals call,
+    including cycles blocked by the kill-switch."""
+
+    service = RoutedExecutionService()
+    req = SessionRequest(user_id=414, live=False)
+    assert asyncio.run(service.start_session(req)) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.85,
+    )
+    sell_signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.80,
+    )
+    hold_signal = StrategySignal(
+        symbol="SOLUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="HOLD",
+        confidence=0.50,
+    )
+
+    asyncio.run(
+        service.route_signals(
+            414,
+            signals=(buy_signal, sell_signal, hold_signal),
+            prices={"BTCUSDT": 50000.0, "ETHUSDT": 3000.0, "SOLUSDT": 100.0},
+        )
+    )
+
+    diag = service.get_execution_diagnostics(414)
+    assert diag is not None
+    assert diag.routed_signals_total == 3
+    assert diag.routed_buy_signals == 1
+    assert diag.routed_sell_signals == 1
+    assert diag.routed_actionable_signals == 2
+
+    service.set_monitoring_snapshot(414, MonitoringSnapshot(hard_risk_breach=True))
+
+    blocked = asyncio.run(
+        service.route_signals(
+            414,
+            signals=(sell_signal,),
+            prices={"ETHUSDT": 3100.0},
+            monitoring_snapshot=MonitoringSnapshot(hard_risk_breach=True),
+        )
+    )
+    assert blocked == ()
+
+    diag2 = service.get_execution_diagnostics(414)
+    assert diag2 is not None
+    assert diag2.routed_signals_total == 4
+    assert diag2.routed_buy_signals == 1
+    assert diag2.routed_sell_signals == 2
+    assert diag2.routed_actionable_signals == 3
+    assert diag2.blocked_actionable_signals >= 1

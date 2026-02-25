@@ -1116,20 +1116,26 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
         getattr(diagnostics, "blocked_actionable_signals", 0) or 0
     )
     total_orders = int(getattr(diagnostics, "total_orders", 0) or 0)
+    routed_signals_total = int(getattr(diagnostics, "routed_signals_total", 0) or 0)
+    routed_buy_signals = int(getattr(diagnostics, "routed_buy_signals", 0) or 0)
+    routed_sell_signals = int(getattr(diagnostics, "routed_sell_signals", 0) or 0)
+    routed_actionable_signals = int(getattr(diagnostics, "routed_actionable_signals", 0) or 0)
 
     lines = [
-        "Execution Telemetry:",
-        f"- Orders this session: {total_orders} "
+        "Execution Telemetry (session cumulative):",
+        f"- Routed signals: {routed_signals_total} "
+        f"(BUY={routed_buy_signals}, SELL={routed_sell_signals}, actionable={routed_actionable_signals})",
+        (
+            "- Kill-switch blocks: "
+            f"cycles={paused_cycles}, actionable_blocked={blocked_actionable_signals}"
+        ),
+        f"- Orders attempted: {total_orders} "
         f"(accepted={diagnostics.accepted_orders}, rejected={diagnostics.rejected_orders})",
         (
-            "- Order Activity: "
+            "- Order breakdown: "
             f"entries={entry_orders}, rebalances={rebalance_orders}, exits={exit_orders}"
         ),
         f"- Skipped: filter={skipped_by_filter}, deadband={skipped_by_deadband}",
-        (
-            "- Kill-switch blocks: "
-            f"cycles={paused_cycles}, actionable_signals={blocked_actionable_signals}"
-        ),
         f"- Reject rate: {diagnostics.reject_rate*100:.2f}%",
         f"- Avg adverse slippage: {diagnostics.avg_adverse_slippage_bps:.2f} bps "
         f"across {diagnostics.slippage_sample_count} fills",
@@ -1263,9 +1269,13 @@ def _build_source_signal_diagnostics_text(source_manager, user_id: int) -> str:
     drift_alerts = int(stats.get("drift_alerts", 0) or 0)
     symbols = int(stats.get("symbols", 0) or 0)
 
+    max_log = int(getattr(source_manager, "max_signal_log", 0) or 0)
+    cap_label = f", cap={max_log}" if max_log > 0 else ""
+
     lines = [
-        "Signal Source:",
-        f"- Signals: {total_signals} (BUY={buys}, SELL={sells}, HOLD={holds}, DRIFT_ALERT={drift_alerts})",
+        "Signal Source (rolling window):",
+        f"- Emitted signals: {total_signals}{cap_label} "
+        f"(BUY={buys}, SELL={sells}, HOLD={holds}, DRIFT_ALERT={drift_alerts})",
         f"- Symbols observed: {symbols}",
     ]
 

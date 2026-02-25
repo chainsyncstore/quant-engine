@@ -171,7 +171,7 @@ def test_stats_v2_degraded_includes_source_diagnostics(monkeypatch) -> None:
     assert update.message.replies
     msg = update.message.replies[-1]
     assert "Session Degraded" in msg
-    assert "Signal Source:" in msg
+    assert "Signal Source (rolling window):" in msg
     assert "BTCUSDT BUY @ 0.00 (P=0.000)" in msg
 
 
@@ -598,6 +598,10 @@ def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
                 skipped_by_deadband=2,
                 paused_cycles=3,
                 blocked_actionable_signals=7,
+                routed_signals_total=12,
+                routed_buy_signals=5,
+                routed_sell_signals=4,
+                routed_actionable_signals=9,
                 effective_symbol_cap_frac=0.05,
                 effective_gross_cap_frac=0.15,
                 effective_net_cap_frac=0.10,
@@ -608,8 +612,11 @@ def test_execution_diagnostics_text_includes_activity_and_caps() -> None:
             return KillSwitchEvaluation(pause_trading=False)
 
     text = telebot_main._build_execution_diagnostics_text(_DiagBridge(), 808)
-    assert "Order Activity" in text
-    assert "entries=2, rebalances=2, exits=0" in text
+    assert "Execution Telemetry (session cumulative):" in text
+    assert "Routed signals: 12" in text
+    assert "BUY=5, SELL=4, actionable=9" in text
+    assert "Kill-switch blocks: cycles=3, actionable_blocked=7" in text
+    assert "Orders attempted: 5" in text
+    assert "Order breakdown: entries=2, rebalances=2, exits=0" in text
     assert "Skipped: filter=1, deadband=2" in text
-    assert "Kill-switch blocks: cycles=3, actionable_signals=7" in text
     assert "Effective caps" in text
