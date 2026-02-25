@@ -165,6 +165,10 @@ def _ensure_user_context_schema() -> None:
     """Backfill required UserContext columns for existing SQLite deployments."""
 
     required: tuple[tuple[str, str], ...] = (
+        ("binance_api_key", "VARCHAR"),
+        ("binance_api_secret", "VARCHAR"),
+        ("live_mode", "BOOLEAN DEFAULT 0"),
+        ("is_active", "BOOLEAN DEFAULT 0"),
         ("strategy_profile", "VARCHAR DEFAULT 'core_v2'"),
         ("active_model_version", "VARCHAR"),
         ("active_model_source", "VARCHAR"),
@@ -358,6 +362,7 @@ def _get_v2_signal_manager(*, allow_reload_with_active_sessions: bool = False) -
 
     V2_SIGNAL_MANAGER = V2SignalManager(
         model_dir=resolved_model_dir,
+        registry_root=MODEL_REGISTRY_ROOT,
         symbols=default_universe_symbols(),
         loop_interval_seconds=V2_SIGNAL_LOOP_SECONDS,
     )

@@ -48,6 +48,7 @@ class V2SignalManager:
         self,
         model_dir: Path,
         *,
+        registry_root: Path | str | None = None,
         symbols: tuple[str, ...] | None = None,
         anchor_interval: str = "1h",
         horizon_bars: int = 4,
@@ -62,7 +63,10 @@ class V2SignalManager:
         from quant_v2.models.trainer import load_model, TrainedModel
         
         self.model_dir = Path(model_dir).expanduser()
-        self.registry = ModelRegistry(self.model_dir)
+        self.registry_root = (
+            Path(registry_root).expanduser() if registry_root is not None else self.model_dir
+        )
+        self.registry = ModelRegistry(self.registry_root)
         self.active_model: TrainedModel | None = None
         
         self.symbols = tuple(symbols or default_universe_symbols())
@@ -304,8 +308,8 @@ class V2SignalManager:
             from quant_v2.models.trainer import load_model
             active_pointer = self.registry.get_active_version()
             if active_pointer and (self.active_model is None or getattr(self.active_model, "_version_id", None) != active_pointer.version_id):
-                model_path = Path(active_pointer.artifact_dir) / f"model_{self.horizon_bars}m.pkl"
-                if model_path.exists():
+                model_path = self._resolve_active_model_path(Path(active_pointer.artifact_dir))
+                if model_path is not None:
                     self.active_model = load_model(model_path)
                     setattr(self.active_model, "_version_id", active_pointer.version_id)
                     logger.info("Loaded active ML model version %s for horizon %sm", active_pointer.version_id, self.horizon_bars)
@@ -512,6 +516,17 @@ class V2SignalManager:
         payload["v2_prices"] = {symbol: close_price}
         payload["v2_monitoring_snapshot"] = monitoring_snapshot
         return payload
+
+    def _resolve_active_model_path(self, artifact_dir: Path) -> Path | None:
+        candidates = (
+            artifact_dir / f"model_{self.horizon_bars}m.pkl",
+            artifact_dir / f"model_{self.horizon_bars}m.joblib",
+            artifact_dir / "lgbm_model.joblib",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
 
     @staticmethod
     def _bounded_rate(value: object) -> float:

@@ -22,10 +22,16 @@ services:
       - redis
     volumes:
       - ./models:/app/models
-      - ./quant_bot.db:/app/quant_bot.db
+      - ./state:/state
     environment:
       - REDIS_URL=redis://redis:6379
+      - BOT_DB_PATH=/state/quant_bot.db
       - BOT_MASTER_KEY=${BOT_MASTER_KEY}
+      - BOT_EXECUTION_BACKEND=${BOT_EXECUTION_BACKEND}
+      - BOT_V2_ALLOW_LIVE_EXECUTION=${BOT_V2_ALLOW_LIVE_EXECUTION}
+      - BOT_V2_ENFORCE_GO_NO_GO=${BOT_V2_ENFORCE_GO_NO_GO}
+      - BOT_V2_LIVE_GO_NO_GO=${BOT_V2_LIVE_GO_NO_GO}
+      - BOT_V2_FORCE_ROLLBACK=${BOT_V2_FORCE_ROLLBACK}
 
   telegram_bot:
     build: .
@@ -36,13 +42,20 @@ services:
     depends_on:
       - redis
     volumes:
-      - ./quant_bot.db:/app/quant_bot.db
+      - ./models:/app/models
+      - ./state:/state
       - ./signal_log.json:/app/signal_log.json
     environment:
       - REDIS_URL=redis://redis:6379
+      - BOT_DB_PATH=/state/quant_bot.db
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
       - BOT_MASTER_KEY=${BOT_MASTER_KEY}
+      - BOT_EXECUTION_BACKEND=${BOT_EXECUTION_BACKEND}
+      - BOT_V2_ALLOW_LIVE_EXECUTION=${BOT_V2_ALLOW_LIVE_EXECUTION}
+      - BOT_V2_ENFORCE_GO_NO_GO=${BOT_V2_ENFORCE_GO_NO_GO}
+      - BOT_V2_LIVE_GO_NO_GO=${BOT_V2_LIVE_GO_NO_GO}
+      - BOT_V2_FORCE_ROLLBACK=${BOT_V2_FORCE_ROLLBACK}
 
 volumes:
   redis_data:

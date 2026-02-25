@@ -108,6 +108,24 @@ def test_v2_signal_manager_live_requires_credentials(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_v2_signal_manager_resolves_joblib_active_model_path(tmp_path: Path) -> None:
+    bars = _sample_bars(trend_up=True)
+    artifact_dir = tmp_path / "artifact"
+    artifact_dir.mkdir(parents=True)
+    legacy_joblib = artifact_dir / "model_4m.joblib"
+    legacy_joblib.write_bytes(b"placeholder")
+
+    manager = V2SignalManager(
+        model_dir=tmp_path,
+        symbols=("BTCUSDT",),
+        horizon_bars=4,
+        client_factory=lambda creds, live, symbol, interval: _FakeClient(bars),
+    )
+
+    resolved = manager._resolve_active_model_path(artifact_dir)
+    assert resolved == legacy_joblib
+
+
 def test_v2_signal_manager_dedupes_stale_bar_timestamps(tmp_path: Path) -> None:
     bars = _sample_bars(trend_up=False)
 
