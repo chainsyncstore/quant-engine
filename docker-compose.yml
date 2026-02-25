@@ -2,18 +2,47 @@
 version: '3.8'
 
 services:
-  quant_bot:
+  redis:
+    image: redis:7-alpine
+    container_name: quant_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  execution_engine:
     build: .
     image: quant_bot:latest
-    container_name: quant_bot
+    container_name: quant_execution
     restart: unless-stopped
+    command: python -m quant_v2.execution.main
+    depends_on:
+      - redis
     volumes:
       - ./models:/app/models
       - ./quant_bot.db:/app/quant_bot.db
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - BOT_MASTER_KEY=${BOT_MASTER_KEY}
+
+  telegram_bot:
+    build: .
+    image: quant_bot:latest
+    container_name: quant_telegram
+    restart: unless-stopped
+    command: python -m quant.telebot.main
+    depends_on:
+      - redis
+    volumes:
+      - ./quant_bot.db:/app/quant_bot.db
       - ./signal_log.json:/app/signal_log.json
     environment:
-      # Obtain these from @BotFather and @userinfobot
+      - REDIS_URL=redis://redis:6379
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
-      # Generate a random key for encryption (e.g. from python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
       - BOT_MASTER_KEY=${BOT_MASTER_KEY}
+
+volumes:
+  redis_data:

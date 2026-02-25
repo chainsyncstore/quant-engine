@@ -197,6 +197,76 @@ class BinanceExecutionAdapter:
             }
         return metrics
 
+    def get_orderbook_top(self, symbol: str) -> dict[str, float]:
+        """Retrieve the best bid and best ask for a symbol.
+
+        Returns dict with keys 'bid' and 'ask'. Falls back to mark price
+        from position data if the orderbook endpoint is unavailable.
+        """
+        getter = getattr(self.client, "get_orderbook", None)
+        if callable(getter):
+            try:
+                book = getter(symbol, limit=5)
+                bids = book.get("bids", [])
+                asks = book.get("asks", [])
+                return {
+                    "bid": float(bids[0][0]) if bids else 0.0,
+                    "ask": float(asks[0][0]) if asks else 0.0,
+                }
+            except Exception:
+                pass
+
+        return {"bid": 0.0, "ask": 0.0}
+
+    def compute_mtm_equity(
+        self,
+        positions: dict[str, float],
+        initial_equity_usd: float = 10_000.0,
+    ) -> dict[str, float]:
+        """Compute bid/ask-aware MTM equity.
+
+        Long positions valued at bid (the price you could actually sell at).
+        Short positions valued at ask (the price you could actually cover at).
+        Returns dict with 'bid_mtm_equity_usd', 'ask_mtm_equity_usd', 'mid_mtm_equity_usd'.
+        """
+        total_bid_value = 0.0
+        total_ask_value = 0.0
+        total_mid_value = 0.0
+
+        for symbol, qty in positions.items():
+            if qty == 0.0:
+                continue
+
+            top = self.get_orderbook_top(symbol)
+            bid = top["bid"]
+            ask = top["ask"]
+
+            if bid <= 0.0 or ask <= 0.0:
+                # Fallback to position metrics mark price
+                metrics = self.get_position_metrics()
+                mark = metrics.get(symbol, {}).get("mark_price", 0.0)
+                bid = mark
+                ask = mark
+
+            mid = (bid + ask) / 2.0 if bid > 0 and ask > 0 else max(bid, ask)
+
+            if qty > 0:
+                # Long: value at bid (conservative)
+                total_bid_value += qty * bid
+                total_ask_value += qty * ask
+            else:
+                # Short: value at ask (conservative for covering)
+                total_bid_value += abs(qty) * ask
+                total_ask_value += abs(qty) * bid
+
+            total_mid_value += abs(qty) * mid
+
+        return {
+            "bid_mtm_equity_usd": initial_equity_usd + total_bid_value,
+            "ask_mtm_equity_usd": initial_equity_usd + total_ask_value,
+            "mid_mtm_equity_usd": initial_equity_usd + total_mid_value,
+        }
+
     def _normalize_quantity_with_filters(
         self,
         symbol: str,
