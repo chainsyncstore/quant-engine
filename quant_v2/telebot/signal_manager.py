@@ -402,29 +402,9 @@ class V2SignalManager:
                 )
 
         if self.active_model is not None and not drift_alert:
-            from quant_v2.models.predictor import predict_proba_with_uncertainty
-            from quant_v2.research.cross_sectional_features import add_cross_sectional_features
-            
             try:
-                # Prepare features DataFrame
-                # We need MultiIndex [timestamp, symbol] for cross_sectional_features
-                df_prep = bars.copy()
-                df_prep["symbol"] = symbol
-                df_prep = df_prep.reset_index()
-                # Assuming index was timestamp. rename if necessary
-                if "timestamp" not in df_prep.columns:
-                    df_prep = df_prep.rename(columns={"index": "timestamp", "open_time": "timestamp", "date": "timestamp"})
-                df_prep = df_prep.set_index(["timestamp", "symbol"])
-                
-                # We need to make sure we have basic features expected by the model. 
-                # This is a basic implementation assuming standard feature extraction is present.
-                enriched = add_cross_sectional_features(df_prep)
-                # Keep only the last row for prediction
-                last_row = enriched.iloc[[-1]].reset_index(drop=True)
-                
-                proba_arr, uncertainty_arr = predict_proba_with_uncertainty(self.active_model, last_row)
-                proba_up = float(proba_arr[0])
-                uncertainty = float(uncertainty_arr[0])
+                feature_row = self._prepare_model_features(symbol, bars)
+                proba_up, uncertainty = self._predict_with_uncertainty(feature_row)
                 
                 # Signal logic based on model probability
                 if proba_up >= threshold:
@@ -465,6 +445,60 @@ class V2SignalManager:
             "connectivity_error_rate": 0.0,
             }
         )
+
+    def _predict_with_uncertainty(self, feature_row: pd.DataFrame) -> tuple[float, float]:
+        """Run model inference for either v2 or legacy trained model objects."""
+
+        model = self.active_model
+        if model is None:
+            raise RuntimeError("No active model loaded")
+
+        if hasattr(model, "primary_model"):
+            from quant_v2.models.predictor import predict_proba_with_uncertainty
+
+            proba_arr, uncertainty_arr = predict_proba_with_uncertainty(model, feature_row)
+            return float(proba_arr[0]), float(uncertainty_arr[0])
+
+        if hasattr(model, "raw_model"):
+            from quant.models.predictor import predict_proba as legacy_predict_proba
+
+            proba_arr = legacy_predict_proba(model, feature_row)
+            proba_up = float(proba_arr[0])
+            uncertainty = float(1.0 - abs(2.0 * proba_up - 1.0))
+            return proba_up, uncertainty
+
+        raise TypeError(f"Unsupported model type for inference: {type(model)!r}")
+
+    def _prepare_model_features(self, symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
+        """Build and align one-row model features for inference."""
+
+        from quant.features.pipeline import build_features
+
+        frame = bars.copy()
+        if not isinstance(frame.index, pd.DatetimeIndex):
+            frame.index = pd.to_datetime(frame.index, utc=True, errors="coerce")
+        else:
+            if frame.index.tz is None:
+                frame.index = frame.index.tz_localize("UTC")
+            else:
+                frame.index = frame.index.tz_convert("UTC")
+        frame = frame[~frame.index.isna()].sort_index()
+        frame.index.name = "timestamp"
+
+        featured = build_features(frame)
+        if featured.empty:
+            raise ValueError(f"No feature rows available for symbol={symbol}")
+
+        last_row = featured.iloc[[-1]].copy()
+        feature_names = [str(name) for name in getattr(self.active_model, "feature_names", [])]
+        if not feature_names:
+            return last_row.reset_index(drop=True)
+
+        missing = [name for name in feature_names if name not in last_row.columns]
+        for name in missing:
+            last_row[name] = 0.0
+
+        return last_row[feature_names].reset_index(drop=True)
 
     def _attach_native_v2_fields(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Attach direct v2 routing artifacts to emitted signal payloads."""
@@ -564,9 +598,40 @@ class V2SignalManager:
         if not callable(fetch_historical):
             raise RuntimeError("Client does not expose fetch_historical")
 
-        return fetch_historical(
+        bars = fetch_historical(
             date_from,
             date_to,
             symbol=symbol,
             interval=interval,
         )
+        if bars is None or bars.empty:
+            return pd.DataFrame() if bars is None else bars
+
+        funding = pd.DataFrame(columns=["funding_rate_raw"])
+        fetch_funding_rates = getattr(client, "fetch_funding_rates", None)
+        if callable(fetch_funding_rates):
+            try:
+                funding = fetch_funding_rates(date_from, date_to, symbol=symbol)
+            except Exception as exc:
+                logger.warning("Funding fetch failed for %s: %s", symbol, exc)
+
+        open_interest = pd.DataFrame(columns=["open_interest", "open_interest_value"])
+        fetch_open_interest = getattr(client, "fetch_open_interest", None)
+        if callable(fetch_open_interest):
+            try:
+                open_interest = fetch_open_interest(date_from, date_to, symbol=symbol, period=interval)
+            except TypeError:
+                open_interest = fetch_open_interest(date_from, date_to, symbol=symbol)
+            except Exception as exc:
+                logger.warning("Open-interest fetch failed for %s: %s", symbol, exc)
+
+        from quant.data.binance_client import BinanceClient
+
+        try:
+            merged = BinanceClient.merge_supplementary(ohlcv=bars, funding=funding, oi=open_interest)
+        except Exception as exc:
+            logger.warning("Supplementary merge failed for %s: %s", symbol, exc)
+            return bars
+
+        merged.index.name = "timestamp"
+        return merged

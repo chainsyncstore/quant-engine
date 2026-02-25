@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from quant_v2.execution.adapters import ExecutionResult
@@ -341,3 +341,133 @@ def test_fix4_stop_loss_alert_also_logs_kill_switch_to_wal():
     assert kill_entries, "No kill_switch_triggered entry for stop_loss_triggered"
     assert kill_entries[0].user_id == 666
     assert "stop_loss_triggered" in kill_entries[0].payload.get("reasons", [])
+
+
+def test_fix4_stale_feed_watchdog_auto_flattens_open_exposure():
+    """P0: heartbeat_stale must cancel resting orders and flatten live exposure."""
+    from quant_v2.execution.main import ExecutionEngineServer
+
+    class _StubAdapter:
+        def __init__(self) -> None:
+            self.cancelled: list[str] = []
+
+        def get_positions(self) -> dict[str, float]:
+            return {"BTCUSDT": 0.75}
+
+        def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+            if symbol:
+                return [{"symbol": symbol, "orderId": "resting-1"}]
+            return [{"symbol": "BTCUSDT", "orderId": "resting-1"}]
+
+        def cancel_all_orders(self, symbol: str) -> None:
+            self.cancelled.append(symbol)
+
+    async def _run():
+        wal = InMemoryWAL()
+
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stream_bus = MagicMock()
+        server._event_bus = AsyncMock()
+        server._event_bus.send_event = AsyncMock(return_value=0)
+        server._wal = wal
+        server._shutting_down = False
+        server._session_lock = asyncio.Lock()
+
+        adapter = _StubAdapter()
+        server._service = MagicMock()
+        server._service.get_session_adapter = MagicMock(return_value=adapter)
+        server._service.get_last_prices = MagicMock(return_value={"BTCUSDT": 50_000.0})
+        server._service.set_monitoring_snapshot = MagicMock()
+
+        server._service.sync_positions = AsyncMock(
+            return_value=(
+                ExecutionResult(
+                    accepted=True,
+                    order_id="flatten-1",
+                    idempotency_key="idem-1",
+                    symbol="BTCUSDT",
+                    side="SELL",
+                    requested_qty=0.75,
+                    filled_qty=0.75,
+                    avg_price=50_000.0,
+                    status="filled",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        )
+
+        watchdog = LifecycleWatchdog(
+            check_interval_seconds=60.0,
+            stale_heartbeat_seconds=1.0,
+            on_alert=server._handle_watchdog_alert,
+        )
+        server._watchdog = watchdog
+
+        watchdog.register_session(user_id=777, is_live=True, initial_equity_usd=10_000.0)
+        watchdog._last_tick_time[777] = datetime.now(timezone.utc) - timedelta(seconds=5)
+
+        await watchdog._run_checks()
+
+        entries = await wal.replay("0-0")
+        return server, adapter, entries
+
+    server, adapter, entries = asyncio.run(_run())
+
+    sync_kwargs = server._service.sync_positions.await_args.kwargs
+    assert sync_kwargs["target_positions"] == {}
+    assert "BTCUSDT" in adapter.cancelled
+
+    kill_entries = [e for e in entries if e.event_type == "kill_switch_triggered"]
+    assert kill_entries, "Expected kill_switch_triggered WAL entry for stale-feed breaker"
+    assert "heartbeat_stale" in kill_entries[0].payload.get("reasons", [])
+    assert "stale_feed_circuit_breaker" in kill_entries[0].payload.get("reasons", [])
+
+    flatten_events = [
+        c
+        for c in server._event_bus.send_event.await_args_list
+        if c.kwargs.get("action") == "watchdog_flatten_result"
+    ]
+    assert flatten_events, "Expected watchdog_flatten_result event after stale alert"
+    assert flatten_events[0].kwargs["payload"].get("flattened") is True
+
+
+def test_fix4_route_signals_records_tick_on_market_data_pull():
+    """P0: any successful price pull should refresh watchdog heartbeat freshness."""
+    from quant_v2.execution.main import ExecutionEngineServer
+    from quant_v2.monitoring.kill_switch import MonitoringSnapshot
+
+    async def _run():
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stream_bus = MagicMock()
+        server._event_bus = AsyncMock()
+        server._wal = InMemoryWAL()
+        server._shutting_down = False
+        server._session_lock = asyncio.Lock()
+
+        server._watchdog = MagicMock()
+        server._watchdog.record_tick = MagicMock()
+        server._watchdog.update_mtm_equity = MagicMock()
+
+        server._service = MagicMock()
+        server._service.route_signals = AsyncMock(return_value=())
+        server._service.get_portfolio_snapshot = MagicMock(return_value=None)
+
+        payload = {
+            "user_id": 123,
+            "prices": {"BTCUSDT": 51_234.5},
+            "signals": [],
+            "monitoring_snapshot": {
+                "connectivity_error_rate": 0.2,
+                "execution_anomaly_rate": 0.1,
+                "hard_risk_breach": False,
+            },
+        }
+
+        await server._cmd_route_signals(payload)
+        args = server._service.route_signals.await_args.kwargs
+        return server._watchdog.record_tick.call_count, args["monitoring_snapshot"]
+
+    tick_call_count, snapshot = asyncio.run(_run())
+    assert tick_call_count == 1
+    assert isinstance(snapshot, MonitoringSnapshot)
+    assert snapshot.connectivity_error_rate == 0.2

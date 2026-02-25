@@ -27,6 +27,7 @@ from quant_v2.execution.redis_bus import (
 from quant_v2.execution.service import RoutedExecutionService, SessionRequest
 from quant_v2.execution.state_wal import RedisWAL, WALEntry
 from quant_v2.execution.watchdog import LifecycleWatchdog, WatchdogAlert
+from quant_v2.monitoring.kill_switch import MonitoringSnapshot
 from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ class ExecutionEngineServer:
     Command ingestion uses Redis Streams (at-least-once, survives restarts).
     Event publishing (replies to Telegram) uses Pub/Sub (ephemeral, best-effort).
     """
+
+    DEFAULT_STALE_HEARTBEAT_SECONDS = 120.0
 
     def __init__(
         self,
@@ -56,10 +59,12 @@ class ExecutionEngineServer:
         # FIX-3: WAL connected at boot; replayed before accepting commands.
         self._wal = RedisWAL(redis_url)
 
+        self._stale_heartbeat_seconds = self._resolve_stale_heartbeat_seconds()
+
         self._watchdog = LifecycleWatchdog(
             check_interval_seconds=5.0,
             on_alert=self._handle_watchdog_alert,
-            stale_heartbeat_seconds=7200.0,
+            stale_heartbeat_seconds=self._stale_heartbeat_seconds,
         )
 
         self._service = RoutedExecutionService(
@@ -125,6 +130,182 @@ class ExecutionEngineServer:
         await self._event_bus.disconnect()
         await self._wal.disconnect()
         logger.info("Execution engine server stopped")
+
+    @classmethod
+    def _resolve_stale_heartbeat_seconds(cls) -> float:
+        """Resolve stale-feed threshold from env with safe defaults.
+
+        BOT_V2_STALE_HEARTBEAT_MS takes precedence over
+        BOT_V2_STALE_HEARTBEAT_SECONDS.
+        """
+
+        raw_ms = os.getenv("BOT_V2_STALE_HEARTBEAT_MS", "").strip()
+        if raw_ms:
+            try:
+                parsed_ms = float(raw_ms)
+            except ValueError:
+                parsed_ms = cls.DEFAULT_STALE_HEARTBEAT_SECONDS * 1000.0
+            return max(parsed_ms / 1000.0, 1.0)
+
+        raw_seconds = (
+            os.getenv("BOT_V2_STALE_HEARTBEAT_SECONDS", str(cls.DEFAULT_STALE_HEARTBEAT_SECONDS)).strip()
+            or str(cls.DEFAULT_STALE_HEARTBEAT_SECONDS)
+        )
+        try:
+            parsed_seconds = float(raw_seconds)
+        except ValueError:
+            parsed_seconds = cls.DEFAULT_STALE_HEARTBEAT_SECONDS
+        return max(parsed_seconds, 1.0)
+
+    @staticmethod
+    def _bounded_rate(value: object) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if parsed < 0.0:
+            return 0.0
+        if parsed > 1.0:
+            return 1.0
+        return parsed
+
+    @classmethod
+    def _parse_monitoring_snapshot(cls, payload: dict) -> MonitoringSnapshot | None:
+        raw = payload.get("monitoring_snapshot")
+        if raw is None:
+            return None
+        if isinstance(raw, MonitoringSnapshot):
+            return raw
+        if not isinstance(raw, dict):
+            return None
+
+        return MonitoringSnapshot(
+            feature_drift_alert=bool(raw.get("feature_drift_alert", False)),
+            confidence_collapse_alert=bool(raw.get("confidence_collapse_alert", False)),
+            execution_anomaly_rate=cls._bounded_rate(raw.get("execution_anomaly_rate", 0.0)),
+            connectivity_error_rate=cls._bounded_rate(raw.get("connectivity_error_rate", 0.0)),
+            hard_risk_breach=bool(raw.get("hard_risk_breach", False)),
+        )
+
+    async def _execute_stale_feed_circuit_breaker(
+        self,
+        user_id: int,
+        *,
+        reason: str,
+    ) -> dict:
+        """Cancel resting orders and flatten all exposure for a session."""
+
+        get_adapter = getattr(self._service, "get_session_adapter", None)
+        adapter = get_adapter(user_id) if callable(get_adapter) else None
+        if adapter is None:
+            return {
+                "user_id": user_id,
+                "reason": reason,
+                "flattened": False,
+                "position_symbols": [],
+                "canceled_symbols": [],
+                "error": "no_session_adapter",
+            }
+
+        get_positions = getattr(adapter, "get_positions", None)
+        positions: dict[str, float] = {}
+        if callable(get_positions):
+            try:
+                raw_positions = await asyncio.to_thread(get_positions)
+                if isinstance(raw_positions, dict):
+                    for symbol, qty in raw_positions.items():
+                        clean_symbol = str(symbol).strip().upper()
+                        clean_qty = float(qty)
+                        if clean_symbol and abs(clean_qty) > 1e-12:
+                            positions[clean_symbol] = clean_qty
+            except Exception as exc:
+                logger.error(
+                    "Failed to read positions during circuit breaker for user %s: %s",
+                    user_id,
+                    exc,
+                )
+
+        open_order_symbols: set[str] = set()
+        get_open_orders = getattr(adapter, "get_open_orders", None)
+        if callable(get_open_orders):
+            try:
+                raw_orders = await asyncio.to_thread(get_open_orders, None)
+            except TypeError:
+                raw_orders = await asyncio.to_thread(get_open_orders)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to read open orders during circuit breaker for user %s: %s",
+                    user_id,
+                    exc,
+                )
+                raw_orders = []
+
+            if isinstance(raw_orders, list):
+                for order in raw_orders:
+                    if not isinstance(order, dict):
+                        continue
+                    clean_symbol = str(order.get("symbol", "")).strip().upper()
+                    if clean_symbol:
+                        open_order_symbols.add(clean_symbol)
+
+        symbols_to_cancel = sorted(set(positions) | open_order_symbols)
+        canceled_symbols: list[str] = []
+        cancel_all_orders = getattr(adapter, "cancel_all_orders", None)
+        if callable(cancel_all_orders):
+            for symbol in symbols_to_cancel:
+                try:
+                    await asyncio.to_thread(cancel_all_orders, symbol)
+                    canceled_symbols.append(symbol)
+                except Exception as exc:
+                    logger.warning(
+                        "Circuit breaker failed cancelling open orders for user %s symbol=%s: %s",
+                        user_id,
+                        symbol,
+                        exc,
+                    )
+
+        flatten_error = ""
+        flatten_results = ()
+        sync_positions = getattr(self._service, "sync_positions", None)
+        if positions and callable(sync_positions):
+            get_last_prices = getattr(self._service, "get_last_prices", None)
+            price_hints = get_last_prices(user_id) if callable(get_last_prices) else None
+            normalized_prices = (
+                {
+                    str(symbol).strip().upper(): float(price)
+                    for symbol, price in (price_hints or {}).items()
+                    if str(symbol).strip() and float(price) > 0.0
+                }
+                if isinstance(price_hints, dict)
+                else None
+            )
+            try:
+                flatten_results = await sync_positions(
+                    user_id,
+                    target_positions={},
+                    prices=normalized_prices or None,
+                )
+            except Exception as exc:
+                flatten_error = f"sync_positions_failed:{exc.__class__.__name__}"
+                logger.error(
+                    "Circuit breaker flatten failed for user %s: %s",
+                    user_id,
+                    exc,
+                )
+
+        accepted = sum(1 for result in flatten_results if getattr(result, "accepted", False))
+        rejected = sum(1 for result in flatten_results if not getattr(result, "accepted", False))
+
+        return {
+            "user_id": user_id,
+            "reason": reason,
+            "flattened": bool(not positions or accepted > 0),
+            "position_symbols": sorted(positions),
+            "canceled_symbols": canceled_symbols,
+            "flatten_orders_accepted": accepted,
+            "flatten_orders_rejected": rejected,
+            "error": flatten_error,
+        }
 
     # ------------------------------------------------------------------
     # FIX-3: WAL Replay  --  reconstruct session state on boot
@@ -365,7 +546,20 @@ class ExecutionEngineServer:
 
         user_id = int(payload["user_id"])
         prices = payload.get("prices", {})
+        normalized_prices: dict[str, float] = {}
+        if isinstance(prices, dict):
+            for symbol, raw_price in prices.items():
+                clean_symbol = str(symbol).strip().upper()
+                if not clean_symbol:
+                    continue
+                try:
+                    clean_price = float(raw_price)
+                except (TypeError, ValueError):
+                    continue
+                if clean_price > 0.0:
+                    normalized_prices[clean_symbol] = clean_price
         raw_signals = payload.get("signals", [])
+        monitoring_snapshot = self._parse_monitoring_snapshot(payload)
 
         signals = tuple(
             StrategySignal(
@@ -379,8 +573,15 @@ class ExecutionEngineServer:
             for s in raw_signals
         )
 
+        # Fresh non-zero prices imply a successful market-data pull.
+        if normalized_prices:
+            self._watchdog.record_tick(user_id)
+
         results = await self._service.route_signals(
-            user_id, signals=signals, prices=prices
+            user_id,
+            signals=signals,
+            prices=normalized_prices,
+            monitoring_snapshot=monitoring_snapshot,
         )
 
         # Log position updates to WAL
@@ -461,13 +662,11 @@ class ExecutionEngineServer:
         """Handle alerts from the lifecycle watchdog.
 
         FIX-4: heartbeat_stale (market data feed dropped) now engages the
-        kill-switch to pause new order entries, preventing the engine from
-        trading on stale prices during a data outage.
+        kill-switch and emergency flatten path to prevent trading on stale
+        prices during a data outage.
 
-        Auto-flatten is performed for hard lifecycle events (stop_loss_triggered,
-        horizon_expired).  For heartbeat_stale we pause-only — we do NOT
-        force-close positions, as the outage could be transient.  The kill-switch
-        will lift automatically on the next successful tick.
+        P0: stale-feed alerts now trigger a hard circuit breaker that cancels
+        resting orders and flattens all open exposure.
         """
         async with self._session_lock:
             logger.warning(
@@ -477,38 +676,82 @@ class ExecutionEngineServer:
                 alert.reason,
             )
 
-            await self._event_bus.send_event(
-                action="watchdog_alert",
-                payload={
-                    "user_id": alert.user_id,
-                    "alert_type": alert.alert_type,
-                    "reason": alert.reason,
-                    "triggered_at": alert.triggered_at,
-                },
-            )
+            try:
+                await self._event_bus.send_event(
+                    action="watchdog_alert",
+                    payload={
+                        "user_id": alert.user_id,
+                        "alert_type": alert.alert_type,
+                        "reason": alert.reason,
+                        "triggered_at": alert.triggered_at,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to publish watchdog_alert event for user %s: %s",
+                    alert.user_id,
+                    exc,
+                )
 
-            # Auto-flatten: position-closing lifecycle events
+            reasons: tuple[str, ...] = (alert.alert_type,)
+            monitoring_snapshot: MonitoringSnapshot | None = None
+
             if alert.alert_type in ("stop_loss_triggered", "horizon_expired"):
                 logger.info(
                     "Auto-flattening positions for user=%d due to %s",
                     alert.user_id,
                     alert.alert_type,
                 )
-                await self._wal.log_kill_switch(
-                    alert.user_id, triggered=True, reasons=(alert.alert_type,)
+                monitoring_snapshot = MonitoringSnapshot(
+                    hard_risk_breach=True,
                 )
-
-            # FIX-4: Pause trading (halt new entries, exits remain active) when data goes dark.
             elif alert.alert_type == "heartbeat_stale":
                 logger.warning(
-                    "Market data feed stale for user=%d — pausing new order entries. "
-                    "Exits remain active. Kill-switch will lift on next tick.",
+                    "Market data feed stale for user=%d — triggering stale-feed circuit breaker.",
                     alert.user_id,
                 )
-                await self._wal.log_kill_switch(
+                reasons = ("heartbeat_stale", "stale_feed_circuit_breaker")
+                monitoring_snapshot = MonitoringSnapshot(
+                    connectivity_error_rate=1.0,
+                )
+
+            await self._wal.log_kill_switch(
+                alert.user_id,
+                triggered=True,
+                reasons=reasons,
+            )
+
+            if monitoring_snapshot is not None:
+                set_snapshot = getattr(self._service, "set_monitoring_snapshot", None)
+                if callable(set_snapshot):
+                    try:
+                        set_snapshot(alert.user_id, monitoring_snapshot)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed applying kill-switch monitoring snapshot for user %s: %s",
+                            alert.user_id,
+                            exc,
+                        )
+
+            flatten_result = await self._execute_stale_feed_circuit_breaker(
+                alert.user_id,
+                reason=alert.alert_type,
+            )
+            try:
+                await self._event_bus.send_event(
+                    action="watchdog_flatten_result",
+                    payload={
+                        "user_id": alert.user_id,
+                        "alert_type": alert.alert_type,
+                        "reasons": list(reasons),
+                        **flatten_result,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to publish watchdog_flatten_result for user %s: %s",
                     alert.user_id,
-                    triggered=True,
-                    reasons=("heartbeat_stale",),
+                    exc,
                 )
 
 
