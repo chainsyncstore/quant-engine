@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import logging
 import os
 from datetime import datetime, timezone
@@ -991,6 +992,22 @@ def _build_signal_notifier(bot, user_id: int):
                         monitoring_err,
                     )
 
+                symbol = str(result.get("symbol") or DEFAULT_V2_SYMBOL).strip().upper()
+                try:
+                    close_price = float(result.get("close_price", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    close_price = 0.0
+                if symbol and close_price > 0.0:
+                    try:
+                        bridge.ingest_market_prices(user_id, {symbol: close_price})
+                    except Exception as ingest_err:
+                        logger.debug(
+                            "Price-cache refresh failed for user %s symbol=%s: %s",
+                            user_id,
+                            symbol,
+                            ingest_err,
+                        )
+
                 if signal_type == "DRIFT_ALERT":
                     evaluation = bridge.get_kill_switch_evaluation(user_id)
                     reasons = ", ".join(evaluation.reasons) if evaluation and evaluation.reasons else "feature_drift"
@@ -1158,6 +1175,55 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
         lines.extend(["", session_health])
 
     return "\n".join(lines)
+
+
+async def _refresh_v2_stats_market_snapshot(
+    user_id: int,
+    *,
+    bridge: V2ExecutionBridge | None,
+    source_manager,
+) -> None:
+    """Refresh v2 snapshot prices on-demand for /stats using live market reads."""
+
+    if bridge is None or source_manager is None:
+        return
+    if not bridge.is_running(user_id):
+        return
+
+    fetcher = getattr(source_manager, "get_realtime_prices", None)
+    if not callable(fetcher):
+        return
+
+    try:
+        refreshed_prices = fetcher(user_id)
+        if inspect.isawaitable(refreshed_prices):
+            refreshed_prices = await refreshed_prices
+    except Exception as exc:
+        logger.warning("/stats market refresh failed for user %s: %s", user_id, exc)
+        return
+
+    if not isinstance(refreshed_prices, dict):
+        return
+
+    normalized_prices: dict[str, float] = {}
+    for symbol, raw_price in refreshed_prices.items():
+        clean_symbol = str(symbol).strip().upper()
+        if not clean_symbol:
+            continue
+        try:
+            clean_price = float(raw_price)
+        except (TypeError, ValueError):
+            continue
+        if clean_price > 0.0:
+            normalized_prices[clean_symbol] = clean_price
+
+    if not normalized_prices:
+        return
+
+    try:
+        bridge.ingest_market_prices(user_id, normalized_prices)
+    except Exception as exc:
+        logger.warning("/stats snapshot ingestion failed for user %s: %s", user_id, exc)
 
 
 def _build_kill_switch_text(bridge: V2ExecutionBridge, user_id: int) -> str:
@@ -2814,6 +2880,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mode_label = "PAPER SHADOW"
         elif bridge_mode == "live":
             mode_label = "LIVE"
+
+        await _refresh_v2_stats_market_snapshot(
+            user_id,
+            bridge=bridge,
+            source_manager=source_manager,
+        )
         stats_text = bridge.build_stats_text(user_id, mode_label=mode_label)
         if not stats_text:
             await update.message.reply_text("⚠️ Stats unavailable for this session." + FOOTER)

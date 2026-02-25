@@ -238,6 +238,14 @@ class V2ExecutionBridge:
 
         return self.service.get_execution_diagnostics(user_id)
 
+    def ingest_market_prices(self, user_id: int, prices: dict[str, float]) -> bool:
+        """Merge externally-fetched prices into runtime snapshot state when supported."""
+
+        ingester = getattr(self.service, "ingest_market_prices", None)
+        if not callable(ingester):
+            return False
+        return bool(ingester(user_id, prices))
+
     def clear_execution_diagnostics(self, user_id: int) -> bool:
         """Reset execution diagnostics counters when supported by the bound service."""
 

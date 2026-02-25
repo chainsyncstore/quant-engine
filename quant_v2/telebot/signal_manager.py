@@ -249,6 +249,119 @@ class V2SignalManager:
         recent = session.signal_log[-int(limit) :]
         return tuple(dict(item) for item in recent)
 
+    async def get_realtime_prices(
+        self,
+        user_id: int,
+        *,
+        symbols: tuple[str, ...] | None = None,
+    ) -> dict[str, float]:
+        """Fetch latest per-symbol market prices on demand for diagnostics paths."""
+
+        if not self.is_running(user_id):
+            return {}
+        session = self.sessions.get(user_id)
+        if session is None:
+            return {}
+
+        target_symbols = tuple(
+            dict.fromkeys(
+                str(symbol).strip().upper()
+                for symbol in (symbols or self.symbols)
+                if str(symbol).strip()
+            )
+        )
+        if not target_symbols:
+            return {}
+
+        loop = asyncio.get_running_loop()
+
+        async def _fetch_symbol(symbol: str) -> tuple[str, float]:
+            fetch_call = partial(
+                self._fetch_realtime_symbol_price,
+                session.client,
+                symbol,
+                self.anchor_interval,
+            )
+            try:
+                price = await loop.run_in_executor(None, fetch_call)
+            except Exception as exc:
+                logger.warning(
+                    "Realtime price refresh failed for user %s symbol=%s: %s",
+                    user_id,
+                    symbol,
+                    exc,
+                )
+                return symbol, 0.0
+            return symbol, float(price)
+
+        price_pairs = await asyncio.gather(*(_fetch_symbol(symbol) for symbol in target_symbols))
+        return {
+            symbol: price
+            for symbol, price in price_pairs
+            if float(price) > 0.0
+        }
+
+    @staticmethod
+    def _first_orderbook_price(levels: object) -> float:
+        if not isinstance(levels, list) or not levels:
+            return 0.0
+
+        first_level = levels[0]
+        raw_price: object
+        if isinstance(first_level, (list, tuple)) and first_level:
+            raw_price = first_level[0]
+        elif isinstance(first_level, dict):
+            raw_price = first_level.get("price", 0.0)
+        else:
+            raw_price = 0.0
+
+        try:
+            return float(raw_price)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @classmethod
+    def _fetch_realtime_symbol_price(
+        cls,
+        client: object,
+        symbol: str,
+        interval: str,
+    ) -> float:
+        """Fetch latest symbol mark proxy from orderbook midpoint, fallback to klines close."""
+
+        get_orderbook = getattr(client, "get_orderbook", None)
+        if callable(get_orderbook):
+            try:
+                book = get_orderbook(symbol, limit=5)
+                if isinstance(book, dict):
+                    bid = cls._first_orderbook_price(book.get("bids", []))
+                    ask = cls._first_orderbook_price(book.get("asks", []))
+                    if bid > 0.0 and ask > 0.0:
+                        return float((bid + ask) / 2.0)
+                    if bid > 0.0:
+                        return float(bid)
+                    if ask > 0.0:
+                        return float(ask)
+            except Exception as exc:
+                logger.debug("Orderbook refresh failed for %s: %s", symbol, exc)
+
+        fetch_historical = getattr(client, "fetch_historical", None)
+        if callable(fetch_historical):
+            date_to = datetime.now(timezone.utc)
+            date_from = date_to - timedelta(hours=4)
+            bars = fetch_historical(
+                date_from,
+                date_to,
+                symbol=symbol,
+                interval=interval,
+            )
+            if isinstance(bars, pd.DataFrame) and not bars.empty and "close" in bars.columns:
+                close_series = pd.to_numeric(bars["close"], errors="coerce").dropna()
+                if not close_series.empty:
+                    return float(close_series.iloc[-1])
+
+        return 0.0
+
     async def _loop(self, session: _SignalSession) -> None:
         consecutive_errors = 0
 

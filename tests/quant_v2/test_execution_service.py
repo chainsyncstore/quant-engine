@@ -275,6 +275,70 @@ def test_routed_execution_service_kill_switch_blocks_orders_and_reports_reasons(
     assert "feature_drift" in evaluation.reasons
 
 
+def test_routed_execution_service_kill_switch_block_still_updates_price_cache() -> None:
+    service = RoutedExecutionService()
+    req = SessionRequest(user_id=4051, live=False)
+    assert asyncio.run(service.start_session(req)) is True
+
+    open_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+    opened = asyncio.run(
+        service.route_signals(
+            4051,
+            signals=(open_signal,),
+            prices={"BTCUSDT": 100.0},
+        )
+    )
+    assert len(opened) == 1
+
+    service.set_monitoring_snapshot(
+        4051,
+        MonitoringSnapshot(hard_risk_breach=True),
+    )
+
+    blocked = asyncio.run(
+        service.route_signals(
+            4051,
+            signals=(open_signal,),
+            prices={"BTCUSDT": 125.0},
+            monitoring_snapshot=MonitoringSnapshot(hard_risk_breach=True),
+        )
+    )
+    assert blocked == ()
+
+    last_prices = service.get_last_prices(4051)
+    assert last_prices.get("BTCUSDT") == pytest.approx(125.0)
+
+
+def test_routed_execution_service_ingest_market_prices_refreshes_snapshot() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4052, live=False))) is True
+
+    restored = asyncio.run(
+        service.sync_positions(
+            4052,
+            target_positions={"BTCUSDT": 1.0},
+            prices={"BTCUSDT": 100.0},
+        )
+    )
+    assert len(restored) == 1
+
+    before = service.get_portfolio_snapshot(4052)
+    assert before is not None
+    assert before.symbol_notional_usd.get("BTCUSDT") == pytest.approx(100.0)
+
+    assert service.ingest_market_prices(4052, {"BTCUSDT": 120.0}) is True
+
+    after = service.get_portfolio_snapshot(4052)
+    assert after is not None
+    assert after.symbol_notional_usd.get("BTCUSDT") == pytest.approx(120.0)
+
+
 def test_routed_execution_service_kill_switch_clears_after_monitoring_recovers() -> None:
     service = RoutedExecutionService()
     req = SessionRequest(user_id=406, live=False)

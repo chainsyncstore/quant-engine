@@ -175,6 +175,44 @@ def test_stats_v2_degraded_includes_source_diagnostics(monkeypatch) -> None:
     assert "BTCUSDT BUY @ 0.00 (P=0.000)" in msg
 
 
+def test_refresh_v2_stats_market_snapshot_ingests_normalized_prices() -> None:
+    class _Bridge:
+        def __init__(self) -> None:
+            self.ingested: list[dict[str, float]] = []
+
+        def is_running(self, user_id: int) -> bool:
+            _ = user_id
+            return True
+
+        def ingest_market_prices(self, user_id: int, prices: dict[str, float]) -> bool:
+            _ = user_id
+            self.ingested.append(prices)
+            return True
+
+    class _Source:
+        async def get_realtime_prices(self, user_id: int) -> dict[str, object]:
+            _ = user_id
+            return {
+                "btcusdt": "101.5",
+                "ETHUSDT": 0.0,
+                "": 99.0,
+                "XRPUSDT": "bad",
+            }
+
+    bridge = _Bridge()
+    source = _Source()
+
+    asyncio.run(
+        telebot_main._refresh_v2_stats_market_snapshot(
+            999,
+            bridge=bridge,
+            source_manager=source,
+        )
+    )
+
+    assert bridge.ingested == [{"BTCUSDT": 101.5}]
+
+
 def test_start_demo_delegates_to_start_engine_with_demo_mode(monkeypatch) -> None:
     update = _FakeUpdate(804)
     context = _FakeContext()

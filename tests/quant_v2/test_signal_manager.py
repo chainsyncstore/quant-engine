@@ -21,6 +21,16 @@ class _FakeClient:
         return self._bars
 
 
+class _OrderbookClient(_FakeClient):
+    def __init__(self, bars: pd.DataFrame, books: dict[str, dict]) -> None:
+        super().__init__(bars)
+        self._books = books
+
+    def get_orderbook(self, symbol: str, limit: int = 5) -> dict:
+        _ = limit
+        return self._books.get(symbol, {"bids": [], "asks": []})
+
+
 def _sample_bars(*, trend_up: bool = True) -> pd.DataFrame:
     end = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     index = pd.date_range(end=end, periods=120, freq="h", tz="UTC")
@@ -106,6 +116,38 @@ def test_v2_signal_manager_live_requires_credentials(tmp_path: Path) -> None:
             )
 
     asyncio.run(scenario())
+
+
+def test_v2_signal_manager_get_realtime_prices_prefers_orderbook_midpoint(tmp_path: Path) -> None:
+    bars = _sample_bars(trend_up=True)
+    books = {
+        "BTCUSDT": {
+            "bids": [["100.0", "3"]],
+            "asks": [["102.0", "2"]],
+        },
+    }
+
+    manager = V2SignalManager(
+        model_dir=tmp_path,
+        symbols=("BTCUSDT", "ETHUSDT"),
+        loop_interval_seconds=3600,
+        client_factory=lambda creds, live, symbol, interval: _OrderbookClient(bars, books),
+    )
+
+    async def scenario() -> dict[str, float]:
+        assert await manager.start_session(
+            user_id=16,
+            creds={"live": False},
+            on_signal=lambda payload: None,
+            execute_orders=False,
+        )
+        prices = await manager.get_realtime_prices(16)
+        await manager.stop_session(16)
+        return prices
+
+    refreshed = asyncio.run(scenario())
+    assert refreshed.get("BTCUSDT") == pytest.approx(101.0)
+    assert refreshed.get("ETHUSDT", 0.0) > 0.0
 
 
 def test_v2_signal_manager_resolves_joblib_active_model_path(tmp_path: Path) -> None:

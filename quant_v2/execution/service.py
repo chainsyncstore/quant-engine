@@ -127,6 +127,9 @@ class ExecutionService(Protocol):
     def get_kill_switch_evaluation(self, user_id: int) -> KillSwitchEvaluation | None:
         """Return latest kill-switch evaluation for a session."""
 
+    def ingest_market_prices(self, user_id: int, prices: dict[str, float]) -> bool:
+        """Merge externally-fetched market prices into runtime snapshot state."""
+
     async def route_signals(
         self,
         user_id: int,
@@ -253,6 +256,33 @@ class InMemoryExecutionService:
 
     def get_portfolio_snapshot(self, user_id: int) -> PortfolioSnapshot | None:
         return self._snapshots.get(user_id)
+
+    def ingest_market_prices(self, user_id: int, prices: dict[str, float]) -> bool:
+        if user_id not in self._sessions:
+            return False
+
+        normalized: dict[str, float] = {}
+        for symbol, raw_price in prices.items():
+            clean_symbol = str(symbol).strip().upper()
+            if not clean_symbol:
+                continue
+            try:
+                clean_price = float(raw_price)
+            except (TypeError, ValueError):
+                continue
+            if clean_price > 0.0:
+                normalized[clean_symbol] = clean_price
+
+        if not normalized:
+            return False
+
+        snapshot = self._snapshots.get(user_id)
+        if snapshot is not None:
+            self._snapshots[user_id] = replace(
+                snapshot,
+                timestamp=datetime.now(timezone.utc),
+            )
+        return True
 
     async def route_signals(
         self,
@@ -450,6 +480,60 @@ class RoutedExecutionService:
 
         return state.snapshot
 
+    def ingest_market_prices(self, user_id: int, prices: dict[str, float]) -> bool:
+        """Merge externally-fetched prices and refresh the in-memory snapshot."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            return False
+
+        normalized: dict[str, float] = {}
+        for symbol, raw_price in prices.items():
+            clean_symbol = str(symbol).strip().upper()
+            if not clean_symbol:
+                continue
+            try:
+                clean_price = float(raw_price)
+            except (TypeError, ValueError):
+                continue
+            if clean_price > 0.0:
+                normalized[clean_symbol] = clean_price
+
+        if not normalized:
+            return False
+
+        state.last_prices = {
+            **state.last_prices,
+            **normalized,
+        }
+
+        try:
+            current_positions = self._safe_get_positions(state.adapter)
+            live_metrics: dict[str, dict[str, float]] | None = None
+            if current_positions and state.mode == "live":
+                live_metrics = self._safe_get_position_metrics(state.adapter)
+                self._refresh_last_prices_from_adapter(
+                    state,
+                    open_positions=current_positions,
+                    live_metrics=live_metrics,
+                )
+
+            self._refresh_snapshot_state(
+                state,
+                risk_policy=state.effective_risk_policy,
+                prices=state.last_prices,
+                open_positions=current_positions,
+                live_metrics=live_metrics,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed ingesting external market prices for user %s: %s",
+                user_id,
+                exc,
+            )
+
+        return True
+
     async def route_signals(
         self,
         user_id: int,
@@ -470,6 +554,23 @@ class RoutedExecutionService:
             raise ValueError("min_qty must be >= 0")
 
         signal_list = tuple(signals)
+
+        incoming_prices: dict[str, float] = {}
+        for symbol, raw_price in prices.items():
+            clean_symbol = str(symbol).strip().upper()
+            if not clean_symbol:
+                continue
+            try:
+                clean_price = float(raw_price)
+            except (TypeError, ValueError):
+                continue
+            if clean_price > 0.0:
+                incoming_prices[clean_symbol] = clean_price
+        if incoming_prices:
+            state.last_prices = {
+                **state.last_prices,
+                **incoming_prices,
+            }
 
         if state.mode == "live":
             self._refresh_runtime_rollout_controls()
@@ -546,17 +647,6 @@ class RoutedExecutionService:
 
         if not signal_list:
             return ()
-
-        incoming_prices = {
-            symbol: float(price)
-            for symbol, price in prices.items()
-            if float(price) > 0.0
-        }
-        if incoming_prices:
-            state.last_prices = {
-                **state.last_prices,
-                **incoming_prices,
-            }
         planning_prices = state.last_prices
 
         for signal in signal_list:
