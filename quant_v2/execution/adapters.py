@@ -35,10 +35,18 @@ class ExecutionAdapter(Protocol):
         *,
         idempotency_key: str,
         mark_price: float | None = None,
+        limit_price: float | None = None,
+        post_only: bool = False,
     ) -> ExecutionResult:
         ...
 
     def get_positions(self) -> dict[str, float]:
+        ...
+
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        ...
+
+    def cancel_all_orders(self, symbol: str) -> None:
         ...
 
 
@@ -48,6 +56,7 @@ class InMemoryPaperAdapter:
     def __init__(self) -> None:
         self._orders_by_key: dict[str, ExecutionResult] = {}
         self._positions: dict[str, float] = {}
+        self._open_orders: list[dict] = []
         self._seq = 0
 
     def place_order(
@@ -56,6 +65,8 @@ class InMemoryPaperAdapter:
         *,
         idempotency_key: str,
         mark_price: float | None = None,
+        limit_price: float | None = None,
+        post_only: bool = False,
     ) -> ExecutionResult:
         existing = self._orders_by_key.get(idempotency_key)
         if existing is not None:
@@ -102,3 +113,9 @@ class InMemoryPaperAdapter:
 
     def get_positions(self) -> dict[str, float]:
         return dict(self._positions)
+
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        return [o for o in self._open_orders if symbol is None or o.get("symbol") == symbol]
+
+    def cancel_all_orders(self, symbol: str) -> None:
+        self._open_orders = [o for o in self._open_orders if o.get("symbol") != symbol]

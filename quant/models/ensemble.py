@@ -100,28 +100,62 @@ class MultiHorizonEnsemble:
                 votes[h] = False
 
         # 3. Consensus Logic
-        # Require partial consensus (e.g. 2 out of 3, or unanimous if only 2 models)
+        # For multi-directional, we count long and short votes separately
+        # A long vote is when prob_long >= thresh.
+        # If the models output P(UP), then prob_short = 1 - proba.
+        # Short vote: if (1 - prob) >= thresh.
+        long_votes = {}
+        short_votes = {}
+        long_vote_count = 0
+        short_vote_count = 0
+        
+        for h, prob in probas.items():
+            thresholds = self.config["regime_thresholds"].get(str(h), {})
+            thresh = float(thresholds.get(str(regime), 0.5))
+            
+            if prob >= thresh:
+                long_votes[h] = True
+                long_vote_count += 1
+            else:
+                long_votes[h] = False
+                
+            if (1.0 - prob) >= thresh:
+                short_votes[h] = True
+                short_vote_count += 1
+            else:
+                short_votes[h] = False
+
         n_models = len(self.models)
         required_votes = 2 if n_models >= 3 else n_models
         
         signal_val = 0
-        if vote_count >= required_votes:
-            # Currently only Long strategies implemented (label 1 = UP)
+        active_votes = {}
+        if long_vote_count >= required_votes:
             signal_val = 1 
-            # If we had Short models, we'd need separate logic
+            active_votes = long_votes
+        elif short_vote_count >= required_votes:
+            signal_val = -1
+            active_votes = short_votes
 
         # Confidence is only meaningful for actionable consensus signals.
-        if signal_val == 1 and vote_count > 0:
-            voting_probas = [p for h, p in probas.items() if votes[h]]
+        if signal_val != 0:
+            if signal_val == 1:
+                voting_probas = [p for h, p in probas.items() if active_votes.get(h)]
+            else:
+                voting_probas = [(1.0 - p) for h, p in probas.items() if active_votes.get(h)]
             confidence = sum(voting_probas) / len(voting_probas)
         else:
             confidence = 0.0
+
+        # We return the active directional votes as `horizon_votes` for legacy compat
+        # The user of this signal will see which horizons agreed on the winning direction
+        final_votes = active_votes if signal_val != 0 else long_votes
 
         return EnsembleSignal(
             timestamp=row.name if hasattr(row, "name") else pd.Timestamp.now(),
             signal=signal_val,
             confidence=confidence,
-            horizon_votes=votes,
+            horizon_votes=final_votes,
             horizon_probas=probas,
             regime=regime,
         )

@@ -23,7 +23,7 @@ def test_chaos_adapter_api_failure_is_captured_as_rejected_result() -> None:
         def get_positions(self):
             return {}
 
-        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None):
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
             raise RuntimeError("exchange_unreachable")
 
     service = RoutedExecutionService(paper_adapter_factory=FailingAdapter)
@@ -65,7 +65,7 @@ def test_chaos_delayed_fill_status_does_not_crash_routing() -> None:
         def get_positions(self):
             return dict(self._positions)
 
-        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None):
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
             return ExecutionResult(
                 accepted=True,
                 order_id="pending-1",
@@ -106,7 +106,7 @@ def test_chaos_stale_price_data_skips_order_placement() -> None:
         def get_positions(self):
             return {}
 
-        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None):
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
             self.calls += 1
             return ExecutionResult(
                 accepted=True,
@@ -147,7 +147,7 @@ def test_chaos_restart_recovery_after_failure() -> None:
         def get_positions(self):
             return dict(self._positions)
 
-        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None):
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
             if state["fail_mode"]:
                 raise RuntimeError("temporary_outage")
             self._positions[plan.symbol] = self._positions.get(plan.symbol, 0.0) + plan.quantity

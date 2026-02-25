@@ -66,10 +66,6 @@ def train(
     n_cal = int(n_total * cal_frac)
     n_fit = n_total - n_cal
 
-    # Create predefined split: -1 = training, 0 = calibration
-    split_index = np.array([-1] * n_fit + [0] * n_cal)
-    ps = PredefinedSplit(test_fold=split_index)
-
     # Build LightGBM params (defaults + overrides)
     lgbm_params = {
         "n_estimators": cfg.lgbm_n_estimators,
@@ -122,22 +118,21 @@ def train(
     fi = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True))
 
     # --- Step 3: Calibration ---
-    # Train final calibrated model on selected features
-    X_final = X_train[selected_features]
-    
-    # Verify split index matches X_final length
-    # (It should, as X_final has same rows as X_train)
+    # Train final calibrated model on selected features using the holdout calibration set
+    X_cal = X_train[selected_features][n_fit:]
+    y_cal = y_train[n_fit:]
     
     # Wrap with sigmoid (Platt) calibration — smooth monotonic mapping
     # that preserves prediction variance (isotonic creates step functions
-    # that can collapse all live predictions to a single value)
+    # that can collapse all live predictions to a single value).
+    # Uses cv="prefit" because lgbm_raw is already fit on the training portion.
     calibrated = CalibratedClassifierCV(
         estimator=lgbm_raw,  # Use the (potentially pruned) raw model as base
         method="sigmoid",
-        cv=ps,
+        cv="prefit",
     )
     
-    calibrated.fit(X_final.values, y_train.values)
+    calibrated.fit(X_cal.values, y_cal.values)
 
     logger.info(
         "Trained model_%dm: %d train, %d cal samples. Features: %d/%d. Top: %s (%.2f)",

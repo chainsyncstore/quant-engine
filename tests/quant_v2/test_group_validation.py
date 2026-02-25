@@ -109,8 +109,12 @@ def test_run_group_purged_validation(monkeypatch) -> None:
     def fake_predict(model, X):
         return np.where(X["f1"].to_numpy() > 0.5, 0.8, 0.2)
 
+    def fake_get_feature_columns(df):
+        return ["f1"]
+
     monkeypatch.setattr(gv.model_trainer, "train", fake_train)
     monkeypatch.setattr(gv, "predict_proba", fake_predict)
+    monkeypatch.setattr(gv, "get_feature_columns", fake_get_feature_columns)
 
     result = gv.run_group_purged_validation(
         df,
@@ -143,16 +147,26 @@ def test_run_group_purged_validation_uses_injected_train_predict() -> None:
         calls["predict"] += 1
         return np.where(X["f1"].to_numpy() > 0.5, 0.8, 0.2)
 
-    result = gv.run_group_purged_validation(
-        df,
-        horizon=1,
-        n_time_splits=4,
-        symbol_cluster_size=2,
-        embargo_bars=1,
-        min_train_rows=20,
-        train_fn=injected_train,
-        predict_fn=injected_predict,
-    )
+    def fake_get_feature_columns(df):
+        return ["f1"]
+
+    import quant_v2.research.group_validation as gv_module
+    old_get_features = getattr(gv_module, "get_feature_columns")
+    setattr(gv_module, "get_feature_columns", fake_get_feature_columns)
+
+    try:
+        result = gv.run_group_purged_validation(
+            df,
+            horizon=1,
+            n_time_splits=4,
+            symbol_cluster_size=2,
+            embargo_bars=1,
+            min_train_rows=20,
+            train_fn=injected_train,
+            predict_fn=injected_predict,
+        )
+    finally:
+        setattr(gv_module, "get_feature_columns", old_get_features)
 
     assert len(result.folds) > 0
     assert calls["train"] > 0
@@ -172,8 +186,12 @@ def test_run_group_purged_validation_with_precomputed_splits(monkeypatch) -> Non
     def fake_predict(model, X):
         return np.where(X["f1"].to_numpy() > 0.5, 0.8, 0.2)
 
+    def fake_get_feature_columns(df):
+        return ["f1"]
+
     monkeypatch.setattr(gv.model_trainer, "train", fake_train)
     monkeypatch.setattr(gv, "predict_proba", fake_predict)
+    monkeypatch.setattr(gv, "get_feature_columns", fake_get_feature_columns)
 
     splits = gv.iter_purged_group_splits(
         df,

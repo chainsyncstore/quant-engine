@@ -282,41 +282,43 @@ class BinanceClient:
         # Binance OI endpoint limits date range to ~30 days per request
         CHUNK_MS = 29 * 24 * 3600 * 1000  # 29 days in ms
 
-        chunk_start = start_ms
-        while chunk_start < end_ms:
-            chunk_end = min(chunk_start + CHUNK_MS, end_ms)
-            cursor = chunk_start
+        cursor = start_ms
+        while cursor < end_ms:
+            # We must cap the endTime of the query to +29 days to satisfy API constraints
+            chunk_end = min(cursor + CHUNK_MS, end_ms)
 
-            while cursor < chunk_end:
-                params = {
-                    "symbol": symbol,
-                    "period": period,
-                    "startTime": cursor,
-                    "endTime": chunk_end,
-                    "limit": 500,
-                }
-                try:
-                    data = self._get(url, params)
-                except Exception as e:
-                    logger.warning("OI fetch failed at %s: %s", cursor, e)
-                    data = []
+            params = {
+                "symbol": symbol,
+                "period": period,
+                "startTime": cursor,
+                "endTime": chunk_end,
+                "limit": 500,
+            }
+            try:
+                data = self._get(url, params)
+            except Exception as e:
+                logger.warning("OI fetch failed at %s: %s", cursor, e)
+                data = []
 
-                if not data:
-                    break
+            if not data:
+                # If no data is returned in this slice, we must still advance 
+                # the cursor to avoid an infinite loop or skipping the entire rest of the period
+                cursor = chunk_end + 1
+                continue
 
-                for item in data:
-                    all_records.append({
-                        "timestamp": pd.Timestamp(int(item["timestamp"]), unit="ms", tz="UTC"),
-                        "open_interest": float(item["sumOpenInterest"]),
-                        "open_interest_value": float(item["sumOpenInterestValue"]),
-                    })
+            for item in data:
+                all_records.append({
+                    "timestamp": pd.Timestamp(int(item["timestamp"]), unit="ms", tz="UTC"),
+                    "open_interest": float(item["sumOpenInterest"]),
+                    "open_interest_value": float(item["sumOpenInterestValue"]),
+                })
 
-                new_cursor = int(data[-1]["timestamp"]) + 1
-                if new_cursor <= cursor:
-                    break  # No progress — avoid infinite loop
-                cursor = new_cursor
+            new_cursor = int(data[-1]["timestamp"]) + 1
+            if new_cursor <= cursor:
+                # Fallback safeguard
+                new_cursor = chunk_end + 1
+            cursor = new_cursor
 
-            chunk_start = chunk_end + 1
             logger.info("Fetched %d open interest entries so far", len(all_records))
 
         if not all_records:
@@ -503,7 +505,60 @@ class BinanceClient:
         )
         return result
 
-    def close_position(self, symbol: str) -> Optional[dict]:
+    def place_limit_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        time_in_force: str = "GTC",
+        post_only: bool = True,
+    ) -> dict:
+        """
+        Place a LIMIT order. POST /fapi/v1/order.
+        """
+        quantity = round(quantity, 3)
+        if quantity <= 0:
+            raise ValueError(f"Invalid order quantity: {quantity}")
+        if price <= 0:
+            raise ValueError(f"Invalid order price: {price}")
+            
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": "LIMIT",
+            "quantity": quantity,
+            "price": price,
+            "timeInForce": "GTX" if post_only else time_in_force,
+        }
+        
+        logger.info(
+            "Placing %s %s order: %s %.3f at price %s", 
+            "POST_ONLY LIMIT" if post_only else "LIMIT", 
+            side, symbol, quantity, price
+        )
+        result = self._signed_post("/fapi/v1/order", params)
+        logger.info(
+            "Order placed: orderId=%s, status=%s, price=%s",
+            result.get("orderId"), result.get("status"), result.get("price")
+        )
+        return result
+        
+    def cancel_order(self, symbol: str, order_id: str | int) -> dict:
+        """Cancel an active order by ID. DELETE /fapi/v1/order."""
+        params = {"symbol": symbol, "orderId": order_id}
+        logger.info("Canceling order %s for %s", order_id, symbol)
+        result = self._signed_delete("/fapi/v1/order", params)
+        return result
+        
+    def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
+        """Get all open orders for a symbol. GET /fapi/v1/openOrders."""
+        params = {}
+        if symbol:
+            params["symbol"] = symbol
+        return self._signed_get("/fapi/v1/openOrders", params)
+
+    def close_position(self, symbol: str, limit_price: float | None = None) -> Optional[dict]:
         """
         Close any open position for the symbol by placing an opposing market order.
 
@@ -527,8 +582,13 @@ class BinanceClient:
         else:
             return None
 
-        logger.info("Closing %s position: %s %.3f", symbol, side, qty)
-        return self.place_order(symbol, side, qty)
+        if limit_price is not None:
+            logger.info("Closing %s position: LIMIT %s %.3f at %s", symbol, side, qty, limit_price)
+            # Typically when closing, we don't strictly require post-only to guarantee execution
+            return self.place_limit_order(symbol, side, qty, limit_price, "GTC", post_only=False)
+        else:
+            logger.info("Closing %s position: MARKET %s %.3f", symbol, side, qty)
+            return self.place_order(symbol, side, qty, "MARKET")
 
     # --- Account setup ---
 

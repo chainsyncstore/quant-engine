@@ -324,11 +324,15 @@ class RoutedExecutionService:
         self._refresh_runtime_rollout_controls()
 
         if min_rebalance_notional_usd is None:
-            min_rebalance_notional_usd = self._parse_float_env(
-                "BOT_V2_MIN_REBALANCE_NOTIONAL_USD",
-                10.0,
+            min_rebalance_weight_drift = self._parse_float_env(
+                "BOT_V2_MIN_REBALANCE_WEIGHT_DRIFT",
+                0.01,  # 1% default drift threshold
             )
-        self._min_rebalance_notional_usd = max(float(min_rebalance_notional_usd), 0.0)
+        else:
+            # Fallback legacy support if strictly passed
+            min_rebalance_weight_drift = float(min_rebalance_notional_usd) / self._initial_equity_usd if self._initial_equity_usd > 0 else 0.01
+            
+        self._min_rebalance_weight_drift = max(float(min_rebalance_weight_drift), 0.0)
 
         if rebalance_cooldown_seconds is None:
             rebalance_cooldown_seconds = self._parse_int_env(
@@ -634,19 +638,25 @@ class RoutedExecutionService:
             if activity == "rebalance":
                 delta_notional_usd = abs(float(plan.quantity) * mark_price)
                 if (
-                    self._min_rebalance_notional_usd > 0.0
+                    self._min_rebalance_weight_drift > 0.0
                     and mark_price > 0.0
-                    and delta_notional_usd < self._min_rebalance_notional_usd
+                    and planning_equity > 0.0
                 ):
-                    results.append(
-                        self._build_skipped_result(
-                            idempotency_key=idempotency_key,
-                            plan=plan,
-                            mark_price=mark_price,
-                            reason="skipped_by_deadband:min_notional_delta",
+                    weight_drift = delta_notional_usd / planning_equity
+                    # A strict $50.0 minimum absolute USD drift deadband prevents dust rebalances on small portfolios
+                    # Additionally, we check the weight drift against _min_rebalance_weight_drift (e.g. 1%)
+                    min_absolute_drift_usd = 50.0 
+                    
+                    if weight_drift < self._min_rebalance_weight_drift and delta_notional_usd < min_absolute_drift_usd:
+                        results.append(
+                            self._build_skipped_result(
+                                idempotency_key=idempotency_key,
+                                plan=plan,
+                                mark_price=mark_price,
+                                reason="skipped_by_deadband:min_weight_drift_and_absolute_usd",
+                            )
                         )
-                    )
-                    continue
+                        continue
 
                 if self._rebalance_cooldown_seconds > 0:
                     previous = state.last_rebalance_at.get(plan.symbol)
@@ -676,10 +686,21 @@ class RoutedExecutionService:
 
             attempted_orders += 1
             try:
+                # We want to route a Limit order near the mark price
+                # For a BUY, limit should be slightly above mark to ensure execution without reaching too far
+                # For a SELL, limit should be slightly below mark
+                
+                # To simplify spread capture for this institutional upgrade, we submit post-only 
+                # limit orders exactly at the observed mark price (assumed mid or side appropriate)
+                # and let it rest.
+                limit_price = mark_price
+                
                 result = state.adapter.place_order(
                     plan,
                     idempotency_key=idempotency_key,
                     mark_price=mark_price,
+                    limit_price=limit_price,
+                    post_only=True,
                 )
             except Exception as exc:
                 logger.error(

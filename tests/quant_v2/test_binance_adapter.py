@@ -19,7 +19,7 @@ class FakeBinanceClient:
             "executedQty": quantity,
         }
 
-    def close_position(self, symbol: str):
+    def close_position(self, symbol: str, **kwargs):
         self.close_calls.append(symbol)
         if symbol == "ETHUSDT":
             return None

@@ -30,17 +30,21 @@ class BinanceExecutionAdapter:
         *,
         idempotency_key: str,
         mark_price: float | None = None,
+        limit_price: float | None = None,
+        post_only: bool = False,
     ) -> ExecutionResult:
         if self.journal.seen(idempotency_key):
             return self.journal.get(idempotency_key)
 
         if plan.reduce_only:
-            raw = self.client.close_position(plan.symbol)
+            # We pass limit_price here; client.close_position converts to LIMIT if provided
+            raw = self.client.close_position(plan.symbol, limit_price=limit_price)
             accepted = raw is not None
             filled_qty = float(raw.get("executedQty", 0.0)) if raw else 0.0
             order_id = str(raw.get("orderId", "")) if raw else ""
             status = str(raw.get("status", "no_position")) if raw else "no_position"
             avg_price = float(raw.get("avgPrice", 0.0)) if raw else 0.0
+            price = float(raw.get("price", avg_price)) if raw else avg_price
             reason = "" if accepted else "reduce_only_no_position"
             requested_qty = float(plan.quantity)
         else:
@@ -66,13 +70,69 @@ class BinanceExecutionAdapter:
                 self.journal.record(idempotency_key, result)
                 return result
 
-            raw = self.client.place_order(plan.symbol, plan.side, normalized_qty)
+            fallback_used = False
+            raw = None
+            if limit_price is not None:
+                try:
+                    raw = self.client.place_limit_order(
+                        plan.symbol, 
+                        plan.side, 
+                        normalized_qty, 
+                        price=limit_price, 
+                        post_only=post_only
+                    )
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    # If it's a -2010 "Order would immediately match and take" error, fallback to a slippage-bounded limit
+                    if post_only and ("-2010" in str(e) or "immediately match" in str(e).lower()):
+                        max_slippage_bps = 15.0  # Allow 15 bps (0.15%) slippage chase
+                        slippage_factor = 1.0 + (max_slippage_bps / 10000.0) if plan.side.upper() == "BUY" else 1.0 - (max_slippage_bps / 10000.0)
+                        
+                        fallback_limit = mark_price * slippage_factor
+                        
+                        # Apply symbol price filters (tick size) if necessary
+                        if hasattr(self.client, "get_symbol_filters"):
+                            filters = dict(self.client.get_symbol_filters(plan.symbol) or {})
+                            tick_size = float(filters.get("tick_size", 0.0) or 0.0)
+                            if tick_size > 0:
+                                fallback_limit = round(fallback_limit / tick_size) * tick_size
+                                
+                        logger.warning(
+                            "POST_ONLY order matched immediately for %s. Falling back to BOUNDED LIMIT (price=%.4f, max_slippage=15bps).", 
+                            plan.symbol, 
+                            fallback_limit
+                        )
+                        fallback_used = True
+                        try:
+                            # Not post_only anymore, but bounded by fallback_limit to prevent unbounded market slippage
+                            raw = self.client.place_limit_order(
+                                plan.symbol, 
+                                plan.side, 
+                                normalized_qty, 
+                                price=fallback_limit, 
+                                post_only=False
+                            )
+                        except Exception as e2:
+                            logger.error("Bounded fallback limit error for %s: %s", plan.symbol, e2)
+                            raise e2
+                    else:
+                        raise e
+            else:
+                raw = self.client.place_order(plan.symbol, plan.side, normalized_qty)
+                
             accepted = True
             filled_qty = float(raw.get("executedQty", normalized_qty))
             order_id = str(raw.get("orderId", ""))
             status = str(raw.get("status", "filled")).lower()
+            
             avg_price = float(raw.get("avgPrice", mark_price or 0.0))
-            reason = ""
+            if status in {"new", "partially_filled"} and limit_price is not None and not fallback_used:
+                # If order is still resting, use the limit price as the recorded avg_price 
+                # to track the expected execution level.
+                avg_price = limit_price
+                
+            reason = "fallback_to_bounded_limit" if fallback_used else ""
             requested_qty = float(normalized_qty)
 
         result = ExecutionResult(
@@ -103,6 +163,21 @@ class BinanceExecutionAdapter:
             if amount != 0.0:
                 positions[symbol] = amount
         return positions
+
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
+        return self.client.get_open_orders(symbol=symbol)
+
+    def cancel_all_orders(self, symbol: str) -> None:
+        open_orders = self.get_open_orders(symbol)
+        for order in open_orders:
+            order_id = order.get("orderId")
+            if order_id:
+                try:
+                    self.client.cancel_order(symbol, order_id)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning("Failed to cancel open order %s for %s: %s", order_id, symbol, e)
 
     def get_position_metrics(self) -> dict[str, dict[str, float]]:
         raw_positions = self.client.get_positions()

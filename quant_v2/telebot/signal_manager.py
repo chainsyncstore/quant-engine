@@ -58,7 +58,13 @@ class V2SignalManager:
         client_factory: ClientFactory | None = None,
         fetch_bars_fn: FetchBarsFn | None = None,
     ) -> None:
+        from quant_v2.model_registry import ModelRegistry
+        from quant_v2.models.trainer import load_model, TrainedModel
+        
         self.model_dir = Path(model_dir).expanduser()
+        self.registry = ModelRegistry(self.model_dir)
+        self.active_model: TrainedModel | None = None
+        
         self.symbols = tuple(symbols or default_universe_symbols())
         self.anchor_interval = anchor_interval
         self.horizon_bars = int(horizon_bars)
@@ -294,6 +300,18 @@ class V2SignalManager:
         date_to = datetime.now(timezone.utc)
         date_from = date_to - timedelta(hours=self.history_bars)
 
+        try:
+            from quant_v2.models.trainer import load_model
+            active_pointer = self.registry.get_active_version()
+            if active_pointer and (self.active_model is None or getattr(self.active_model, "_version_id", None) != active_pointer.version_id):
+                model_path = Path(active_pointer.artifact_dir) / f"model_{self.horizon_bars}m.pkl"
+                if model_path.exists():
+                    self.active_model = load_model(model_path)
+                    setattr(self.active_model, "_version_id", active_pointer.version_id)
+                    logger.info("Loaded active ML model version %s for horizon %sm", active_pointer.version_id, self.horizon_bars)
+        except Exception as e:
+            logger.warning("Failed to refresh active model from registry: %s", e)
+
         for symbol in self.symbols:
             fetch_call = partial(
                 self._fetch_bars_fn,
@@ -355,44 +373,73 @@ class V2SignalManager:
                 }
             )
 
-        ema_fast = float(close_series.ewm(span=8, adjust=False).mean().iloc[-1])
-        ema_slow = float(close_series.ewm(span=21, adjust=False).mean().iloc[-1])
-        momentum = (ema_fast / ema_slow - 1.0) if ema_slow > 0 else 0.0
-
-        returns = close_series.pct_change().dropna()
-        if returns.empty:
-            returns = pd.Series([0.0], dtype=float)
-
-        short_return = float(close_series.iloc[-1] / close_series.iloc[-4] - 1.0) if len(close_series) >= 4 else 0.0
-        recent_vol = float(returns.tail(24).std() or 0.0)
-        baseline_vol = float(returns.tail(120).std() or 0.0)
-        if baseline_vol <= 0.0:
-            baseline_vol = max(recent_vol, 1e-6)
-        vol_ratio = recent_vol / baseline_vol if baseline_vol > 0 else 1.0
-
-        score = (momentum * 450.0) + (short_return * 120.0)
-        proba_up = min(max(0.5 + score, 0.01), 0.99)
-
         signal = "HOLD"
         threshold = 0.56
-        reason = f"momentum={momentum:+.4f}, vol_ratio={vol_ratio:.2f}"
         drift_alert = False
+        reason = "no_active_model"
+        proba_up = 0.5
+        regime = 0
+        regime_probability = 0.0
+        
+        # Calculate some basic volatility for drift alerts
+        returns = close_series.pct_change().dropna()
+        if not returns.empty:
+            recent_vol = float(returns.tail(24).std() or 0.0)
+            baseline_vol = float(returns.tail(120).std() or 0.0)
+            if baseline_vol <= 0.0:
+                baseline_vol = max(recent_vol, 1e-6)
+            vol_ratio = recent_vol / baseline_vol if baseline_vol > 0 else 1.0
+            
+            if vol_ratio >= 3.5:
+                signal = "DRIFT_ALERT"
+                drift_alert = True
+                reason = (
+                    f"volatility_spike (recent_vol={recent_vol:.4f}, baseline_vol={baseline_vol:.4f}, ratio={vol_ratio:.2f})"
+                )
 
-        if vol_ratio >= 3.5:
-            signal = "DRIFT_ALERT"
-            drift_alert = True
-            reason = (
-                f"volatility_spike (recent_vol={recent_vol:.4f}, baseline_vol={baseline_vol:.4f}, ratio={vol_ratio:.2f})"
-            )
-        elif proba_up >= threshold:
-            signal = "BUY"
-            reason = f"proba_up={proba_up:.3f} >= {threshold:.2f}, momentum={momentum:+.4f}"
-        elif proba_up <= (1.0 - threshold):
-            signal = "SELL"
-            reason = f"proba_up={proba_up:.3f} <= {1.0 - threshold:.2f}, momentum={momentum:+.4f}"
-
-        regime = 1 if momentum > 0.0007 else -1 if momentum < -0.0007 else 0
-        regime_probability = min(max(abs(momentum) * 400.0, 0.0), 1.0)
+        if self.active_model is not None and not drift_alert:
+            from quant_v2.models.predictor import predict_proba_with_uncertainty
+            from quant_v2.research.cross_sectional_features import add_cross_sectional_features
+            
+            try:
+                # Prepare features DataFrame
+                # We need MultiIndex [timestamp, symbol] for cross_sectional_features
+                df_prep = bars.copy()
+                df_prep["symbol"] = symbol
+                df_prep = df_prep.reset_index()
+                # Assuming index was timestamp. rename if necessary
+                if "timestamp" not in df_prep.columns:
+                    df_prep = df_prep.rename(columns={"index": "timestamp", "open_time": "timestamp", "date": "timestamp"})
+                df_prep = df_prep.set_index(["timestamp", "symbol"])
+                
+                # We need to make sure we have basic features expected by the model. 
+                # This is a basic implementation assuming standard feature extraction is present.
+                enriched = add_cross_sectional_features(df_prep)
+                # Keep only the last row for prediction
+                last_row = enriched.iloc[[-1]].reset_index(drop=True)
+                
+                proba_arr, uncertainty_arr = predict_proba_with_uncertainty(self.active_model, last_row)
+                proba_up = float(proba_arr[0])
+                uncertainty = float(uncertainty_arr[0])
+                
+                # Signal logic based on model probability
+                if proba_up >= threshold:
+                    signal = "BUY"
+                    reason = f"ML_Proba: {proba_up:.3f} >= {threshold:.2f} (unc: {uncertainty:.2f})"
+                elif proba_up <= (1.0 - threshold):
+                    signal = "SELL"
+                    reason = f"ML_Proba: {proba_up:.3f} <= {1.0 - threshold:.2f} (unc: {uncertainty:.2f})"
+                else:
+                    signal = "HOLD"
+                    reason = f"ML_Proba: {proba_up:.3f} inside deadband"
+                    
+                regime = 1 if proba_up > 0.55 else -1 if proba_up < 0.45 else 0
+                regime_probability = max(proba_up, 1.0 - proba_up)
+            except Exception as e:
+                logger.error("Error generating ML prediction for %s: %s", symbol, e)
+                signal = "HOLD"
+                reason = f"ml_inference_error: {e.__class__.__name__}"
+                proba_up = 0.5
 
         return self._attach_native_v2_fields(
             {
