@@ -79,6 +79,8 @@ class V2SignalManager:
         self._client_factory = client_factory or self._default_client_factory
         self._fetch_bars_fn = fetch_bars_fn or self._default_fetch_bars
         self.sessions: dict[int, _SignalSession] = {}
+        # OI cache for API 202 fallback: symbol -> (timestamp, oi_value)
+        self._oi_cache: dict[str, tuple[datetime, float]] = {}
 
     @staticmethod
     def _resolve_loop_interval(loop_interval_seconds: int | None) -> int:
@@ -447,8 +449,36 @@ class V2SignalManager:
             if prev_ts is not None and latest_ts == prev_ts:
                 continue
 
+            # --- OI resilience: detect missing data and apply fallback ---
+            data_quality_flag = False
+            if "open_interest" in bars.columns:
+                oi_col = pd.to_numeric(bars["open_interest"], errors="coerce")
+                if oi_col.dropna().empty:
+                    # OI fetch failed — try cache fallback
+                    cached = self._oi_cache.get(symbol)
+                    if cached is not None:
+                        cache_ts, cache_val = cached
+                        staleness = (date_to - cache_ts).total_seconds()
+                        if staleness < 180:  # < 3 min stale: use cached
+                            bars["open_interest"] = cache_val
+                            bars["open_interest_value"] = 0.0
+                        else:
+                            bars["open_interest"] = 0.0
+                            bars["open_interest_value"] = 0.0
+                            data_quality_flag = True
+                    else:
+                        bars["open_interest"] = 0.0
+                        bars["open_interest_value"] = 0.0
+                        data_quality_flag = True
+                else:
+                    # Cache the latest valid OI value
+                    last_valid_oi = float(oi_col.dropna().iloc[-1])
+                    self._oi_cache[symbol] = (date_to, last_valid_oi)
+
             session.last_bar_timestamp[symbol] = latest_ts
-            payload = self._build_signal_payload(symbol, bars)
+            payload = self._build_signal_payload(
+                symbol, bars, data_quality_flag=data_quality_flag,
+            )
             session.signal_log.append(payload)
             if len(session.signal_log) > self.max_signal_log:
                 del session.signal_log[:-self.max_signal_log]
@@ -460,7 +490,13 @@ class V2SignalManager:
         if inspect.isawaitable(callback_result):
             await callback_result
 
-    def _build_signal_payload(self, symbol: str, bars: pd.DataFrame) -> dict[str, Any]:
+    def _build_signal_payload(
+        self,
+        symbol: str,
+        bars: pd.DataFrame,
+        *,
+        data_quality_flag: bool = False,
+    ) -> dict[str, Any]:
         close_series = pd.to_numeric(bars["close"], errors="coerce").dropna()
         if close_series.empty:
             raise RuntimeError(f"No valid close series for symbol={symbol}")
@@ -476,10 +512,10 @@ class V2SignalManager:
                 "close_price": close_price,
                 "signal": "HOLD",
                 "probability": 0.5,
-                "regime": 0,
+                "regime": 3,
                 "regime_probability": 0.0,
                 "regime_tradeable": False,
-                "threshold": 0.56,
+                "threshold": 0.55,
                 "reason": "insufficient_history",
                 "horizon": self.horizon_bars,
                 "position": {},
@@ -491,14 +527,14 @@ class V2SignalManager:
             )
 
         signal = "HOLD"
-        threshold = 0.56
         drift_alert = False
         reason = "no_active_model"
         proba_up = 0.5
-        regime = 0
+        regime = 3
+        regime_risk = 1
         regime_probability = 0.0
-        
-        # Calculate some basic volatility for drift alerts
+
+        # --- Drift detection ---
         returns = close_series.pct_change().dropna()
         if not returns.empty:
             recent_vol = float(returns.tail(24).std() or 0.0)
@@ -506,7 +542,7 @@ class V2SignalManager:
             if baseline_vol <= 0.0:
                 baseline_vol = max(recent_vol, 1e-6)
             vol_ratio = recent_vol / baseline_vol if baseline_vol > 0 else 1.0
-            
+
             if vol_ratio >= 3.5:
                 signal = "DRIFT_ALERT"
                 drift_alert = True
@@ -514,29 +550,72 @@ class V2SignalManager:
                     f"volatility_spike (recent_vol={recent_vol:.4f}, baseline_vol={baseline_vol:.4f}, ratio={vol_ratio:.2f})"
                 )
 
+        # --- Feature pipeline + regime classification ---
+        featured = None
+        if not drift_alert:
+            try:
+                featured = self._build_featured_frame(bars)
+                if featured is not None and not featured.empty:
+                    from quant_v2.strategy.regime import classify_latest
+
+                    fz = (
+                        featured["funding_rate_zscore"]
+                        if "funding_rate_zscore" in featured.columns
+                        else pd.Series(0.0, index=featured.index)
+                    )
+                    regime_state = classify_latest(
+                        pd.to_numeric(featured["close"], errors="coerce").dropna(),
+                        fz,
+                    )
+                    regime = regime_state.regime
+                    regime_risk = regime_state.regime_risk
+                    regime_probability = max(0.0, 1.0 - regime_risk * 0.5)
+            except Exception as exc:
+                logger.warning("Regime classification failed for %s: %s", symbol, exc)
+
+        # --- Model inference with regime-scaled thresholds ---
+        buy_threshold = 0.55 + 0.20 * regime_risk
+        sell_threshold = 0.45 - 0.20 * regime_risk
+
         if self.active_model is not None and not drift_alert:
             try:
-                feature_row = self._prepare_model_features(symbol, bars)
+                if featured is not None and not featured.empty:
+                    feature_row = self._extract_model_row(featured)
+                else:
+                    feature_row = self._prepare_model_features(symbol, bars)
                 proba_up, uncertainty = self._predict_with_uncertainty(feature_row)
-                
-                # Signal logic based on model probability
-                if proba_up >= threshold:
+
+                # Data quality penalty: shrink probability toward 0.5 by 25%
+                if data_quality_flag:
+                    proba_up = 0.5 + (proba_up - 0.5) * 0.75
+
+                if proba_up >= buy_threshold:
                     signal = "BUY"
-                    reason = f"ML_Proba: {proba_up:.3f} >= {threshold:.2f} (unc: {uncertainty:.2f})"
-                elif proba_up <= (1.0 - threshold):
+                    reason = (
+                        f"ML_Proba: {proba_up:.3f} >= {buy_threshold:.2f} "
+                        f"(regime={regime}, risk={regime_risk}, unc: {uncertainty:.2f})"
+                    )
+                elif proba_up <= sell_threshold:
                     signal = "SELL"
-                    reason = f"ML_Proba: {proba_up:.3f} <= {1.0 - threshold:.2f} (unc: {uncertainty:.2f})"
+                    reason = (
+                        f"ML_Proba: {proba_up:.3f} <= {sell_threshold:.2f} "
+                        f"(regime={regime}, risk={regime_risk}, unc: {uncertainty:.2f})"
+                    )
                 else:
                     signal = "HOLD"
-                    reason = f"ML_Proba: {proba_up:.3f} inside deadband"
-                    
-                regime = 1 if proba_up > 0.55 else -1 if proba_up < 0.45 else 0
+                    reason = (
+                        f"ML_Proba: {proba_up:.3f} inside deadband "
+                        f"[{sell_threshold:.2f},{buy_threshold:.2f}] (regime={regime})"
+                    )
+
                 regime_probability = max(proba_up, 1.0 - proba_up)
             except Exception as e:
                 logger.error("Error generating ML prediction for %s: %s", symbol, e)
                 signal = "HOLD"
                 reason = f"ml_inference_error: {e.__class__.__name__}"
                 proba_up = 0.5
+
+        effective_threshold = buy_threshold  # for payload reporting
 
         return self._attach_native_v2_fields(
             {
@@ -548,7 +627,7 @@ class V2SignalManager:
             "regime": regime,
             "regime_probability": round(regime_probability, 4),
             "regime_tradeable": signal in {"BUY", "SELL"},
-            "threshold": threshold,
+            "threshold": effective_threshold,
             "reason": reason,
             "horizon": self.horizon_bars,
             "position": {},
@@ -582,8 +661,8 @@ class V2SignalManager:
 
         raise TypeError(f"Unsupported model type for inference: {type(model)!r}")
 
-    def _prepare_model_features(self, symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
-        """Build and align one-row model features for inference."""
+    def _build_featured_frame(self, bars: pd.DataFrame) -> pd.DataFrame | None:
+        """Build the full feature DataFrame for regime classification and model inference."""
 
         from quant.features.pipeline import build_features
 
@@ -599,8 +678,10 @@ class V2SignalManager:
         frame.index.name = "timestamp"
 
         featured = build_features(frame)
-        if featured.empty:
-            raise ValueError(f"No feature rows available for symbol={symbol}")
+        return featured if not featured.empty else None
+
+    def _extract_model_row(self, featured: pd.DataFrame) -> pd.DataFrame:
+        """Extract and align the last row of a featured DataFrame for model inference."""
 
         last_row = featured.iloc[[-1]].copy()
         feature_names = [str(name) for name in getattr(self.active_model, "feature_names", [])]
@@ -612,6 +693,15 @@ class V2SignalManager:
             last_row[name] = 0.0
 
         return last_row[feature_names].reset_index(drop=True)
+
+    def _prepare_model_features(self, symbol: str, bars: pd.DataFrame) -> pd.DataFrame:
+        """Build and align one-row model features for inference (legacy path)."""
+
+        featured = self._build_featured_frame(bars)
+        if featured is None or featured.empty:
+            raise ValueError(f"No feature rows available for symbol={symbol}")
+
+        return self._extract_model_row(featured)
 
     def _attach_native_v2_fields(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Attach direct v2 routing artifacts to emitted signal payloads."""

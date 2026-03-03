@@ -468,7 +468,7 @@ def _run_purged_kfold(
     feature_cols = feature_subset or get_feature_columns(df)
     total_bars = len(df)
 
-    n_splits = max(4, min(12, max(2, total_bars // max(cfg.wf_test_bars, 1))))
+    n_splits = getattr(cfg, "wf_kfold_splits", None) or max(4, min(12, max(2, total_bars // max(cfg.wf_test_bars, 1))))
     splits = _iter_purged_kfold_splits(total_bars, n_splits, cfg.wf_embargo_bars)
     if not splits:
         raise ValueError("No valid purged K-fold splits could be constructed")

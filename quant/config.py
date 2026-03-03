@@ -62,7 +62,8 @@ class ResearchConfig:
     wf_train_bars: int = 2_000
     wf_test_bars: int = 500
     wf_step_bars: int = 500
-    wf_embargo_bars: int = 24
+    wf_embargo_bars: int = 100
+    wf_kfold_splits: int = 6
     wf_calibration_frac: float = 0.20
 
     # Minimum data requirement

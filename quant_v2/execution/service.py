@@ -12,6 +12,8 @@ import logging
 import os
 from typing import Callable, Protocol
 
+import numpy as np
+
 from quant_v2.config import get_runtime_profile
 from quant_v2.contracts import OrderPlan, PortfolioSnapshot, RiskSnapshot, StrategySignal
 from quant_v2.execution.adapters import ExecutionResult
@@ -168,6 +170,11 @@ class _SessionState:
     kill_switch: KillSwitchEvaluation = field(
         default_factory=lambda: KillSwitchEvaluation(pause_trading=False)
     )
+    # --- Phase-3 redesign fields ---
+    breach_history: list[datetime] = field(default_factory=list)
+    soft_breach_active: bool = False
+    equity_history: list[float] = field(default_factory=list)
+    _equity_history_max: int = 120
 
 
 class InMemoryExecutionService:
@@ -693,9 +700,18 @@ class RoutedExecutionService:
         planning_signals = tuple(state.latest_signals.values())
 
         if risk_policy is None:
+            # Try dynamic volatility-scaled caps first
+            dynamic = self._compute_dynamic_risk_policy(state)
+            if dynamic is not None:
+                state.effective_risk_policy = dynamic
             policy = state.effective_risk_policy
         else:
             policy = self._apply_canary_risk_cap(risk_policy) if state.request.live else risk_policy
+
+        # Apply soft-breach 90% cap reduction when active
+        if state.soft_breach_active:
+            policy = self._apply_soft_breach_caps(policy)
+
         state.diagnostics = replace(
             state.diagnostics,
             effective_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
@@ -1210,6 +1226,10 @@ class RoutedExecutionService:
             prices=prices,
             open_positions=current_positions,
         )
+        # Track equity history for dynamic volatility-scaled caps
+        state.equity_history.append(resolved_equity)
+        if len(state.equity_history) > state._equity_history_max:
+            state.equity_history = state.equity_history[-state._equity_history_max:]
         if state.snapshot.open_positions:
             state.snapshot = replace(
                 state.snapshot,
@@ -1285,6 +1305,37 @@ class RoutedExecutionService:
             risk_policy=risk_policy,
         )
         combined_hard_breach = bool(state.external_hard_risk_breach or computed_breach)
+
+        # --- Soft-landing logic ---
+        # Applies only to internally-computed portfolio breaches.
+        # External hard_risk_breach (from monitoring snapshot) bypasses
+        # soft-landing and triggers an immediate hard pause.
+        if combined_hard_breach:
+            if state.external_hard_risk_breach:
+                # External kill-switch: respect immediately, no soft-landing
+                state.soft_breach_active = False
+            else:
+                now = datetime.now(timezone.utc)
+                state.breach_history.append(now)
+                cutoff = now - timedelta(hours=4)
+                state.breach_history = [t for t in state.breach_history if t >= cutoff]
+
+                if len(state.breach_history) < 3:
+                    combined_hard_breach = False
+                    state.soft_breach_active = True
+                    logger.info(
+                        "Soft risk breach (%d/3 in 4h window) — reducing caps to 90%%",
+                        len(state.breach_history),
+                    )
+                else:
+                    state.soft_breach_active = False
+                    logger.warning(
+                        "Hard risk breach confirmed (%d breaches in 4h) — pausing execution",
+                        len(state.breach_history),
+                    )
+        else:
+            state.soft_breach_active = False
+
         if combined_hard_breach != state.monitoring_snapshot.hard_risk_breach:
             state.monitoring_snapshot = replace(
                 state.monitoring_snapshot,
@@ -1492,6 +1543,60 @@ class RoutedExecutionService:
             max_net_exposure_frac=min(policy.max_net_exposure_frac, cap),
             correlation_bucket_caps={
                 bucket: min(float(limit), cap)
+                for bucket, limit in policy.correlation_bucket_caps.items()
+            },
+        )
+
+    @staticmethod
+    def _compute_dynamic_risk_policy(
+        state: _SessionState,
+    ) -> PortfolioRiskPolicy | None:
+        """Compute volatility-scaled risk caps from equity history.
+
+        Returns ``None`` when history is too short to estimate volatility,
+        signalling the caller to fall back to the static policy.
+
+        Formulae (Phase-3 redesign):
+            sigma_60 = 60-bar realised volatility of portfolio equity
+            gross_cap = min(1.20 / sigma_60, 0.85)
+            net_cap   = 0.45 * gross_cap
+            symbol_cap = 0.30 * gross_cap
+        """
+        history = state.equity_history
+        if len(history) < 30:
+            return None
+
+        equity_arr = np.array(history[-60:], dtype=float)
+        if len(equity_arr) < 2:
+            return None
+        returns = np.diff(equity_arr) / np.maximum(equity_arr[:-1], 1e-9)
+        sigma_60 = float(np.std(returns, ddof=1)) if len(returns) > 1 else 0.0
+
+        if sigma_60 <= 1e-9:
+            return None
+
+        gross_cap = min(1.20 / sigma_60, 0.85)
+        gross_cap = max(gross_cap, 0.05)
+        net_cap = min(0.45 * gross_cap, gross_cap)
+        symbol_cap = min(0.30 * gross_cap, 1.0)
+
+        return PortfolioRiskPolicy(
+            max_symbol_exposure_frac=symbol_cap,
+            max_gross_exposure_frac=gross_cap,
+            max_net_exposure_frac=net_cap,
+            correlation_bucket_caps=state.effective_risk_policy.correlation_bucket_caps,
+        )
+
+    @staticmethod
+    def _apply_soft_breach_caps(policy: PortfolioRiskPolicy) -> PortfolioRiskPolicy:
+        """Scale all risk caps to 90% during a soft-breach window."""
+        scale = 0.90
+        return PortfolioRiskPolicy(
+            max_symbol_exposure_frac=policy.max_symbol_exposure_frac * scale,
+            max_gross_exposure_frac=policy.max_gross_exposure_frac * scale,
+            max_net_exposure_frac=policy.max_net_exposure_frac * scale,
+            correlation_bucket_caps={
+                bucket: float(limit) * scale
                 for bucket, limit in policy.correlation_bucket_caps.items()
             },
         )
