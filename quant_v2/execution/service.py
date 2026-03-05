@@ -1316,7 +1316,8 @@ class RoutedExecutionService:
                 state.soft_breach_active = False
             else:
                 now = datetime.now(timezone.utc)
-                state.breach_history.append(now)
+                if not state.breach_history or (now - state.breach_history[-1]).total_seconds() > 900:
+                    state.breach_history.append(now)
                 cutoff = now - timedelta(hours=4)
                 state.breach_history = [t for t in state.breach_history if t >= cutoff]
 
