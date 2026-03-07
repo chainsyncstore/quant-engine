@@ -38,7 +38,7 @@ def test_build_execution_intents_applies_allocation_and_policy() -> None:
     plan = build_execution_intents(
         signals,
         policy=policy,
-        config=PlannerConfig(total_risk_budget_frac=0.12, max_symbol_exposure_frac=0.06, min_confidence=0.55),
+        config=PlannerConfig(total_risk_budget_frac=0.50, max_symbol_exposure_frac=0.06, min_confidence=0.65),
     )
 
     assert len(plan.intents) == 2
@@ -53,7 +53,7 @@ def test_intents_to_order_plans_builds_quantities() -> None:
     plan = build_execution_intents(
         signals,
         policy=policy,
-        config=PlannerConfig(total_risk_budget_frac=0.10, max_symbol_exposure_frac=0.05, min_confidence=0.55),
+        config=PlannerConfig(total_risk_budget_frac=0.50, max_symbol_exposure_frac=0.05, min_confidence=0.65),
     )
 
     orders = intents_to_order_plans(

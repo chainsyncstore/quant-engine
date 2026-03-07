@@ -546,6 +546,8 @@ def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None
         )
     )
     assert len(routed_rebalance) == 1
+    assert routed_rebalance[0].accepted is False
+    assert routed_rebalance[0].reason.startswith("skipped_by_deadband:")
 
     low_conf_signal = StrategySignal(
         symbol="BTCUSDT",
@@ -570,11 +572,12 @@ def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None
 
     diagnostics = service.get_execution_diagnostics(509)
     assert diagnostics is not None
-    assert diagnostics.total_orders == 3
-    assert diagnostics.accepted_orders == 3
+    assert diagnostics.total_orders == 2
+    assert diagnostics.accepted_orders == 2
     assert diagnostics.entry_orders == 1
-    assert diagnostics.rebalance_orders == 1
+    assert diagnostics.rebalance_orders == 0
     assert diagnostics.exit_orders == 1
+    assert diagnostics.skipped_by_deadband == 1
 
 
 def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
@@ -630,7 +633,7 @@ def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
     )
     assert len(routed_rebalance) == 1
     assert routed_rebalance[0].accepted is False
-    assert routed_rebalance[0].reason.startswith("skipped_by_deadband:min_weight_drift_and_absolute_usd")
+    assert routed_rebalance[0].reason.startswith("skipped_by_deadband:weight_drift_and_absolute_usd")
 
     diagnostics = service.get_execution_diagnostics(510)
     assert diagnostics is not None

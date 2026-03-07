@@ -159,6 +159,7 @@ class _SessionState:
     equity_baseline_usd: float = 10_000.0
     last_prices: dict[str, float] = field(default_factory=dict)
     latest_signals: dict[str, StrategySignal] = field(default_factory=dict)
+    previous_signals: dict[str, StrategySignal] = field(default_factory=dict)
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
     paper_entry_price: dict[str, float] = field(default_factory=dict)
     position_opened_at: dict[str, datetime] = field(default_factory=dict)
@@ -380,9 +381,22 @@ class RoutedExecutionService:
         if rebalance_cooldown_seconds is None:
             rebalance_cooldown_seconds = self._parse_int_env(
                 "BOT_V2_REBALANCE_COOLDOWN_SECONDS",
-                0,
+                600,
             )
         self._rebalance_cooldown_seconds = max(int(rebalance_cooldown_seconds), 0)
+
+        self._min_rebalance_confidence_delta = max(
+            self._parse_float_env("BOT_V2_MIN_REBALANCE_CONFIDENCE_DELTA", 0.02),
+            0.0,
+        )
+        self._min_rebalance_absolute_drift_usd = max(
+            self._parse_float_env("BOT_V2_MIN_REBALANCE_ABSOLUTE_DRIFT_USD", 50.0),
+            0.0,
+        )
+        self._rebalance_round_trip_cost_frac = max(
+            self._parse_float_env("BOT_V2_REBALANCE_ROUND_TRIP_COST_FRAC", 0.0006),
+            0.0,
+        )
 
         if max_orders_per_cycle is None:
             max_orders_per_cycle = self._parse_int_env("BOT_V2_MAX_ORDERS_PER_CYCLE", 0)
@@ -697,6 +711,9 @@ class RoutedExecutionService:
                 continue
             normalized_signal = signal if signal.symbol == symbol else replace(signal, symbol=symbol)
             if normalized_signal.actionable:
+                previous_signal = state.latest_signals.get(symbol)
+                if previous_signal is not None:
+                    state.previous_signals[symbol] = previous_signal
                 state.latest_signals[symbol] = normalized_signal
 
         current_positions = self._safe_get_positions(state.adapter)
@@ -788,26 +805,58 @@ class RoutedExecutionService:
 
             if activity == "rebalance":
                 delta_notional_usd = abs(float(plan.quantity) * mark_price)
+                weight_drift = 0.0
                 if (
                     self._min_rebalance_weight_drift > 0.0
                     and mark_price > 0.0
                     and planning_equity > 0.0
                 ):
                     weight_drift = delta_notional_usd / planning_equity
-                    # A strict $50.0 minimum absolute USD drift deadband prevents dust rebalances on small portfolios
-                    # Additionally, we check the weight drift against _min_rebalance_weight_drift (e.g. 1%)
-                    min_absolute_drift_usd = 50.0 
-                    
-                    if weight_drift < self._min_rebalance_weight_drift and delta_notional_usd < min_absolute_drift_usd:
+                    if (
+                        weight_drift < self._min_rebalance_weight_drift
+                        and delta_notional_usd < self._min_rebalance_absolute_drift_usd
+                    ):
                         results.append(
                             self._build_skipped_result(
                                 idempotency_key=idempotency_key,
                                 plan=plan,
                                 mark_price=mark_price,
-                                reason="skipped_by_deadband:min_weight_drift_and_absolute_usd",
+                                reason="skipped_by_deadband:weight_drift_and_absolute_usd",
                             )
                         )
                         continue
+
+                current_signal = state.latest_signals.get(plan.symbol)
+                previous_signal = state.previous_signals.get(plan.symbol)
+                confidence_delta = self._compute_confidence_delta(
+                    current_signal=current_signal,
+                    previous_signal=previous_signal,
+                )
+                if confidence_delta < self._min_rebalance_confidence_delta:
+                    results.append(
+                        self._build_skipped_result(
+                            idempotency_key=idempotency_key,
+                            plan=plan,
+                            mark_price=mark_price,
+                            reason="skipped_by_deadband:confidence_delta",
+                        )
+                    )
+                    continue
+
+                if not self._rebalance_edge_improves_enough(
+                    current_signal=current_signal,
+                    previous_signal=previous_signal,
+                    delta_notional_usd=delta_notional_usd,
+                ):
+                    results.append(
+                        self._build_skipped_result(
+                            idempotency_key=idempotency_key,
+                            plan=plan,
+                            mark_price=mark_price,
+                            reason="skipped_by_deadband:edge_improvement",
+                        )
+                    )
+                    continue
 
                 if self._rebalance_cooldown_seconds > 0:
                     previous = state.last_rebalance_at.get(plan.symbol)
@@ -933,6 +982,38 @@ class RoutedExecutionService:
                 gate_reasons=state.kill_switch.reasons if state.kill_switch.pause_trading else (),
             )
         return tuple(results)
+
+    @staticmethod
+    def _signal_edge(signal: StrategySignal | None) -> float:
+        if signal is None or not signal.actionable:
+            return 0.0
+        confidence = float(signal.confidence)
+        return max(0.0, (2.0 * confidence) - 1.0)
+
+    @staticmethod
+    def _compute_confidence_delta(
+        *,
+        current_signal: StrategySignal | None,
+        previous_signal: StrategySignal | None,
+    ) -> float:
+        if current_signal is None or previous_signal is None:
+            return 1.0
+        return abs(float(current_signal.confidence) - float(previous_signal.confidence))
+
+    def _rebalance_edge_improves_enough(
+        self,
+        *,
+        current_signal: StrategySignal | None,
+        previous_signal: StrategySignal | None,
+        delta_notional_usd: float,
+    ) -> bool:
+        if current_signal is None or previous_signal is None:
+            return True
+        new_edge = self._signal_edge(current_signal)
+        old_edge = self._signal_edge(previous_signal)
+        improvement = max(0.0, new_edge - old_edge) * max(float(delta_notional_usd), 0.0)
+        trading_cost = self._rebalance_round_trip_cost_frac * max(float(delta_notional_usd), 0.0)
+        return improvement >= trading_cost
 
     async def sync_positions(
         self,

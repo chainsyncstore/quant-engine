@@ -21,11 +21,11 @@ class AllocationDecision:
 def allocate_signals(
     signals: Iterable[StrategySignal],
     *,
-    total_risk_budget_frac: float = 0.15,
+    total_risk_budget_frac: float = 0.50,
     max_symbol_exposure_frac: float = 0.05,
-    min_confidence: float = 0.55,
+    min_confidence: float = 0.65,
 ) -> AllocationDecision:
-    """Allocate portfolio exposures from model signals under simple caps."""
+    """Allocate portfolio exposures from model signals under confidence-scaled caps."""
 
     if not 0.0 <= total_risk_budget_frac <= 1.0:
         raise ValueError("total_risk_budget_frac must be in [0, 1]")
@@ -34,8 +34,11 @@ def allocate_signals(
     if not 0.0 <= min_confidence <= 1.0:
         raise ValueError("min_confidence must be in [0, 1]")
 
-    actionable: list[tuple[str, float, float]] = []
+    actionable: list[tuple[str, float]] = []
     skipped: dict[str, str] = {}
+    kelly_reference_confidence = 0.80
+    kelly_reference_edge = max((2.0 * kelly_reference_confidence) - 1.0, 1e-12)
+    kelly_scale = max_symbol_exposure_frac / kelly_reference_edge
 
     for signal in signals:
         if signal.signal == "HOLD":
@@ -48,14 +51,21 @@ def allocate_signals(
             skipped[signal.symbol] = f"confidence<{min_confidence:.2f}"
             continue
 
-        direction = 1.0 if signal.signal == "BUY" else -1.0
-        base_score = max(signal.confidence - min_confidence, 0.0)
-        uncertainty_factor = 1.0 - signal.uncertainty if signal.uncertainty is not None else 1.0
-        score = base_score * max(uncertainty_factor, 0.0)
-        if score <= 0.0:
-            skipped[signal.symbol] = "zero_score"
+        raw_edge = max((2.0 * float(signal.confidence)) - 1.0, 0.0)
+        uncertainty_factor = 1.0 - float(signal.uncertainty) if signal.uncertainty is not None else 1.0
+        adjusted_edge = raw_edge * max(uncertainty_factor, 0.0)
+        if adjusted_edge <= 0.0:
+            skipped[signal.symbol] = "zero_edge"
             continue
-        actionable.append((signal.symbol, direction, score))
+
+        signed_exposure = kelly_scale * adjusted_edge
+        if signal.signal == "SELL":
+            signed_exposure *= -1.0
+        capped_exposure = max(-max_symbol_exposure_frac, min(signed_exposure, max_symbol_exposure_frac))
+        if abs(capped_exposure) <= 0.0:
+            skipped[signal.symbol] = "zero_edge"
+            continue
+        actionable.append((signal.symbol, capped_exposure))
 
     if not actionable or total_risk_budget_frac == 0.0:
         return AllocationDecision(
@@ -65,8 +75,8 @@ def allocate_signals(
             skipped_symbols=skipped,
         )
 
-    score_sum = sum(item[2] for item in actionable)
-    if score_sum <= 0.0:
+    gross_requested = sum(abs(exposure) for _, exposure in actionable)
+    if gross_requested <= 0.0:
         return AllocationDecision(
             target_exposures={},
             gross_exposure=0.0,
@@ -75,10 +85,9 @@ def allocate_signals(
         )
 
     exposures: dict[str, float] = {}
-    for symbol, direction, score in actionable:
-        raw = total_risk_budget_frac * (score / score_sum)
-        capped = min(raw, max_symbol_exposure_frac)
-        exposures[symbol] = direction * capped
+    scale_to_budget = min(1.0, total_risk_budget_frac / gross_requested)
+    for symbol, signed_exposure in actionable:
+        exposures[symbol] = signed_exposure * scale_to_budget
 
     gross = float(sum(abs(v) for v in exposures.values()))
     net = float(sum(exposures.values()))

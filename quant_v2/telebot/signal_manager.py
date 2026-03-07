@@ -515,7 +515,7 @@ class V2SignalManager:
                 "regime": 3,
                 "regime_probability": 0.0,
                 "regime_tradeable": False,
-                "threshold": 0.55,
+                "threshold": 0.65,
                 "reason": "insufficient_history",
                 "horizon": self.horizon_bars,
                 "position": {},
@@ -574,8 +574,8 @@ class V2SignalManager:
                 logger.warning("Regime classification failed for %s: %s", symbol, exc)
 
         # --- Model inference with regime-scaled thresholds ---
-        buy_threshold = 0.55 + 0.20 * regime_risk
-        sell_threshold = 0.45 - 0.20 * regime_risk
+        buy_threshold = min(0.95, 0.65 + 0.10 * regime_risk)
+        sell_threshold = max(0.05, 1.0 - buy_threshold)
 
         if self.active_model is not None and not drift_alert:
             try:

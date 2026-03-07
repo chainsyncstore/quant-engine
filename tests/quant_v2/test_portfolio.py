@@ -25,9 +25,9 @@ def test_allocate_signals_builds_signed_exposures_with_caps() -> None:
             _signal("ETHUSDT", "SELL", 0.68, uncertainty=0.15),
             _signal("SOLUSDT", "HOLD", 0.50),
         ],
-        total_risk_budget_frac=0.12,
+        total_risk_budget_frac=0.50,
         max_symbol_exposure_frac=0.05,
-        min_confidence=0.55,
+        min_confidence=0.65,
     )
 
     assert "BTCUSDT" in decision.target_exposures
@@ -36,6 +36,8 @@ def test_allocate_signals_builds_signed_exposures_with_caps() -> None:
     assert decision.target_exposures["ETHUSDT"] < 0
     assert abs(decision.target_exposures["BTCUSDT"]) <= 0.05
     assert abs(decision.target_exposures["ETHUSDT"]) <= 0.05
+    assert abs(decision.target_exposures["BTCUSDT"]) > abs(decision.target_exposures["ETHUSDT"])
+    assert decision.gross_exposure <= 0.10 + 1e-12
     assert decision.skipped_symbols["SOLUSDT"] == "hold"
 
 
@@ -45,14 +47,30 @@ def test_allocate_signals_skips_low_confidence_and_drift() -> None:
             _signal("BTCUSDT", "BUY", 0.52),
             _signal("ETHUSDT", "DRIFT_ALERT", 0.80),
         ],
-        total_risk_budget_frac=0.10,
-        min_confidence=0.55,
+        total_risk_budget_frac=0.50,
+        min_confidence=0.65,
     )
 
     assert decision.target_exposures == {}
     assert decision.gross_exposure == 0.0
     assert decision.skipped_symbols["BTCUSDT"].startswith("confidence<")
     assert decision.skipped_symbols["ETHUSDT"] == "drift_alert"
+
+
+def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
+    decision = allocate_signals(
+        [
+            _signal("BTCUSDT", "BUY", 0.80, uncertainty=0.0),
+            _signal("ETHUSDT", "BUY", 0.65, uncertainty=0.0),
+        ],
+        total_risk_budget_frac=0.50,
+        max_symbol_exposure_frac=0.05,
+        min_confidence=0.65,
+    )
+
+    assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.05)
+    assert decision.target_exposures["ETHUSDT"] == pytest.approx(0.025)
+    assert decision.gross_exposure == pytest.approx(0.075)
 
 
 def test_allocate_signals_validate_args() -> None:
