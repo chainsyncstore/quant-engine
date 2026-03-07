@@ -20,8 +20,8 @@ class PortfolioRiskPolicy:
     """Hard-cap portfolio policy (symbol, bucket, gross, and net)."""
 
     max_symbol_exposure_frac: float = 0.05
-    max_gross_exposure_frac: float = 0.20
-    max_net_exposure_frac: float = 0.10
+    max_gross_exposure_frac: float = 0.50
+    max_net_exposure_frac: float = 0.225
     correlation_bucket_caps: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
