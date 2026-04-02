@@ -11,6 +11,11 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   execution_engine:
     build: .
@@ -23,6 +28,11 @@ services:
     volumes:
       - ./models:/app/models
       - ./state:/state
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     environment:
       - REDIS_URL=redis://redis:6379
       - BOT_DB_PATH=/state/quant_bot.db
@@ -45,6 +55,11 @@ services:
       - ./models:/app/models
       - ./state:/state
       - ./signal_log.json:/app/signal_log.json
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     environment:
       - REDIS_URL=redis://redis:6379
       - BOT_DB_PATH=/state/quant_bot.db

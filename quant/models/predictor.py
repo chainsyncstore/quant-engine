@@ -34,7 +34,7 @@ def predict_proba(model: TrainedModel, X: pd.DataFrame) -> np.ndarray:
         raise ValueError(f"Missing feature columns: {missing}")
 
     X_ordered = X[model.feature_names]
-    probas = model.raw_model.predict_proba(X_ordered.values)
+    probas = model.raw_model.predict_proba(X_ordered)
 
     # Return probability of class 1 (price up)
     return probas[:, 1]

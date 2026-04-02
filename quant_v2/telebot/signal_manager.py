@@ -779,7 +779,10 @@ class V2SignalManager:
 
     @staticmethod
     def _default_client_factory(creds: dict[str, str], live: bool, symbol: str, interval: str) -> object:
-        base_url = "https://fapi.binance.com" if live else "https://testnet.binancefuture.com"
+        # Always use production Binance for market data (klines, OI, funding).
+        # The testnet does not support /futures/data/openInterestHist (returns 202).
+        # Testnet is only needed for authenticated order execution endpoints.
+        base_url = "https://fapi.binance.com"
         cfg = BinanceAPIConfig(
             api_key=str(creds.get("binance_api_key", "") or ""),
             api_secret=str(creds.get("binance_api_secret", "") or ""),
@@ -821,10 +824,13 @@ class V2SignalManager:
         open_interest = pd.DataFrame(columns=["open_interest", "open_interest_value"])
         fetch_open_interest = getattr(client, "fetch_open_interest", None)
         if callable(fetch_open_interest):
+            # Offset OI end time back by 5 min to avoid querying data
+            # Binance hasn't aggregated yet (causes persistent HTTP 202).
+            oi_date_to = date_to - timedelta(minutes=5)
             try:
-                open_interest = fetch_open_interest(date_from, date_to, symbol=symbol, period=interval)
+                open_interest = fetch_open_interest(date_from, oi_date_to, symbol=symbol, period=interval)
             except TypeError:
-                open_interest = fetch_open_interest(date_from, date_to, symbol=symbol)
+                open_interest = fetch_open_interest(date_from, oi_date_to, symbol=symbol)
             except Exception as exc:
                 logger.warning("Open-interest fetch failed for %s: %s", symbol, exc)
 

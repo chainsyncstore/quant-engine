@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import random
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -119,9 +120,23 @@ class BinanceClient:
                 )
                 resp.raise_for_status()
 
+            # HTTP 202 — Binance "accepted but not ready" (common on OI endpoint)
+            if resp.status_code == 202:
+                jitter = random.uniform(0.0, delay * 0.25)
+                logger.info(
+                    "HTTP 202 Not Ready (attempt %d/%d). Retrying in %.1fs.",
+                    attempt + 1,
+                    self._BACKOFF_MAX_RETRIES,
+                    delay + jitter,
+                )
+                time.sleep(delay + jitter)
+                delay = min(delay * 2, 30.0)
+                continue
+
             # Rate limit — back off
             if resp.status_code == 429:
                 retry_after = int(resp.headers.get("Retry-After", delay))
+                jitter = random.uniform(0.0, 2.0)
                 logger.warning(
                     "HTTP 429 Rate Limit (attempt %d/%d). Backing off for %ds. weight=%d",
                     attempt + 1,
@@ -129,7 +144,7 @@ class BinanceClient:
                     retry_after,
                     self._used_weight_1m,
                 )
-                time.sleep(retry_after)
+                time.sleep(retry_after + jitter)
                 delay = min(delay * 2, 60.0)
                 continue
 

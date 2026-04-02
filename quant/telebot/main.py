@@ -1695,8 +1695,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/set_horizon <hours|off> - Auto-close open trades after N hours\n"
             "/set_stoploss <percent|off> - Auto-close a trade at your max loss %\n\n"
             + trading_caption + "\n"
-            "Paper trading starts with a $10,000 practice balance and adjusts positions as new signals arrive.\n"
-            "Risk budget: can deploy up to 50% of equity across qualifying signals, still capped at 5% per symbol, with stronger confidence and rebalance filters to avoid low-edge churn."
+            "Paper trading starts with a $10,000 practice balance and rebalances positions as new signals arrive.\n"
+            "Risk budget: can deploy up to 100% of equity across qualifying signals, capped at 15% per symbol and 50% net exposure, with confidence thresholds and rebalance checks to avoid low-edge churn."
         )
         
         user_id = update.effective_user.id

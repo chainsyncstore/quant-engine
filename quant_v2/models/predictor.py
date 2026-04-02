@@ -16,11 +16,11 @@ def predict_proba(model: TrainedModel, X: pd.DataFrame) -> np.ndarray:
         raise ValueError(f"Missing feature columns: {sorted(missing)}")
 
     X_ordered = X[model.feature_names]
-    primary = model.primary_model.predict_proba(X_ordered.values)[:, 1]
+    primary = model.primary_model.predict_proba(X_ordered)[:, 1]
 
     calibrated = primary
     if model.calibrated_model is not None:
-        calibrated = model.calibrated_model.predict_proba(X_ordered.values)[:, 1]
+        calibrated = model.calibrated_model.predict_proba(X_ordered)[:, 1]
 
     refined = calibrated
     if model.meta_model is not None:
