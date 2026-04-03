@@ -504,6 +504,9 @@ class V2SignalManager:
         close_price = float(close_series.iloc[-1])
         timestamp = str(pd.Timestamp(close_series.index[-1]))
 
+        high_series = pd.to_numeric(bars["high"], errors="coerce").dropna() if "high" in bars.columns else pd.Series(dtype=float)
+        low_series = pd.to_numeric(bars["low"], errors="coerce").dropna() if "low" in bars.columns else pd.Series(dtype=float)
+
         if len(close_series) < 30:
             return self._attach_native_v2_fields(
                 {
@@ -523,6 +526,9 @@ class V2SignalManager:
                 "drift_alert": False,
                 "execution_anomaly_rate": 0.0,
                 "connectivity_error_rate": 0.0,
+                "_close_series": close_series,
+                "_high_series": high_series,
+                "_low_series": low_series,
                 }
             )
 
@@ -635,6 +641,9 @@ class V2SignalManager:
             "drift_alert": drift_alert,
             "execution_anomaly_rate": 0.0,
             "connectivity_error_rate": 0.0,
+            "_close_series": close_series,
+            "_high_series": high_series,
+            "_low_series": low_series,
             }
         )
 
@@ -729,6 +738,56 @@ class V2SignalManager:
         uncertainty = self._bounded_rate(1.0 - confidence)
 
         reason = str(payload.get("reason", ""))
+
+        # --- Session hour (UTC) from signal timestamp ---
+        session_hour_utc: int | None = None
+        try:
+            ts_raw = payload.get("timestamp")
+            if ts_raw is not None:
+                ts = pd.Timestamp(ts_raw)
+                if ts.tzinfo is None:
+                    ts = ts.tz_localize("UTC")
+                session_hour_utc = int(ts.hour)
+        except Exception:
+            session_hour_utc = None
+
+        # --- Momentum bias from EMA crossover [-1, 1] ---
+        momentum_bias: float | None = None
+        try:
+            close_series_raw = payload.get("_close_series")
+            if isinstance(close_series_raw, pd.Series) and len(close_series_raw) >= 50:
+                ema_fast = close_series_raw.ewm(span=12, adjust=False).mean()
+                ema_slow = close_series_raw.ewm(span=50, adjust=False).mean()
+                last_slow = float(ema_slow.iloc[-1])
+                if last_slow > 0:
+                    momentum_bias = max(-1.0, min(1.0, (float(ema_fast.iloc[-1]) - last_slow) / last_slow * 100.0))
+        except Exception:
+            momentum_bias = None
+
+        # --- ATR% for take-profit scaling ---
+        atr_pct: float | None = None
+        try:
+            close_series_raw = payload.get("_close_series")
+            high_series = payload.get("_high_series")
+            low_series = payload.get("_low_series")
+            if (
+                isinstance(close_series_raw, pd.Series)
+                and isinstance(high_series, pd.Series)
+                and isinstance(low_series, pd.Series)
+                and len(close_series_raw) >= 15
+            ):
+                tr = pd.concat([
+                    high_series - low_series,
+                    (high_series - close_series_raw.shift(1)).abs(),
+                    (low_series - close_series_raw.shift(1)).abs(),
+                ], axis=1).max(axis=1)
+                atr_14 = float(tr.tail(14).mean())
+                last_close = float(close_series_raw.iloc[-1])
+                if last_close > 0:
+                    atr_pct = atr_14 / last_close
+        except Exception:
+            atr_pct = None
+
         native_signal = StrategySignal(
             symbol=symbol,
             timeframe=self.anchor_interval,
@@ -737,6 +796,9 @@ class V2SignalManager:
             confidence=confidence,
             uncertainty=uncertainty,
             reason=reason,
+            session_hour_utc=session_hour_utc,
+            momentum_bias=momentum_bias,
+            atr_pct=atr_pct,
         )
 
         monitoring_snapshot = MonitoringSnapshot(

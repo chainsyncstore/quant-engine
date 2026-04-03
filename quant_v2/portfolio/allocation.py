@@ -2,10 +2,66 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Iterable
 
 from quant_v2.contracts import StrategySignal
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Session-edge windows (UTC hours)
+# ---------------------------------------------------------------------------
+# High-edge: overlaps with major session opens where breakout follow-through
+# is historically strongest.  Crypto vol clusters around US equity open
+# (13:30–15:00 UTC) and Asian open / daily close (00:00–02:00 UTC).
+_HIGH_EDGE_HOURS: frozenset[int] = frozenset({0, 1, 13, 14, 15})
+# Low-edge: weekend-like dead zones where signals have weaker follow-through.
+_LOW_EDGE_HOURS: frozenset[int] = frozenset({3, 4, 5, 9, 10, 11})
+
+_SESSION_BOOST: float = 1.0    # multiplier for high-edge hours
+_SESSION_NORMAL: float = 0.85  # multiplier for neutral hours
+_SESSION_DAMPEN: float = 0.65  # multiplier for low-edge hours
+
+# ---------------------------------------------------------------------------
+# Regime directional bias
+# ---------------------------------------------------------------------------
+_REGIME_ALIGN_MULT: float = 1.0   # signal aligns with momentum
+_REGIME_NEUTRAL_MULT: float = 0.85  # no clear momentum
+_REGIME_OPPOSE_MULT: float = 0.55  # signal fights the prevailing trend
+
+
+def _session_multiplier(hour_utc: int | None) -> float:
+    """Return a soft session-edge multiplier for the given UTC hour."""
+    if hour_utc is None:
+        return _SESSION_NORMAL
+    if hour_utc in _HIGH_EDGE_HOURS:
+        return _SESSION_BOOST
+    if hour_utc in _LOW_EDGE_HOURS:
+        return _SESSION_DAMPEN
+    return _SESSION_NORMAL
+
+
+def _regime_multiplier(signal_direction: str, momentum_bias: float | None) -> float:
+    """Return a soft regime-alignment multiplier.
+
+    *momentum_bias* is in [-1, 1]:
+      positive = bullish momentum, negative = bearish momentum.
+    A BUY signal aligned with positive momentum gets 1.0×;
+    a BUY signal opposing negative momentum gets the dampened multiplier.
+    """
+    if momentum_bias is None:
+        return _REGIME_NEUTRAL_MULT
+    abs_bias = abs(momentum_bias)
+    if abs_bias < 0.10:
+        return _REGIME_NEUTRAL_MULT
+
+    if signal_direction == "BUY":
+        return _REGIME_ALIGN_MULT if momentum_bias > 0 else _REGIME_OPPOSE_MULT
+    elif signal_direction == "SELL":
+        return _REGIME_ALIGN_MULT if momentum_bias < 0 else _REGIME_OPPOSE_MULT
+    return _REGIME_NEUTRAL_MULT
 
 
 @dataclass(frozen=True)
@@ -24,8 +80,17 @@ def allocate_signals(
     total_risk_budget_frac: float = 1.0,
     max_symbol_exposure_frac: float = 0.15,
     min_confidence: float = 0.65,
+    enable_session_filter: bool = True,
+    enable_regime_bias: bool = True,
 ) -> AllocationDecision:
-    """Allocate portfolio exposures from model signals under confidence-scaled caps."""
+    """Allocate portfolio exposures from model signals under confidence-scaled caps.
+
+    When *enable_session_filter* is True, signals carry a ``session_hour_utc``
+    field that modulates exposure based on intraday session-edge windows.
+
+    When *enable_regime_bias* is True, signals carry a ``momentum_bias`` field
+    that scales exposure based on trend alignment.
+    """
 
     if not 0.0 <= total_risk_budget_frac <= 1.0:
         raise ValueError("total_risk_budget_frac must be in [0, 1]")
@@ -59,6 +124,19 @@ def allocate_signals(
             continue
 
         signed_exposure = kelly_scale * adjusted_edge
+
+        # --- Session volatility filter ---
+        sess_mult = 1.0
+        if enable_session_filter:
+            sess_mult = _session_multiplier(signal.session_hour_utc)
+
+        # --- Regime directional bias ---
+        regime_mult = 1.0
+        if enable_regime_bias:
+            regime_mult = _regime_multiplier(signal.signal, signal.momentum_bias)
+
+        signed_exposure *= sess_mult * regime_mult
+
         if signal.signal == "SELL":
             signed_exposure *= -1.0
         capped_exposure = max(-max_symbol_exposure_frac, min(signed_exposure, max_symbol_exposure_frac))

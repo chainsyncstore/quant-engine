@@ -581,12 +581,19 @@ def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None
 
 
 def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
+    # Use a planner config that disables session/regime filters to preserve exact deadband math
+    from quant_v2.execution.planner import PlannerConfig
     service = RoutedExecutionService(
         min_rebalance_notional_usd=200.0,
         risk_policy=PortfolioRiskPolicy(
             max_symbol_exposure_frac=0.10,
             max_gross_exposure_frac=0.20,
             max_net_exposure_frac=0.20,
+        ),
+        planner_config=PlannerConfig(
+            total_risk_budget_frac=1.0,
+            max_symbol_exposure_frac=0.10,
+            min_confidence=0.0,
         ),
     )
     assert asyncio.run(service.start_session(SessionRequest(user_id=510, live=False))) is True
@@ -604,11 +611,6 @@ def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
             510,
             signals=(buy_signal,),
             prices={"BTCUSDT": 100.0},
-            planner_config=PlannerConfig(
-                total_risk_budget_frac=0.10,
-                max_symbol_exposure_frac=0.10,
-                min_confidence=0.0,
-            ),
         )
     )
     assert len(routed_entry) == 1
@@ -619,16 +621,19 @@ def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
     # Initial Equity is $10,000. 10% is $1000.
     # We change the target to 9.8% -> $980.
     # The drift is $20.00 notional, which is < $50.00, so it should skip.
+    # Use a new signal with lower confidence to get 9.8% target
+    rebalance_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.882,  # yields ~9.8% exposure after Kelly sizing
+    )
     routed_rebalance = asyncio.run(
         service.route_signals(
             510,
-            signals=(buy_signal,),
+            signals=(rebalance_signal,),
             prices={"BTCUSDT": 100.0},
-            planner_config=PlannerConfig(
-                total_risk_budget_frac=0.098,  
-                max_symbol_exposure_frac=0.10,
-                min_confidence=0.0,
-            ),
         )
     )
     assert len(routed_rebalance) == 1

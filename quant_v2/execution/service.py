@@ -85,12 +85,15 @@ class LifecycleRules:
 
     auto_close_horizon_bars: int = 0
     stop_loss_pct: float = 0.0
+    take_profit_atr_mult: float = 0.0
 
     def __post_init__(self) -> None:
         if self.auto_close_horizon_bars < 0:
             raise ValueError("auto_close_horizon_bars must be >= 0")
         if not 0.0 <= self.stop_loss_pct < 1.0:
             raise ValueError("stop_loss_pct must be within [0, 1)")
+        if self.take_profit_atr_mult < 0.0:
+            raise ValueError("take_profit_atr_mult must be >= 0")
 
 
 class ExecutionService(Protocol):
@@ -163,6 +166,8 @@ class _SessionState:
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
     paper_entry_price: dict[str, float] = field(default_factory=dict)
     position_opened_at: dict[str, datetime] = field(default_factory=dict)
+    position_entry_atr_pct: dict[str, float] = field(default_factory=dict)
+    position_peak_pnl_pct: dict[str, float] = field(default_factory=dict)
     last_rebalance_at: dict[str, datetime] = field(default_factory=dict)
     external_execution_anomaly_rate: float = 0.0
     external_hard_risk_breach: bool = False
@@ -1458,7 +1463,12 @@ class RoutedExecutionService:
         prices: dict[str, float],
     ) -> set[str]:
         rules = state.lifecycle_rules
-        if rules.auto_close_horizon_bars <= 0 and rules.stop_loss_pct <= 0.0:
+        has_any_rule = (
+            rules.auto_close_horizon_bars > 0
+            or rules.stop_loss_pct > 0.0
+            or rules.take_profit_atr_mult > 0.0
+        )
+        if not has_any_rule:
             return set()
 
         now_utc = datetime.now(timezone.utc)
@@ -1471,9 +1481,11 @@ class RoutedExecutionService:
         for symbol in tuple(state.position_opened_at):
             if symbol not in active_symbols:
                 state.position_opened_at.pop(symbol, None)
+                state.position_entry_atr_pct.pop(symbol, None)
+                state.position_peak_pnl_pct.pop(symbol, None)
 
         live_metrics: dict[str, dict[str, float]] = {}
-        if state.mode == "live" and rules.stop_loss_pct > 0.0:
+        if state.mode == "live" and (rules.stop_loss_pct > 0.0 or rules.take_profit_atr_mult > 0.0):
             try:
                 live_metrics = cls._safe_get_position_metrics(state.adapter)
             except Exception:
@@ -1489,15 +1501,14 @@ class RoutedExecutionService:
                 opened_at = now_utc
                 state.position_opened_at[symbol] = opened_at
 
+            # --- Time-based auto-close ---
             if rules.auto_close_horizon_bars > 0:
                 max_age = timedelta(hours=float(rules.auto_close_horizon_bars))
                 if now_utc - opened_at >= max_age:
                     forced.add(symbol)
                     continue
 
-            if rules.stop_loss_pct <= 0.0:
-                continue
-
+            # --- Resolve entry and mark price ---
             if state.mode == "live":
                 entry_price = float((live_metrics.get(symbol) or {}).get("entry_price", 0.0) or 0.0)
             else:
@@ -1506,14 +1517,51 @@ class RoutedExecutionService:
             if entry_price <= 0.0 or mark_price <= 0.0:
                 continue
 
+            # Compute unrealized PnL %
             if signed_qty > 0.0:
-                stop_level = entry_price * (1.0 - rules.stop_loss_pct)
-                if mark_price <= stop_level:
-                    forced.add(symbol)
+                pnl_pct = (mark_price - entry_price) / entry_price
             else:
-                stop_level = entry_price * (1.0 + rules.stop_loss_pct)
-                if mark_price >= stop_level:
-                    forced.add(symbol)
+                pnl_pct = (entry_price - mark_price) / entry_price
+
+            # --- Stop-loss check ---
+            if rules.stop_loss_pct > 0.0 and pnl_pct <= -rules.stop_loss_pct:
+                forced.add(symbol)
+                continue
+
+            # --- ATR-scaled take-profit with trailing stop ---
+            if rules.take_profit_atr_mult > 0.0:
+                entry_atr_pct = state.position_entry_atr_pct.get(symbol, 0.0)
+                if entry_atr_pct > 0.0:
+                    tp_target_pct = rules.take_profit_atr_mult * entry_atr_pct
+
+                    # Update peak PnL tracking
+                    prev_peak = state.position_peak_pnl_pct.get(symbol, 0.0)
+                    if pnl_pct > prev_peak:
+                        state.position_peak_pnl_pct[symbol] = pnl_pct
+                        prev_peak = pnl_pct
+
+                    # (a) Fixed target: close when profit hits target
+                    if pnl_pct >= tp_target_pct:
+                        logger.info(
+                            "Take-profit triggered for %s: pnl=%.4f%% >= target=%.4f%%",
+                            symbol, pnl_pct * 100, tp_target_pct * 100,
+                        )
+                        forced.add(symbol)
+                        continue
+
+                    # (b) Trailing stop: once profit exceeds 1.0 * ATR,
+                    #     trail at 0.5 * ATR behind peak
+                    trail_activation_pct = 1.0 * entry_atr_pct
+                    trail_distance_pct = 0.5 * entry_atr_pct
+                    if prev_peak >= trail_activation_pct:
+                        trail_stop_pct = prev_peak - trail_distance_pct
+                        if pnl_pct <= trail_stop_pct:
+                            logger.info(
+                                "Trailing take-profit triggered for %s: pnl=%.4f%% <= trail=%.4f%% (peak=%.4f%%)",
+                                symbol, pnl_pct * 100, trail_stop_pct * 100, prev_peak * 100,
+                            )
+                            forced.add(symbol)
+                            continue
 
         return forced
 
@@ -1956,12 +2004,21 @@ class RoutedExecutionService:
                 state.paper_entry_price.pop(symbol, None)
                 running_positions.pop(symbol, None)
                 state.position_opened_at.pop(symbol, None)
+                state.position_entry_atr_pct.pop(symbol, None)
+                state.position_peak_pnl_pct.pop(symbol, None)
             else:
                 state.paper_entry_price[symbol] = next_entry
                 running_positions[symbol] = next_qty
                 flipped_direction = (current_qty > 0.0 > next_qty) or (current_qty < 0.0 < next_qty)
                 if abs(current_qty) <= 1e-12 or flipped_direction:
                     state.position_opened_at[symbol] = now_utc
+                    state.position_peak_pnl_pct.pop(symbol, None)
+                    # Store ATR% from the latest signal for take-profit scaling
+                    latest_signal = state.latest_signals.get(symbol)
+                    if latest_signal is not None and latest_signal.atr_pct is not None:
+                        state.position_entry_atr_pct[symbol] = float(latest_signal.atr_pct)
+                    else:
+                        state.position_entry_atr_pct.pop(symbol, None)
                 elif previous_opened_at is not None:
                     state.position_opened_at[symbol] = previous_opened_at
                 else:

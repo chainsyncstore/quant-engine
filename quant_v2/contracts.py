@@ -21,6 +21,9 @@ class StrategySignal:
     confidence: float
     uncertainty: float | None = None
     reason: str = ""
+    session_hour_utc: int | None = None
+    momentum_bias: float | None = None
+    atr_pct: float | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:
@@ -33,6 +36,12 @@ class StrategySignal:
             raise ValueError("Signal confidence must be within [0, 1]")
         if self.uncertainty is not None and not 0.0 <= self.uncertainty <= 1.0:
             raise ValueError("Signal uncertainty must be within [0, 1]")
+        if self.session_hour_utc is not None and not 0 <= self.session_hour_utc <= 23:
+            raise ValueError("session_hour_utc must be within [0, 23]")
+        if self.momentum_bias is not None and not -1.0 <= self.momentum_bias <= 1.0:
+            raise ValueError("momentum_bias must be within [-1, 1]")
+        if self.atr_pct is not None and self.atr_pct < 0.0:
+            raise ValueError("atr_pct must be >= 0")
 
     @property
     def actionable(self) -> bool:

@@ -58,6 +58,7 @@ def test_allocate_signals_skips_low_confidence_and_drift() -> None:
 
 
 def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
+    # Disable session/regime filters to test pure Kelly scaling
     decision = allocate_signals(
         [
             _signal("BTCUSDT", "BUY", 0.80, uncertainty=0.0),
@@ -66,6 +67,8 @@ def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
         total_risk_budget_frac=0.50,
         max_symbol_exposure_frac=0.05,
         min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
     )
 
     assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.05)
