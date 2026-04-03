@@ -21,8 +21,8 @@ class AllocationDecision:
 def allocate_signals(
     signals: Iterable[StrategySignal],
     *,
-    total_risk_budget_frac: float = 0.50,
-    max_symbol_exposure_frac: float = 0.05,
+    total_risk_budget_frac: float = 1.0,
+    max_symbol_exposure_frac: float = 0.15,
     min_confidence: float = 0.65,
 ) -> AllocationDecision:
     """Allocate portfolio exposures from model signals under confidence-scaled caps."""

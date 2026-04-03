@@ -23,8 +23,8 @@ class IntentPlan:
 class PlannerConfig:
     """Execution planner tuning knobs."""
 
-    total_risk_budget_frac: float = 0.50
-    max_symbol_exposure_frac: float = 0.05
+    total_risk_budget_frac: float = 1.0
+    max_symbol_exposure_frac: float = 0.15
     min_confidence: float = 0.65
 
 
