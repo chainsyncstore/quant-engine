@@ -24,6 +24,7 @@ class StrategySignal:
     session_hour_utc: int | None = None
     momentum_bias: float | None = None
     atr_pct: float | None = None
+    symbol_hit_rate: float | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:
@@ -42,6 +43,8 @@ class StrategySignal:
             raise ValueError("momentum_bias must be within [-1, 1]")
         if self.atr_pct is not None and self.atr_pct < 0.0:
             raise ValueError("atr_pct must be >= 0")
+        if self.symbol_hit_rate is not None and not 0.0 <= self.symbol_hit_rate <= 1.0:
+            raise ValueError("symbol_hit_rate must be within [0, 1]")
 
     @property
     def actionable(self) -> bool:

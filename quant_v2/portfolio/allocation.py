@@ -31,6 +31,15 @@ _REGIME_ALIGN_MULT: float = 1.0   # signal aligns with momentum
 _REGIME_NEUTRAL_MULT: float = 0.85  # no clear momentum
 _REGIME_OPPOSE_MULT: float = 0.55  # signal fights the prevailing trend
 
+# ---------------------------------------------------------------------------
+# Symbol prediction accuracy dampening
+# ---------------------------------------------------------------------------
+_ACCURACY_STRONG_THRESHOLD: float = 0.55   # hit rate above this → full allocation
+_ACCURACY_WEAK_THRESHOLD: float = 0.45     # hit rate below this → heavy dampening
+_ACCURACY_STRONG_MULT: float = 1.0
+_ACCURACY_NEUTRAL_MULT: float = 0.60
+_ACCURACY_WEAK_MULT: float = 0.30
+
 
 def _session_multiplier(hour_utc: int | None) -> float:
     """Return a soft session-edge multiplier for the given UTC hour."""
@@ -41,6 +50,20 @@ def _session_multiplier(hour_utc: int | None) -> float:
     if hour_utc in _LOW_EDGE_HOURS:
         return _SESSION_DAMPEN
     return _SESSION_NORMAL
+
+
+def _symbol_accuracy_multiplier(hit_rate: float | None) -> float:
+    """Return a soft allocation multiplier based on rolling prediction accuracy.
+
+    Returns 1.0 (neutral) when *hit_rate* is None (insufficient data).
+    """
+    if hit_rate is None:
+        return _ACCURACY_STRONG_MULT
+    if hit_rate >= _ACCURACY_STRONG_THRESHOLD:
+        return _ACCURACY_STRONG_MULT
+    if hit_rate >= _ACCURACY_WEAK_THRESHOLD:
+        return _ACCURACY_NEUTRAL_MULT
+    return _ACCURACY_WEAK_MULT
 
 
 def _regime_multiplier(signal_direction: str, momentum_bias: float | None) -> float:
@@ -82,6 +105,7 @@ def allocate_signals(
     min_confidence: float = 0.65,
     enable_session_filter: bool = True,
     enable_regime_bias: bool = True,
+    enable_symbol_accuracy: bool = True,
 ) -> AllocationDecision:
     """Allocate portfolio exposures from model signals under confidence-scaled caps.
 
@@ -90,6 +114,9 @@ def allocate_signals(
 
     When *enable_regime_bias* is True, signals carry a ``momentum_bias`` field
     that scales exposure based on trend alignment.
+
+    When *enable_symbol_accuracy* is True, signals carry a ``symbol_hit_rate``
+    field that dampens allocation for symbols with poor rolling prediction accuracy.
     """
 
     if not 0.0 <= total_risk_budget_frac <= 1.0:
@@ -135,7 +162,12 @@ def allocate_signals(
         if enable_regime_bias:
             regime_mult = _regime_multiplier(signal.signal, signal.momentum_bias)
 
-        signed_exposure *= sess_mult * regime_mult
+        # --- Symbol prediction accuracy ---
+        accuracy_mult = 1.0
+        if enable_symbol_accuracy:
+            accuracy_mult = _symbol_accuracy_multiplier(signal.symbol_hit_rate)
+
+        signed_exposure *= sess_mult * regime_mult * accuracy_mult
 
         if signal.signal == "SELL":
             signed_exposure *= -1.0

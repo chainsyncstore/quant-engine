@@ -69,6 +69,7 @@ def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
         min_confidence=0.65,
         enable_session_filter=False,
         enable_regime_bias=False,
+        enable_symbol_accuracy=False,
     )
 
     assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.05)
@@ -114,6 +115,64 @@ def test_portfolio_risk_policy_caps_symbol_bucket_gross_and_net() -> None:
     assert sum(abs(v) for v in result.exposures.values()) <= 0.15 + 1e-12
     assert abs(sum(result.exposures.values())) <= 0.05 + 1e-12
     assert "symbol_cap" in result.constraints_applied
+
+
+def test_allocate_signals_symbol_accuracy_dampens_weak_pairs() -> None:
+    """Signals with poor rolling hit rate get dampened allocation."""
+    strong_signal = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        symbol_hit_rate=0.60,  # > 55% → mult 1.0
+    )
+    weak_signal = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        symbol_hit_rate=0.40,  # < 45% → mult 0.30
+    )
+
+    decision = allocate_signals(
+        [strong_signal, weak_signal],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=True,
+    )
+
+    # Strong pair should get full allocation; weak pair ~0.30× of that
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
+    assert btc > eth
+    assert eth == pytest.approx(btc * 0.30, rel=0.01)
+
+
+def test_allocate_signals_no_data_symbol_accuracy_is_neutral() -> None:
+    """symbol_hit_rate=None should not dampen (neutral 1.0×)."""
+    with_data = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        symbol_hit_rate=0.60,
+    )
+    no_data = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        symbol_hit_rate=None,  # no data → neutral 1.0
+    )
+
+    decision = allocate_signals(
+        [with_data, no_data],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=True,
+    )
+
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
+    assert btc == pytest.approx(eth)  # both get 1.0× multiplier
 
 
 def test_portfolio_risk_policy_validate_args() -> None:

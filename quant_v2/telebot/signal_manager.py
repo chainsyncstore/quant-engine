@@ -19,6 +19,7 @@ from quant.data.binance_client import BinanceClient
 from quant_v2.config import default_universe_symbols
 from quant_v2.contracts import StrategySignal
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
+from quant_v2.telebot.symbol_scorecard import SymbolScorecard
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,8 @@ class V2SignalManager:
         self.sessions: dict[int, _SignalSession] = {}
         # OI cache for API 202 fallback: symbol -> (timestamp, oi_value)
         self._oi_cache: dict[str, tuple[datetime, float]] = {}
+        # Per-symbol prediction accuracy scorecard (shared across sessions)
+        self.scorecard = SymbolScorecard(lookback_hours=72, min_samples=8)
 
     @staticmethod
     def _resolve_loop_interval(loop_interval_seconds: int | None) -> int:
@@ -169,6 +172,7 @@ class V2SignalManager:
 
         session.last_bar_timestamp.clear()
         session.signal_log.clear()
+        self.scorecard.reset()
         return True
 
     def is_running(self, user_id: int) -> bool:
@@ -431,6 +435,8 @@ class V2SignalManager:
         except Exception as e:
             logger.warning("Failed to refresh active model from registry: %s", e)
 
+        cycle_prices: dict[str, float] = {}
+
         for symbol in self.symbols:
             fetch_call = partial(
                 self._fetch_bars_fn,
@@ -479,11 +485,34 @@ class V2SignalManager:
             payload = self._build_signal_payload(
                 symbol, bars, data_quality_flag=data_quality_flag,
             )
+
+            # --- Collect price for scorecard evaluation ---
+            close_price = float(payload.get("close_price", 0.0) or 0.0)
+            if close_price > 0.0:
+                cycle_prices[symbol] = close_price
+
+            # --- Record actionable prediction in scorecard ---
+            signal_type = str(payload.get("signal", "HOLD")).upper()
+            if signal_type in ("BUY", "SELL") and close_price > 0.0:
+                self.scorecard.record_prediction(
+                    symbol=symbol,
+                    direction=signal_type,
+                    confidence=float(payload.get("probability", 0.5)),
+                    entry_price=close_price,
+                    horizon_bars=self.horizon_bars,
+                )
+
             session.signal_log.append(payload)
             if len(session.signal_log) > self.max_signal_log:
                 del session.signal_log[:-self.max_signal_log]
 
             await self._emit(session, payload)
+
+        # --- Evaluate pending scorecard predictions after all symbols processed ---
+        if cycle_prices:
+            resolved = self.scorecard.evaluate_pending(cycle_prices)
+            if resolved > 0:
+                logger.info("Scorecard: resolved %d pending predictions", resolved)
 
     async def _emit(self, session: _SignalSession, payload: dict[str, Any]) -> None:
         callback_result = session.on_signal(payload)
@@ -788,6 +817,17 @@ class V2SignalManager:
         except Exception:
             atr_pct = None
 
+        # --- Symbol accuracy from scorecard ---
+        symbol_hit_rate = self.scorecard.get_hit_rate(symbol)
+        accuracy_mult = self.scorecard.get_accuracy_multiplier(symbol)
+        if accuracy_mult < 1.0:
+            logger.info(
+                "Scorecard dampening %s: hit_rate=%.2f, mult=%.2f",
+                symbol,
+                symbol_hit_rate if symbol_hit_rate is not None else -1.0,
+                accuracy_mult,
+            )
+
         native_signal = StrategySignal(
             symbol=symbol,
             timeframe=self.anchor_interval,
@@ -799,6 +839,7 @@ class V2SignalManager:
             session_hour_utc=session_hour_utc,
             momentum_bias=momentum_bias,
             atr_pct=atr_pct,
+            symbol_hit_rate=symbol_hit_rate,
         )
 
         monitoring_snapshot = MonitoringSnapshot(
