@@ -12,10 +12,13 @@ COPY pyproject.toml ./
 COPY quant/ ./quant/
 COPY quant_v2/ ./quant_v2/
 
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 RUN pip install --no-cache-dir --prefix=/install \
     numpy pandas scikit-learn lightgbm \
     requests python-dotenv sqlalchemy cryptography aiosqlite \
-    python-telegram-bot "redis[async]"
+    python-telegram-bot "redis[async]" \
+    chronos-forecasting torch
 
 # ---- Stage 2: Runtime (no compiler, no root) ----
 FROM python:3.11-slim

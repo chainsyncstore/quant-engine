@@ -96,3 +96,89 @@ class HorizonEnsemble:
     @property
     def horizon_count(self) -> int:
         return len(self.models)
+
+
+class FullEnsemble:
+    """Combines LightGBM horizon ensemble + Chronos time-series model."""
+
+    def __init__(
+        self,
+        lgbm_ensemble: HorizonEnsemble | None = None,
+        enable_chronos: bool = True,
+        lgbm_weight: float = 0.65,
+        chronos_weight: float = 0.35,
+    ) -> None:
+        self.lgbm_ensemble = lgbm_ensemble
+        self.enable_chronos = enable_chronos
+        self._lgbm_weight = lgbm_weight
+        self._chronos_weight = chronos_weight
+
+    def predict(
+        self,
+        feature_row: pd.DataFrame,
+        close_series: pd.Series,
+        prediction_length: int = 4,
+    ) -> tuple[float, float, float | None]:
+        """Combined prediction from LightGBM ensemble + Chronos.
+
+        Returns
+        -------
+        tuple[float, float, float | None]
+            (probability, uncertainty, model_agreement)
+            model_agreement is 1.0 if both agree, 0.0 if they disagree,
+            None if only one source contributed.
+        """
+
+        probas: list[float] = []
+        uncertainties: list[float] = []
+        weights: list[float] = []
+        source_labels: list[str] = []
+
+        # LightGBM ensemble
+        if self.lgbm_ensemble is not None:
+            try:
+                p, u = self.lgbm_ensemble.predict(feature_row)
+                probas.append(p)
+                uncertainties.append(u)
+                weights.append(self._lgbm_weight)
+                source_labels.append("lgbm")
+            except Exception as e:
+                logger.warning("LightGBM ensemble failed: %s", e)
+
+        # Chronos
+        if self.enable_chronos:
+            try:
+                from quant_v2.models.chronos_wrapper import predict_next_bar_direction
+
+                p, u = predict_next_bar_direction(close_series, prediction_length)
+                probas.append(p)
+                uncertainties.append(u)
+                weights.append(self._chronos_weight)
+                source_labels.append("chronos")
+            except Exception as e:
+                logger.warning("Chronos prediction failed: %s", e)
+
+        if not probas:
+            return 0.5, 1.0, None
+
+        w = np.array(weights)
+        w = w / w.sum()
+        final_p = float(np.dot(w, probas))
+        final_u = float(np.dot(w, uncertainties))
+
+        # Compute model agreement
+        model_agreement: float | None = None
+        if len(probas) > 1:
+            directions = [1 if p > 0.5 else 0 for p in probas]
+            if len(set(directions)) == 1:
+                # Both agree on direction
+                model_agreement = 1.0
+                final_u *= 0.80  # 20% uncertainty reduction for agreement
+            else:
+                model_agreement = 0.0
+
+        return (
+            float(np.clip(final_p, 0.0, 1.0)),
+            float(np.clip(final_u, 0.0, 1.0)),
+            model_agreement,
+        )

@@ -45,6 +45,14 @@ _ACCURACY_WEAK_MULT: float = 0.30
 # ---------------------------------------------------------------------------
 _EVENT_DEFAULT_MULT: float = 1.0  # no event data → neutral
 
+# ---------------------------------------------------------------------------
+# Model agreement dampening
+# ---------------------------------------------------------------------------
+_AGREEMENT_STRONG_THRESHOLD: float = 0.8
+_AGREEMENT_STRONG_MULT: float = 1.0
+_AGREEMENT_NEUTRAL_MULT: float = 0.85
+_AGREEMENT_WEAK_MULT: float = 0.60
+
 
 def _session_multiplier(hour_utc: int | None) -> float:
     """Return a soft session-edge multiplier for the given UTC hour."""
@@ -76,6 +84,23 @@ def _event_gate_multiplier(event_gate_mult: float | None) -> float:
     if event_gate_mult is None:
         return _EVENT_DEFAULT_MULT
     return max(0.0, min(event_gate_mult, 1.0))
+
+
+def _model_agreement_multiplier(agreement: float | None) -> float:
+    """Return allocation multiplier based on model agreement level.
+
+    agreement >= 0.8 → 1.0× (strong agreement, full allocation)
+    agreement >= 0.5 → 0.85× (mild agreement)
+    agreement < 0.5  → 0.60× (disagreement, dampen)
+    None             → 0.85× (neutral, no data)
+    """
+    if agreement is None:
+        return _AGREEMENT_NEUTRAL_MULT
+    if agreement >= _AGREEMENT_STRONG_THRESHOLD:
+        return _AGREEMENT_STRONG_MULT
+    if agreement >= 0.5:
+        return _AGREEMENT_NEUTRAL_MULT
+    return _AGREEMENT_WEAK_MULT
 
 
 def _regime_multiplier(signal_direction: str, momentum_bias: float | None) -> float:
@@ -119,6 +144,7 @@ def allocate_signals(
     enable_regime_bias: bool = True,
     enable_symbol_accuracy: bool = True,
     enable_event_gate: bool = True,
+    enable_model_agreement: bool = True,
 ) -> AllocationDecision:
     """Allocate portfolio exposures from model signals under confidence-scaled caps.
 
@@ -185,7 +211,12 @@ def allocate_signals(
         if enable_event_gate:
             event_mult = _event_gate_multiplier(signal.event_gate_mult)
 
-        signed_exposure *= sess_mult * regime_mult * accuracy_mult * event_mult
+        # --- Model agreement ---
+        agreement_mult = 1.0
+        if enable_model_agreement:
+            agreement_mult = _model_agreement_multiplier(signal.model_agreement)
+
+        signed_exposure *= sess_mult * regime_mult * accuracy_mult * event_mult * agreement_mult
 
         if signal.signal == "SELL":
             signed_exposure *= -1.0

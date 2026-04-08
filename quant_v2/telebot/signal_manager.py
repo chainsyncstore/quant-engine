@@ -72,6 +72,8 @@ class V2SignalManager:
         self.registry = ModelRegistry(self.registry_root)
         self.active_model: TrainedModel | None = None
         self.horizon_ensemble: "HorizonEnsemble | None" = None  # Phase 1: multi-horizon ensemble
+        self.full_ensemble: "FullEnsemble | None" = None  # Phase 3: LightGBM + Chronos
+        self._last_model_agreement: float | None = None  # Phase 3: cached per-symbol
 
         # Ensure BTCUSDT is processed first (needed for cross-pair features)
         symbols_list = list(symbols or default_universe_symbols())
@@ -458,6 +460,19 @@ class V2SignalManager:
                     logger.info("Loaded %d-horizon ensemble", ensemble.horizon_count)
                 else:
                     self.horizon_ensemble = None
+
+                # Phase 3: Build full ensemble (LightGBM + Chronos)
+                from quant_v2.models.ensemble import FullEnsemble
+                try:
+                    self.full_ensemble = FullEnsemble(
+                        lgbm_ensemble=self.horizon_ensemble,
+                        enable_chronos=True,
+                    )
+                    logger.info("FullEnsemble initialized (chronos=True, lgbm=%s)",
+                                self.horizon_ensemble is not None)
+                except Exception as fe_err:
+                    logger.warning("Failed to initialize FullEnsemble: %s", fe_err)
+                    self.full_ensemble = None
         except Exception as e:
             logger.warning("Failed to refresh active model from registry: %s", e)
 
@@ -660,13 +675,16 @@ class V2SignalManager:
         buy_threshold = min(0.95, 0.65 + 0.10 * regime_risk)
         sell_threshold = max(0.05, 1.0 - buy_threshold)
 
-        if self.active_model is not None and not drift_alert:
+        self._last_model_agreement = None  # Reset before each symbol prediction
+        if (self.active_model is not None or self.full_ensemble is not None) and not drift_alert:
             try:
                 if featured is not None and not featured.empty:
                     feature_row = self._extract_model_row(featured)
                 else:
                     feature_row = self._prepare_model_features(symbol, bars)
-                proba_up, uncertainty = self._predict_with_uncertainty(feature_row)
+                proba_up, uncertainty = self._predict_with_uncertainty(
+                    feature_row, close_series=close_series,
+                )
 
                 # Data quality penalty: shrink probability toward 0.5 by 25%
                 if data_quality_flag:
@@ -724,10 +742,24 @@ class V2SignalManager:
             }
         )
 
-    def _predict_with_uncertainty(self, feature_row: pd.DataFrame) -> tuple[float, float]:
-        """Run model inference — ensemble if available, single model fallback."""
+    def _predict_with_uncertainty(
+        self, feature_row: pd.DataFrame, close_series: pd.Series | None = None,
+    ) -> tuple[float, float]:
+        """Run model inference — full ensemble / horizon ensemble / single model fallback."""
 
-        # Try ensemble first
+        # Phase 3: Try full ensemble (LightGBM + Chronos) first
+        if self.full_ensemble is not None and close_series is not None:
+            try:
+                p, u, agreement = self.full_ensemble.predict(
+                    feature_row, close_series, prediction_length=self.horizon_bars,
+                )
+                # Store agreement for later attachment to StrategySignal
+                self._last_model_agreement = agreement
+                return p, u
+            except Exception as e:
+                logger.warning("FullEnsemble prediction failed, falling back: %s", e)
+
+        # Try horizon ensemble
         if self.horizon_ensemble is not None:
             return self.horizon_ensemble.predict(feature_row)
 
@@ -900,6 +932,9 @@ class V2SignalManager:
             if gate_result.has_event:
                 event_gate_mult = gate_result.multiplier
 
+        # --- Model agreement (Phase 3) ---
+        model_agreement: float | None = self._last_model_agreement
+
         native_signal = StrategySignal(
             symbol=symbol,
             timeframe=self.anchor_interval,
@@ -913,6 +948,7 @@ class V2SignalManager:
             atr_pct=atr_pct,
             symbol_hit_rate=symbol_hit_rate,
             event_gate_mult=event_gate_mult,
+            model_agreement=model_agreement,
         )
 
         monitoring_snapshot = MonitoringSnapshot(

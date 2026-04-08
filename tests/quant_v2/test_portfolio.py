@@ -70,6 +70,8 @@ def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
         enable_session_filter=False,
         enable_regime_bias=False,
         enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
     )
 
     assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.05)
@@ -261,6 +263,128 @@ def test_allocate_signals_event_gate_disabled_ignores_field() -> None:
     btc = abs(decision.target_exposures["BTCUSDT"])
     eth = abs(decision.target_exposures["ETHUSDT"])
     # Both should be equal since event gate is disabled
+    assert btc == pytest.approx(eth)
+
+
+def test_allocate_signals_model_agreement_strong_is_full() -> None:
+    """model_agreement >= 0.8 should give full allocation (1.0×)."""
+    strong_agree = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.9,  # strong → 1.0×
+    )
+    mild_agree = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.6,  # mild → 0.85×
+    )
+
+    decision = allocate_signals(
+        [strong_agree, mild_agree],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=True,
+    )
+
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
+    assert btc > eth
+    assert eth == pytest.approx(btc * 0.85, rel=0.01)
+
+
+def test_allocate_signals_model_agreement_disagree_dampens() -> None:
+    """model_agreement < 0.5 should dampen to 0.60×."""
+    full_signal = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.9,  # 1.0×
+    )
+    disagree_signal = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.2,  # < 0.5 → 0.60×
+    )
+
+    decision = allocate_signals(
+        [full_signal, disagree_signal],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=True,
+    )
+
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
+    assert btc > eth
+    assert eth == pytest.approx(btc * 0.60, rel=0.01)
+
+
+def test_allocate_signals_model_agreement_none_is_neutral() -> None:
+    """model_agreement=None should give 0.85× (neutral)."""
+    with_data = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.9,  # strong → 1.0×
+    )
+    no_data = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=None,  # neutral → 0.85×
+    )
+
+    decision = allocate_signals(
+        [with_data, no_data],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=True,
+    )
+
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
+    assert eth == pytest.approx(btc * 0.85, rel=0.01)
+
+
+def test_allocate_signals_model_agreement_disabled_ignores_field() -> None:
+    """enable_model_agreement=False should ignore model_agreement entirely."""
+    sig_a = StrategySignal(
+        symbol="BTCUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.9,
+    )
+    sig_b = StrategySignal(
+        symbol="ETHUSDT", timeframe="1h", horizon_bars=4,
+        signal="BUY", confidence=0.80, uncertainty=0.0,
+        model_agreement=0.1,  # would dampen if enabled
+    )
+
+    decision = allocate_signals(
+        [sig_a, sig_b],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,  # disabled
+    )
+
+    btc = abs(decision.target_exposures["BTCUSDT"])
+    eth = abs(decision.target_exposures["ETHUSDT"])
     assert btc == pytest.approx(eth)
 
 

@@ -26,6 +26,7 @@ class StrategySignal:
     atr_pct: float | None = None
     symbol_hit_rate: float | None = None
     event_gate_mult: float | None = None
+    model_agreement: float | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:
@@ -48,6 +49,8 @@ class StrategySignal:
             raise ValueError("symbol_hit_rate must be within [0, 1]")
         if self.event_gate_mult is not None and not 0.0 <= self.event_gate_mult <= 1.0:
             raise ValueError("event_gate_mult must be within [0, 1]")
+        if self.model_agreement is not None and not 0.0 <= self.model_agreement <= 1.0:
+            raise ValueError("model_agreement must be within [0, 1]")
 
     @property
     def actionable(self) -> bool:
