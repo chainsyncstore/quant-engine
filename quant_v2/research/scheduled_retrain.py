@@ -61,14 +61,79 @@ def _build_labels(
     return labels
 
 
-def _validate_model(model: TrainedModel, X_test: pd.DataFrame, y_test: pd.Series) -> float:
-    """Walk-forward validation: accuracy on held-out test set."""
+def _validate_model_single(model: TrainedModel, X_test: pd.DataFrame, y_test: pd.Series) -> float:
+    """Single-fold validation using predictor.py path (matches inference)."""
     if X_test.empty:
         return 0.0
-    proba = model.primary_model.predict_proba(X_test.values)[:, 1]
+    from quant_v2.models.predictor import predict_proba
+    proba = predict_proba(model, X_test)
     preds = (proba > 0.5).astype(int)
     accuracy = float(np.mean(preds == y_test.values))
     return accuracy
+
+
+def _walk_forward_cv(
+    X: pd.DataFrame,
+    y: pd.Series,
+    horizon: int,
+    n_splits: int = 5,
+    embargo_bars: int = 100,
+    cal_frac: float = 0.20,
+) -> float:
+    """Purged walk-forward cross-validation with embargo gaps.
+
+    Returns mean accuracy across all folds. Prevents leakage between train/test.
+    """
+    from sklearn.model_selection import TimeSeriesSplit
+
+    total_len = len(X)
+    if total_len < 1000:
+        return 0.0
+
+    # Use TimeSeriesSplit for expanding windows
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    accuracies: list[float] = []
+
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+        # Apply embargo: remove last `embargo_bars` from train
+        # to prevent leakage from train into test
+        if len(train_idx) > embargo_bars:
+            train_idx = train_idx[:-embargo_bars]
+
+        X_train_fold = X.iloc[train_idx]
+        y_train_fold = y.iloc[train_idx]
+        X_test_fold = X.iloc[test_idx]
+        y_test_fold = y.iloc[test_idx]
+
+        if len(X_train_fold) < 500 or len(X_test_fold) < 100:
+            continue
+
+        try:
+            model = train(X_train_fold, y_train_fold, horizon=horizon)
+            acc = _validate_model_single(model, X_test_fold, y_test_fold)
+            accuracies.append(acc)
+        except Exception as e:
+            logger.warning("CV fold %d failed for horizon=%dh: %s", fold_idx, horizon, e)
+            continue
+
+    if not accuracies:
+        return 0.0
+    return float(np.mean(accuracies))
+
+
+def _compute_sample_weights(timestamps: pd.DatetimeIndex, half_life_days: float = 60) -> np.ndarray:
+    """Exponential decay weights: recent data gets more weight.
+
+    half_life_days: number of days for weight to decay to 50%
+    """
+    if len(timestamps) == 0:
+        return np.ones(len(timestamps))
+
+    now = timestamps[-1]  # most recent
+    days_ago = (now - timestamps).total_seconds() / 86400.0
+    decay_rate = np.log(2) / half_life_days
+    weights = np.exp(-decay_rate * days_ago)
+    return weights / weights.mean()  # normalize to mean=1
 
 
 def retrain_and_promote(
@@ -159,17 +224,33 @@ def retrain_and_promote(
 
         logger.info("Retrain horizon=%dh: train=%d test=%d", horizon, len(X_train), len(X_test))
 
+        # Compute sample weights for recency bias (Phase 4)
+        if "timestamp" in featured.columns:
+            timestamps = pd.to_datetime(featured.loc[mask, "timestamp"])
+            sample_weights = _compute_sample_weights(timestamps, half_life_days=60)
+        else:
+            sample_weights = None
+
         try:
-            model = train(X_train, y_train, horizon=horizon)
+            model = train(X_train, y_train, horizon=horizon, sample_weight=sample_weights[:split_idx] if sample_weights is not None else None)
         except Exception as e:
             logger.error("Retrain horizon=%dh training failed: %s", horizon, e)
             all_passed = False
             continue
 
-        # Validate on held-out test set
-        accuracy = _validate_model(model, X_test, y_test)
+        # Phase 2: Walk-forward CV validation (more robust than single split)
+        cv_accuracy = _walk_forward_cv(
+            X_all, y_all, horizon=horizon,
+            n_splits=5, embargo_bars=100, cal_frac=cfg.wf_calibration_frac
+        )
+        # Also get single-split accuracy for comparison
+        single_accuracy = _validate_model_single(model, X_test, y_test)
+
+        # Use CV accuracy for promotion gate, log both
+        accuracy = cv_accuracy if cv_accuracy > 0 else single_accuracy
         validation_scores[horizon] = accuracy
-        logger.info("Retrain horizon=%dh: test accuracy=%.4f (threshold=%.4f)", horizon, accuracy, min_accuracy)
+        logger.info("Retrain horizon=%dh: CV accuracy=%.4f, single-split=%.4f (threshold=%.4f)",
+                    horizon, cv_accuracy, single_accuracy, min_accuracy)
 
         if accuracy < min_accuracy:
             logger.warning("Retrain horizon=%dh: FAILED validation (%.4f < %.4f)", horizon, accuracy, min_accuracy)

@@ -41,6 +41,7 @@ def train(
     horizon: int,
     calibration_frac: float | None = None,
     params_override: dict[str, Any] | None = None,
+    sample_weight: np.ndarray | None = None,
 ) -> TrainedModel:
     """Train v2 model stack with fold-local calibration and meta refinement."""
 
@@ -83,7 +84,12 @@ def train(
     y_fit = y.iloc[:n_fit]
 
     primary = LGBMClassifier(**lgbm_params)
-    primary.fit(X_fit.values, y_fit.values)
+    if sample_weight is not None:
+        # Slice sample_weight to match fit fold
+        sw_fit = sample_weight[:n_fit] if len(sample_weight) >= n_fit else None
+    else:
+        sw_fit = None
+    primary.fit(X_fit.values, y_fit.values, sample_weight=sw_fit)
 
     importances = np.asarray(primary.feature_importances_, dtype=float)
     if importances.size == 0:
