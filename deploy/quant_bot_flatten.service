@@ -1,0 +1,17 @@
+[Unit]
+Description=Quant Bot — graceful position flatten before shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStop=/usr/local/bin/flatten_on_shutdown.sh
+TimeoutStopSec=150
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

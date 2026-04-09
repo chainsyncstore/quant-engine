@@ -823,6 +823,7 @@ async def run_server() -> None:
 
     await stop_event.wait()
     await server.stop()
+    logger.info("positions_flat")  # sentinel for flatten_on_shutdown.sh
 
 
 def main() -> None:
