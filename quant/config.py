@@ -75,13 +75,16 @@ class ResearchConfig:
     # Feature budget
     max_features: int = 97  # was 90, added 7 new features in Phase 1
 
-    # Model hyperparameters
-    lgbm_n_estimators: int = 500
-    lgbm_max_depth: int = 6
-    lgbm_learning_rate: float = 0.05
-    lgbm_subsample: float = 0.8
-    lgbm_colsample_bytree: float = 0.8
-    lgbm_min_child_samples: int = 50
+    # Model hyperparameters (Phase 3 tuned: better generalization with larger dataset)
+    lgbm_n_estimators: int = 1500          # More trees, early stopping prevents overfit
+    lgbm_max_depth: int = 5                # Shallower trees = better generalization
+    lgbm_learning_rate: float = 0.03       # Slower learning for stability
+    lgbm_subsample: float = 0.7            # More aggressive row sampling
+    lgbm_colsample_bytree: float = 0.7     # More aggressive feature sampling
+    lgbm_min_child_samples: int = 100      # Require broader patterns
+    lgbm_reg_alpha: float = 0.1            # L1 regularization
+    lgbm_reg_lambda: float = 1.0           # L2 regularization
+    lgbm_early_stopping_rounds: int = 50   # Stop if no val improvement
 
     # Monte Carlo
     mc_n_simulations: int = 10_000

@@ -70,6 +70,8 @@ def train(
         "subsample": cfg.lgbm_subsample,
         "colsample_bytree": cfg.lgbm_colsample_bytree,
         "min_child_samples": cfg.lgbm_min_child_samples,
+        "reg_alpha": cfg.lgbm_reg_alpha,
+        "reg_lambda": cfg.lgbm_reg_lambda,
         "random_state": 42,
         "verbose": -1,
         "importance_type": "gain",

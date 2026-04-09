@@ -40,11 +40,25 @@ HORIZONS = (2, 4, 8)
 _SENTINEL_FILE = "/tmp/.retrain_last_run"
 
 
-def _build_labels(df: pd.DataFrame, horizon: int) -> pd.Series:
-    """Binary label: did price go up over the next `horizon` bars?"""
+def _build_labels(
+    df: pd.DataFrame, horizon: int, dead_zone: float = 0.002
+) -> pd.Series:
+    """Ternary label with dead zone: only label moves > dead_zone as directional.
+
+    Micro-moves smaller than dead_zone (e.g., 0.2%) are treated as ambiguous
+    and dropped during training. This prevents the model from wasting capacity
+    predicting noise near transaction costs.
+
+    Returns NaN for ambiguous bars, which should be filtered out before fitting.
+    """
     close = pd.to_numeric(df["close"], errors="coerce")
     future_return = close.shift(-horizon) / close - 1.0
-    return (future_return > 0).astype(int)
+
+    labels = pd.Series(np.nan, index=df.index)
+    labels[future_return > dead_zone] = 1    # profitable up move
+    labels[future_return < -dead_zone] = 0   # profitable down move
+    # values in [-dead_zone, dead_zone] remain NaN → filtered out
+    return labels
 
 
 def _validate_model(model: TrainedModel, X_test: pd.DataFrame, y_test: pd.Series) -> float:
