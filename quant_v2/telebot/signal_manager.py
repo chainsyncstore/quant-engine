@@ -431,7 +431,10 @@ class V2SignalManager:
                 continue
 
             try:
-                await asyncio.sleep(self.loop_interval_seconds)
+                now_ts = datetime.now(timezone.utc).timestamp()
+                next_run_ts = ((int(now_ts) // self.loop_interval_seconds) + 1) * self.loop_interval_seconds
+                sleep_sec = next_run_ts - now_ts + 3.0  # +3s safety buffer to ensure Binance bars are closed
+                await asyncio.sleep(max(0.1, sleep_sec))
             except asyncio.CancelledError:
                 break
 

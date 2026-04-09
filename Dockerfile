@@ -9,8 +9,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
-COPY quant/ ./quant/
-COPY quant_v2/ ./quant_v2/
 
 # Core dependencies + PyTorch/Chronos for ensemble inference
 RUN pip install --no-cache-dir --prefix=/install \
@@ -21,6 +19,9 @@ RUN pip install --no-cache-dir --prefix=/install \
     chronos-forecasting \
     torch --extra-index-url https://download.pytorch.org/whl/cpu \
     typing_extensions
+
+COPY quant/ ./quant/
+COPY quant_v2/ ./quant_v2/
 
 # ---- Stage 2: Runtime (no compiler, no root) ----
 FROM python:3.11-slim
