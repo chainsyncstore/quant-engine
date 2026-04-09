@@ -665,7 +665,7 @@ class V2SignalManager:
         reason = "no_active_model"
         proba_up = 0.5
         regime = 3
-        regime_risk = 1
+        regime_risk = 0.5  # float; 0=calm, 1=adverse/unknown
         regime_probability = 0.0
 
         # --- Drift detection ---
@@ -708,8 +708,10 @@ class V2SignalManager:
                 logger.warning("Regime classification failed for %s: %s", symbol, exc)
 
         # --- Model inference with regime-scaled thresholds ---
-        buy_threshold = min(0.95, 0.65 + 0.10 * regime_risk)
-        sell_threshold = max(0.05, 1.0 - buy_threshold)
+        # Base 0.55 is reachable by a ~53% accuracy model; regime_risk
+        # widens the deadband proportionally (0 = calm → 0.55, 1 = adverse → 0.63).
+        buy_threshold = min(0.90, 0.55 + 0.08 * regime_risk)
+        sell_threshold = max(0.10, 1.0 - buy_threshold)
 
         self._last_model_agreement = None  # Reset before each symbol prediction
         if (self.active_model is not None or self.full_ensemble is not None) and not drift_alert:
@@ -746,6 +748,10 @@ class V2SignalManager:
                     )
 
                 regime_probability = max(proba_up, 1.0 - proba_up)
+                logger.info(
+                    "Signal decision: %s %s proba=%.4f buy_th=%.2f sell_th=%.2f regime=%d risk=%.1f",
+                    symbol, signal, proba_up, buy_threshold, sell_threshold, regime, regime_risk,
+                )
             except Exception as e:
                 logger.error("Error generating ML prediction for %s: %s", symbol, e)
                 signal = "HOLD"

@@ -27,11 +27,11 @@ class RegimeState:
     """Output of regime classification for a single bar."""
 
     regime: int  # 1-4
-    regime_risk: int  # 0 or 1
+    regime_risk: float  # 0.0=calm, 0.5=neutral, 1.0=adverse
     persistence_count: int  # consecutive bars in current regime
 
 
-_REGIME_RISK_MAP: dict[int, int] = {1: 0, 2: 0, 3: 1, 4: 1}
+_REGIME_RISK_MAP: dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.5, 4: 1.0}
 
 _PERSISTENCE_GUARD: int = 5  # bars before confirming a transition
 
