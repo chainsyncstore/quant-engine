@@ -28,6 +28,8 @@ class StrategySignal:
     event_gate_mult: float | None = None
     model_agreement: float | None = None
     estimated_cost_bps: float | None = None
+    pairwise_correlations: dict[str, float] | None = None
+    portfolio_weight: float | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:

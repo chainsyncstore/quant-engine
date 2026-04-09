@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -1105,21 +1107,22 @@ def test_routed_execution_service_blocks_live_start_when_go_no_go_fails() -> Non
         def get_positions(self):
             return {}
 
-    service = RoutedExecutionService(
-        live_adapter_factory=lambda request: FakeLiveAdapter(),
-        allow_live_execution=True,
-        enforce_live_go_no_go=True,
-        live_go_no_go=False,
-    )
+    with patch.dict(os.environ, {"BOT_V2_LIVE_GO_NO_GO": "0"}):
+        service = RoutedExecutionService(
+            live_adapter_factory=lambda request: FakeLiveAdapter(),
+            allow_live_execution=True,
+            enforce_live_go_no_go=True,
+            live_go_no_go=False,
+        )
 
-    req = SessionRequest(
-        user_id=412,
-        live=True,
-        credentials={"binance_api_key": "k", "binance_api_secret": "s"},
-    )
-    with pytest.raises(RuntimeError, match="go_no_go_failed"):
-        asyncio.run(service.start_session(req))
-    assert service.is_running(412) is False
+        req = SessionRequest(
+            user_id=412,
+            live=True,
+            credentials={"binance_api_key": "k", "binance_api_secret": "s"},
+        )
+        with pytest.raises(RuntimeError, match="go_no_go_failed"):
+            asyncio.run(service.start_session(req))
+        assert service.is_running(412) is False
 
 
 def test_routed_execution_service_trips_rollback_gate_after_consecutive_live_failures() -> None:

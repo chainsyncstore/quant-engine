@@ -13,6 +13,7 @@ import os
 from typing import Callable, Protocol
 
 import numpy as np
+import pandas as pd
 
 from quant_v2.config import get_runtime_profile
 from quant_v2.contracts import OrderPlan, PortfolioSnapshot, RiskSnapshot, StrategySignal
@@ -186,6 +187,8 @@ class _SessionState:
     open_limit_orders: dict[str, dict] = field(default_factory=dict)
     "Track resting limit orders: {order_id: {symbol, side, qty, filled, placed_at, is_partial}}"
     last_partial_fill_check: datetime | None = None
+    # Rolling close prices for optimizer: symbol -> list of (timestamp, price)
+    price_histories: dict[str, list[float]] = field(default_factory=dict)
 
 
 class InMemoryExecutionService:
@@ -676,6 +679,12 @@ class RoutedExecutionService:
                 **state.last_prices,
                 **incoming_prices,
             }
+            # Accumulate rolling price history for optimizer (keep last 200 bars)
+            for sym, px in incoming_prices.items():
+                hist = state.price_histories.setdefault(sym, [])
+                hist.append(px)
+                if len(hist) > 200:
+                    state.price_histories[sym] = hist[-200:]
 
         if state.mode == "live":
             self._refresh_runtime_rollout_controls()
@@ -855,10 +864,11 @@ class RoutedExecutionService:
             prices=planning_prices,
         )
 
-        # Gather recent close prices for optimizer (from current planning prices)
-        price_histories = {}
-        if hasattr(state, 'price_histories'):
-            price_histories = state.price_histories or {}
+        # Convert rolling price lists to pd.Series for optimizer
+        price_histories_series: dict[str, pd.Series] = {}
+        for sym, hist_list in state.price_histories.items():
+            if len(hist_list) >= 2:
+                price_histories_series[sym] = pd.Series(hist_list)
 
         intent_plan = build_execution_intents(
             planning_signals,
@@ -866,7 +876,7 @@ class RoutedExecutionService:
             config=cfg,
             bucket_map=bucket_map,
             optimizer=self._optimizer,
-            price_histories=price_histories,
+            price_histories=price_histories_series,
         )
         order_plans = reconcile_target_exposures(
             intent_plan.policy_result.exposures,
@@ -1057,6 +1067,12 @@ class RoutedExecutionService:
             risk_policy=policy,
             prices=planning_prices,
         )
+
+        # Persist position snapshot to disk after every fill
+        any_fill = any(r.accepted and r.filled_qty > 0 for r in results)
+        if any_fill:
+            self._persist_position_snapshot(user_id, state, planning_prices)
+
         if state.kill_switch.pause_trading and "execution_anomaly" in state.kill_switch.reasons:
             logger.warning(
                 "Kill-switch activated after execution telemetry update for user %s; reject_rate=%.3f",
@@ -1074,6 +1090,39 @@ class RoutedExecutionService:
                 gate_reasons=state.kill_switch.reasons if state.kill_switch.pause_trading else (),
             )
         return tuple(results)
+
+    @staticmethod
+    def _persist_position_snapshot(
+        user_id: int,
+        state: _SessionState,
+        prices: dict[str, float],
+    ) -> None:
+        """Persist current positions to disk for crash recovery.
+
+        Writes to /state/positions_snapshot.json (or BOT_SNAPSHOT_PATH).
+        On startup, this snapshot can be compared with exchange positions
+        to detect discrepancies.
+        """
+        import json as _json
+        from pathlib import Path as _Path
+
+        snapshot_path = _Path(os.getenv("BOT_SNAPSHOT_PATH", "/state/positions_snapshot.json"))
+        try:
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "user_id": user_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "mode": state.mode,
+                "equity_usd": state.snapshot.equity_usd,
+                "positions": dict(state.snapshot.open_positions),
+                "entry_prices": dict(state.paper_entry_price),
+                "last_prices": {k: v for k, v in prices.items() if v > 0},
+            }
+            tmp = snapshot_path.with_suffix(".tmp")
+            tmp.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+            tmp.replace(snapshot_path)
+        except Exception as exc:
+            logger.debug("Failed to persist position snapshot: %s", exc)
 
     @staticmethod
     def _signal_edge(signal: StrategySignal | None) -> float:

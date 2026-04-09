@@ -72,7 +72,10 @@ def build_execution_intents(
 
     intents: list[ExecutionIntent] = []
     signal_map = {signal.symbol: signal for signal in signals}
+    import math as _math
     for symbol, exposure_frac in policy_result.exposures.items():
+        if _math.isnan(exposure_frac):
+            continue
         signal = signal_map.get(symbol)
         if signal is None or not signal.actionable:
             continue

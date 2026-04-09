@@ -47,6 +47,7 @@ def _compute_metrics(r: BacktestResult) -> dict:
         "Cost drag": _fmt(cost_drag_pct, pct=True),
         "Sharpe ratio": _fmt(r.sharpe),
         "Max drawdown": _fmt(r.max_drawdown, pct=True),
+        "Max DD duration": f"{r.max_drawdown_duration}h",
         "Calmar ratio": _fmt(calmar),
         "Total trades": str(r.total_trades),
         "Win rate": _fmt(r.win_rate, pct=True),
@@ -92,6 +93,62 @@ def _trade_log_html(fills: list, max_rows: int = 200) -> str:
         "<th>Price</th><th>Fee $</th><th>Slip $</th><th>Conf</th></tr>"
         + "".join(rows)
         + f"</table><p style='font-size:11px'>Showing {min(len(fills),max_rows)} of {len(fills)} fills</p>"
+    )
+
+
+def _symbol_breakdown_html(fills: list) -> str:
+    """Per-symbol summary: trades, gross PnL, fees, win rate."""
+    if not fills:
+        return "<p>No fills</p>"
+    from collections import defaultdict
+
+    stats: dict[str, dict] = defaultdict(lambda: {
+        "trades": 0, "wins": 0, "gross_pnl": 0.0, "fees": 0.0, "slippage": 0.0,
+    })
+
+    i = 0
+    while i + 1 < len(fills):
+        entry = fills[i]
+        exit_ = fills[i + 1]
+        if entry.side != exit_.side and entry.symbol == exit_.symbol:
+            sym = entry.symbol
+            if entry.side == "BUY":
+                rt_pnl = (exit_.price - entry.price) * entry.quantity
+            else:
+                rt_pnl = (entry.price - exit_.price) * entry.quantity
+            costs = entry.fee_usd + entry.slippage_usd + exit_.fee_usd + exit_.slippage_usd
+            net_pnl = rt_pnl - costs
+            stats[sym]["trades"] += 1
+            stats[sym]["gross_pnl"] += rt_pnl
+            stats[sym]["fees"] += entry.fee_usd + exit_.fee_usd
+            stats[sym]["slippage"] += entry.slippage_usd + exit_.slippage_usd
+            if net_pnl > 0:
+                stats[sym]["wins"] += 1
+            i += 2
+        else:
+            i += 1
+
+    if not stats:
+        return "<p>No round-trip trades</p>"
+
+    rows = []
+    for sym in sorted(stats):
+        s = stats[sym]
+        wr = s["wins"] / max(s["trades"], 1)
+        net = s["gross_pnl"] - s["fees"] - s["slippage"]
+        color = "#c8f7c5" if net > 0 else "#f7c8c8"
+        rows.append(
+            f"<tr><td>{sym}</td><td>{s['trades']}</td>"
+            f"<td>{wr*100:.1f}%</td>"
+            f"<td style='background:{color}'>{s['gross_pnl']:,.2f}</td>"
+            f"<td>{net:,.2f}</td>"
+            f"<td>{s['fees']:,.2f}</td><td>{s['slippage']:,.2f}</td></tr>"
+        )
+    return (
+        "<table border='1' cellpadding='4' style='border-collapse:collapse;font-size:12px'>"
+        "<tr><th>Symbol</th><th>Trades</th><th>Win Rate</th>"
+        "<th>Gross PnL</th><th>Net PnL</th><th>Fees</th><th>Slippage</th></tr>"
+        + "".join(rows) + "</table>"
     )
 
 
@@ -141,6 +198,9 @@ td {{ padding: 4px 8px; }}
 
 <h2>Monthly Returns</h2>
 {monthly_table}
+
+<h2>Per-Symbol Breakdown</h2>
+{symbol_breakdown}
 
 <h2>Trade Log</h2>
 {trade_log}
@@ -298,6 +358,7 @@ def generate_report(
         comparison_section=comp_section,
         comparison_chart_js=comp_chart_js,
         monthly_table=_monthly_returns_table(result.daily_returns),
+        symbol_breakdown=_symbol_breakdown_html(result.fills),
         trade_log=_trade_log_html(result.fills),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )

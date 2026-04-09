@@ -104,6 +104,8 @@ class V2SignalManager:
         self.fear_greed_client = FearGreedClient()
         self._cached_events: list = []
         self._events_fetched_at: datetime | None = None
+        # Rolling close price histories for optimizer (symbol -> Series of close prices)
+        self._price_history_cache: dict[str, pd.Series] = {}
 
     @staticmethod
     def _resolve_loop_interval(loop_interval_seconds: int | None) -> int:
@@ -569,6 +571,11 @@ class V2SignalManager:
                 )
             except Exception as ob_err:
                 logger.debug("Order book fetch failed for %s: %s", symbol, ob_err)
+
+            # Cache close price history for optimizer
+            close_hist = pd.to_numeric(bars["close"], errors="coerce").dropna()
+            if not close_hist.empty:
+                self._price_history_cache[symbol] = close_hist
 
             session.last_bar_timestamp[symbol] = latest_ts
             payload = self._build_signal_payload(

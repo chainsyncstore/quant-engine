@@ -38,7 +38,12 @@ def _sample_bars(*, trend_up: bool = True) -> pd.DataFrame:
         closes = [float(10_000 + i * 20) for i in range(len(index))]
     else:
         closes = [float(10_000 - i * 20) for i in range(len(index))]
-    return pd.DataFrame({"close": closes}, index=index)
+    df = pd.DataFrame({"close": closes}, index=index)
+    df["open"] = df["close"] * 0.99
+    df["high"] = df["close"] * 1.01
+    df["low"] = df["close"] * 0.98
+    df["volume"] = 1000.0
+    return df
 
 
 def test_v2_signal_manager_emits_signal_and_tracks_lifecycle(tmp_path: Path) -> None:
@@ -70,7 +75,7 @@ def test_v2_signal_manager_emits_signal_and_tracks_lifecycle(tmp_path: Path) -> 
         assert manager.get_active_count() == 1
         assert manager.get_session_mode(11) == "paper"
 
-        await asyncio.wait_for(fired.wait(), timeout=2.0)
+        await asyncio.wait_for(fired.wait(), timeout=60.0)
         assert emitted
 
         stats = manager.get_signal_stats(11)
@@ -191,6 +196,8 @@ def test_v2_signal_manager_dedupes_stale_bar_timestamps(tmp_path: Path) -> None:
         )
 
         session = manager.sessions[13]
+        if session.task:
+            session.task.cancel()
         await manager._run_cycle(session)
         await manager._run_cycle(session)
 

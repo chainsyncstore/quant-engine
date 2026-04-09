@@ -108,7 +108,10 @@ class RiskParityOptimizer:
                 continue
             returns = hist.pct_change().dropna()
             tail = returns.iloc[-self.lookback_bars:]
-            vols[sym] = float(tail.std()) if not tail.empty else 1.0
+            if len(tail) < 2:
+                vols[sym] = 1.0
+            else:
+                vols[sym] = float(tail.std())
             vols[sym] = max(vols[sym], _MIN_VOL_FLOOR)
 
         # --- Step 2: Risk-parity weights (inverse-vol) ---
@@ -166,16 +169,17 @@ class RiskParityOptimizer:
             w = raw_weights[sym] * original_gross * directions.get(sym, 1.0)
             signed_weights[sym] = w
 
-        # --- Step 5: Minimum notional filter ---
+        # --- Step 5: Minimum notional filter (dynamic: max(base, equity × 2%)) ---
+        effective_min_notional = max(self.min_notional_usd, equity_usd * 0.02)
         dropped: list[str] = []
         for sym in list(signed_weights.keys()):
             notional = abs(signed_weights[sym]) * equity_usd
-            if notional < self.min_notional_usd:
+            if notional < effective_min_notional:
                 dropped.append(sym)
                 del signed_weights[sym]
                 logger.debug(
                     "Min notional filter: dropped %s (notional=%.2f < %.2f)",
-                    sym, notional, self.min_notional_usd,
+                    sym, notional, effective_min_notional,
                 )
 
         if dropped:

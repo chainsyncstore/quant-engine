@@ -40,6 +40,7 @@ class BacktestConfig:
     maker_fee_bps: float = 2.0
     taker_fee_bps: float = 4.0
     warmup_bars: int = 200
+    limit_fill_rate: float = 0.95     # simulate 95% fill for limit orders
     model_version: str | None = None   # None = use active registry pointer
 
 
@@ -77,6 +78,20 @@ class BacktestResult:
         roll_max = eq.cummax()
         dd = (eq - roll_max) / roll_max
         return float(dd.min())
+
+    @property
+    def max_drawdown_duration(self) -> int:
+        """Longest drawdown duration in number of bars (hours)."""
+        eq = self.equity_curve
+        if eq.empty:
+            return 0
+        roll_max = eq.cummax()
+        in_dd = eq < roll_max
+        if not in_dd.any():
+            return 0
+        groups = (~in_dd).cumsum()
+        dd_lengths = in_dd.groupby(groups).sum()
+        return int(dd_lengths.max()) if not dd_lengths.empty else 0
 
     @property
     def profit_factor(self) -> float:
@@ -294,20 +309,22 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
             position = 0.0
             entry_price = 0.0
 
-        # Open new position
+        # Open new position (with partial fill simulation)
         if target_qty > 0.0 and position == 0.0:
-            fee, slip = _sim_fill(close, target_qty,
+            filled_qty = target_qty * config.limit_fill_rate
+            filled_notional = filled_qty * close
+            fee, slip = _sim_fill(close, filled_qty,
                                    "BUY" if target_frac > 0 else "SELL",
-                                   config.maker_fee_bps, target_notional)
+                                   config.maker_fee_bps, filled_notional)
             total_fees += fee
             total_slippage += slip
             equity -= (fee + slip)
-            position = target_qty if target_frac > 0 else -target_qty
+            position = filled_qty if target_frac > 0 else -filled_qty
             entry_price = close
             fills.append(Fill(
                 timestamp=ts, symbol=config.symbol,
                 side="BUY" if target_frac > 0 else "SELL",
-                quantity=target_qty, price=close,
+                quantity=filled_qty, price=close,
                 fee_usd=fee, slippage_usd=slip, confidence=confidence,
             ))
 
