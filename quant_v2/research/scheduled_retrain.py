@@ -10,7 +10,7 @@ Environment:
     BOT_MODEL_ROOT        – model artifact root (default: /app/models/production)
     BOT_MODEL_REGISTRY_ROOT – registry root (default: {MODEL_ROOT}/registry)
     RETRAIN_INTERVAL_HOURS – hours between retrain runs (default: 168 = 7 days)
-    RETRAIN_TRAIN_MONTHS   – months of training data (default: 6)
+    RETRAIN_TRAIN_MONTHS   – months of training data (default: 12)
     RETRAIN_MIN_ACCURACY   – minimum accuracy to promote a model (default: 0.525)
     RETRAIN_TRAIN_SYMBOLS  – comma-separated extra symbols to include in training (default: ETHUSDT,BNBUSDT)
 """
@@ -27,6 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from quant.config import get_research_config
 from quant.data.binance_client import BinanceClient
 from quant.features.pipeline import build_features, get_feature_columns
 from quant_v2.config import default_universe_symbols
@@ -200,8 +201,7 @@ def retrain_and_promote(
         logger.error("Retrain: insufficient data after feature engineering (%d rows)", len(featured))
         return None
 
-    # Train/test split: last 20% for validation
-    split_idx = int(len(featured) * 0.8)
+    cfg = get_research_config()
 
     model_paths: dict[int, Path] = {}
     validation_scores: dict[int, float] = {}
@@ -217,6 +217,8 @@ def retrain_and_promote(
             logger.warning("Retrain: insufficient data for horizon=%dh (%d rows), skipping", horizon, len(X_all))
             continue
 
+        # Split on the FILTERED data, not the raw featured frame
+        split_idx = int(len(X_all) * 0.8)
         X_train = X_all.iloc[:split_idx]
         y_train = y_all.iloc[:split_idx]
         X_test = X_all.iloc[split_idx:]
@@ -232,7 +234,8 @@ def retrain_and_promote(
             sample_weights = None
 
         try:
-            model = train(X_train, y_train, horizon=horizon, sample_weight=sample_weights[:split_idx] if sample_weights is not None else None)
+            sw_train = sample_weights[:split_idx] if sample_weights is not None else None
+            model = train(X_train, y_train, horizon=horizon, sample_weight=sw_train)
         except Exception as e:
             logger.error("Retrain horizon=%dh training failed: %s", horizon, e)
             all_passed = False
@@ -276,7 +279,7 @@ def retrain_and_promote(
     metrics = {
         "validation_scores": {str(h): round(s, 4) for h, s in validation_scores.items()},
         "train_months": train_months,
-        "train_rows": split_idx,
+        "train_rows": len(featured),
         "horizons_trained": list(model_paths.keys()),
         "trained_at": timestamp,
     }

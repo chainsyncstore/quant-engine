@@ -11,6 +11,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
+from lightgbm import early_stopping as lgb_early_stopping
+from lightgbm import log_evaluation as lgb_log_evaluation
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import PredefinedSplit
@@ -89,7 +91,19 @@ def train(
         sw_fit = sample_weight[:n_fit] if len(sample_weight) >= n_fit else None
     else:
         sw_fit = None
-    primary.fit(X_fit.values, y_fit.values, sample_weight=sw_fit)
+
+    # Early stopping: use calibration set as eval set to prevent over-training
+    early_stop_rounds = getattr(cfg, 'lgbm_early_stopping_rounds', 0)
+    X_cal_es = X_train.iloc[n_fit:]
+    y_cal_es = y.iloc[n_fit:]
+    fit_kwargs: dict[str, Any] = {"sample_weight": sw_fit}
+    if early_stop_rounds > 0 and len(X_cal_es) >= 10:
+        fit_kwargs["eval_set"] = [(X_cal_es.values, y_cal_es.values)]
+        fit_kwargs["callbacks"] = [
+            lgb_early_stopping(early_stop_rounds, verbose=False),
+            lgb_log_evaluation(-1),
+        ]
+    primary.fit(X_fit.values, y_fit.values, **fit_kwargs)
 
     importances = np.asarray(primary.feature_importances_, dtype=float)
     if importances.size == 0:
