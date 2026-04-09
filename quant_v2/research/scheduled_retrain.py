@@ -11,7 +11,8 @@ Environment:
     BOT_MODEL_REGISTRY_ROOT – registry root (default: {MODEL_ROOT}/registry)
     RETRAIN_INTERVAL_HOURS – hours between retrain runs (default: 168 = 7 days)
     RETRAIN_TRAIN_MONTHS   – months of training data (default: 6)
-    RETRAIN_MIN_ACCURACY   – minimum accuracy to promote a model (default: 0.52)
+    RETRAIN_MIN_ACCURACY   – minimum accuracy to promote a model (default: 0.525)
+    RETRAIN_TRAIN_SYMBOLS  – comma-separated extra symbols to include in training (default: ETHUSDT,BNBUSDT)
 """
 
 from __future__ import annotations
@@ -59,8 +60,9 @@ def _validate_model(model: TrainedModel, X_test: pd.DataFrame, y_test: pd.Series
 def retrain_and_promote(
     model_root: Path,
     registry_root: Path,
-    train_months: int = 6,
-    min_accuracy: float = 0.50,
+    train_months: int = 12,
+    min_accuracy: float = 0.525,
+    extra_symbols: list[str] | None = None,
 ) -> str | None:
     """Run full retrain → validate → register → promote cycle.
 
@@ -75,27 +77,37 @@ def retrain_and_promote(
     date_to = datetime.now(timezone.utc)
     date_from = date_to - timedelta(days=train_months * 30)
 
-    # Use BTCUSDT as primary training symbol (largest, most liquid)
-    symbol = "BTCUSDT"
-    logger.info("Retrain: fetching %d months of %s data...", train_months, symbol)
+    # Fetch primary symbol (BTCUSDT) plus optional extra symbols for richer training
+    primary_symbol = "BTCUSDT"
+    symbols_to_fetch = [primary_symbol] + (extra_symbols or [])
+    logger.info("Retrain: fetching %d months of data for symbols=%s...", train_months, symbols_to_fetch)
 
-    try:
-        raw = fetch_symbol_dataset(
-            symbol,
-            date_from=date_from,
-            date_to=date_to,
-            client=client,
-            include_funding=True,
-            include_open_interest=True,
-        )
-    except Exception as e:
-        logger.error("Retrain: data fetch failed: %s", e)
+    all_featured_frames: list[pd.DataFrame] = []
+    for symbol in symbols_to_fetch:
+        try:
+            raw = fetch_symbol_dataset(
+                symbol,
+                date_from=date_from,
+                date_to=date_to,
+                client=client,
+                include_funding=True,
+                include_open_interest=True,
+            )
+            sym_featured = build_features(raw)
+            if not sym_featured.empty:
+                all_featured_frames.append(sym_featured)
+                logger.info("Retrain: %s -> %d feature rows", symbol, len(sym_featured))
+        except Exception as e:
+            logger.warning("Retrain: data fetch failed for %s: %s", symbol, e)
+
+    if not all_featured_frames:
+        logger.error("Retrain: no data fetched for any symbol. Aborting.")
         _cleanup_artifact_dir(artifact_dir)
         return None
 
-    logger.info("Retrain: raw dataset = %d rows, columns=%s", len(raw), list(raw.columns))
-
-    featured = build_features(raw)
+    featured = pd.concat(all_featured_frames, ignore_index=True)
+    featured = featured.sort_values("timestamp") if "timestamp" in featured.columns else featured
+    logger.info("Retrain: combined dataset = %d rows across %d symbols", len(featured), len(all_featured_frames))
     feature_cols = get_feature_columns(featured)
     logger.info("Retrain: featured dataset = %d rows, %d features", len(featured), len(feature_cols))
 
@@ -212,8 +224,10 @@ def run_scheduler_loop() -> None:
     model_root = Path(os.getenv("BOT_MODEL_ROOT", "/app/models/production")).expanduser()
     registry_root = Path(os.getenv("BOT_MODEL_REGISTRY_ROOT", str(model_root / "registry"))).expanduser()
     interval_hours = int(os.getenv("RETRAIN_INTERVAL_HOURS", "168"))
-    train_months = int(os.getenv("RETRAIN_TRAIN_MONTHS", "6"))
-    min_accuracy = float(os.getenv("RETRAIN_MIN_ACCURACY", "0.50"))
+    train_months = int(os.getenv("RETRAIN_TRAIN_MONTHS", "12"))
+    min_accuracy = float(os.getenv("RETRAIN_MIN_ACCURACY", "0.525"))
+    _extra_sym_raw = os.getenv("RETRAIN_TRAIN_SYMBOLS", "ETHUSDT,BNBUSDT").strip()
+    extra_symbols = [s.strip() for s in _extra_sym_raw.split(",") if s.strip()] if _extra_sym_raw else []
 
     logger.info(
         "Retrain scheduler started: interval=%dh, train_months=%d, min_accuracy=%.2f, model_root=%s",
@@ -234,6 +248,7 @@ def run_scheduler_loop() -> None:
                     registry_root=registry_root,
                     train_months=train_months,
                     min_accuracy=min_accuracy,
+                    extra_symbols=extra_symbols,
                 )
                 if result:
                     logger.info("Retrain cycle complete: promoted %s", result)

@@ -1,6 +1,10 @@
-# ☁️ AWS Free Tier Deployment Guide
+# ☁️ AWS Deployment Guide
 
-Follow these steps to deploy your **Multi-User Trading Bot** on AWS for **Free** (12 months).
+> **Current Active Server:** `13.48.85.88` (upgraded for Chronos — see §2 note)
+> **Key file:** `quant-key.pem` (repo root, gitignored)
+> **App path on server:** `/home/ubuntu/quant_bot`
+
+Follow these steps to deploy your **Multi-User Trading Bot** on AWS.
 
 ## 1. Create an AWS Account
 1.  Go to [aws.amazon.com/free](https://aws.amazon.com/free).
@@ -11,7 +15,10 @@ Follow these steps to deploy your **Multi-User Trading Bot** on AWS for **Free**
 2.  Click **Launch Instance** (Orange button).
 3.  **Name:** `QuantBot`
 4.  **OS Image:** Select **Ubuntu** (Ubuntu Server 22.04 LTS).
-5.  **Instance Type:** Select `t2.micro` or `t3.micro` (Look for "Free tier eligible" label).
+5.  **Instance Type:**
+    - For basic usage: `t2.micro` or `t3.micro` ("Free tier eligible").
+    - ⚠️ **If using Chronos (PyTorch ensemble):** Chronos needs ~4–6 GB RAM. Use `t3.medium` or `t3.large` — **not** free tier. The current production instance was upgraded for this reason.
+    - To stay on free tier, set `BOT_ENABLE_CHRONOS=0` in `.env`.
 6.  **Key Pair:**
     - Click "Create new key pair".
     - Name: `quant-key`.
@@ -30,8 +37,8 @@ Follow these steps to deploy your **Multi-User Trading Bot** on AWS for **Free**
     cd Downloads
     # Fix permissions (Linux/Mac only), Windows skip this step.
     
-    # Connect
-    ssh -i "quant-key.pem" ubuntu@54.123.45.67
+    # Connect  (update IP here and at top of file when it changes)
+    ssh -i "quant-key.pem" ubuntu@13.48.85.88
     # (Type 'yes' if asked)
     ```
 
@@ -51,7 +58,7 @@ sudo usermod -aG docker $USER
 # Apply changes (exit and reconnect)
 exit
 ```
-**Reconnect:** `ssh -i "quant-key.pem" ubuntu@YOUR_IP`
+**Reconnect:** `ssh -i "quant-key.pem" ubuntu@13.48.85.88`
 
 ## 5. Upload Code (The Easiest Way)
 Since `scp` can be tricky on Windows, the easiest way involves `git`.
@@ -59,7 +66,7 @@ Since `scp` can be tricky on Windows, the easiest way involves `git`.
 ### Option A: Zip and Upload (Advanced)
 Use `scp`:
 ```powershell
-scp -i "quant-key.pem" -r "C:\Users\HP\Downloads\hypothesis-research-engine" ubuntu@YOUR_IP:~/quant_bot
+scp -i "quant-key.pem" -r "C:\Users\HP\Downloads\hypothesis-research-engine" ubuntu@13.48.85.88:~/quant_bot
 ```
 
 ### Option B: Git (Recommended)
@@ -100,3 +107,25 @@ scp -i "quant-key.pem" -r "C:\Users\HP\Downloads\hypothesis-research-engine" ubu
     - Setup Binance credentials using `/setup BINANCE_API_KEY BINANCE_API_SECRET`.
 
 If you see **"Bot is polling..."**, you are LIVE! 🚀
+
+---
+
+## ⚠️ When the IP Changes (Read This First)
+
+AWS assigns a **new Public IPv4 every time the instance is stopped/started** unless you use an Elastic IP.
+
+**Checklist when IP changes:**
+1. Update `Current Active Server` at the top of this file.
+2. Update the `ssh` and `scp` commands in §3 and §5.
+3. Tell your AI assistant the new IP so deployment commands use the right host.
+
+**Permanent fix — attach an Elastic IP:**
+```
+EC2 Console → Elastic IPs → Allocate Elastic IP → Associate → select your instance
+```
+Free while the instance is **running**. ~$0.005/hr charged only when the IP is allocated but instance is stopped.
+
+**IP change history:**
+| Date       | Old IP        | New IP       | Reason                              |
+|------------|---------------|--------------|-------------------------------------|
+| 2026-04-09 | 16.16.122.202 | 13.48.85.88  | Instance upgraded for Chronos (PyTorch needs ≥4 GB RAM) |
