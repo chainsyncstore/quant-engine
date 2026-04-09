@@ -92,7 +92,7 @@ def _model_agreement_multiplier(agreement: float | None) -> float:
     agreement >= 0.8 → 1.0× (strong agreement, full allocation)
     agreement >= 0.5 → 0.85× (mild agreement)
     agreement < 0.5  → 0.60× (disagreement, dampen)
-    None             → 0.85× (neutral, no data)
+    None             → 1.0× (no ensemble data, neutral pass-through)
     """
     if agreement is None:
         return 1.0  # no ensemble data → no penalty (neutral pass-through)

@@ -163,6 +163,8 @@ def retrain_and_promote(
     logger.info("Retrain: fetching %d months of data for symbols=%s...", train_months, symbols_to_fetch)
 
     all_featured_frames: list[pd.DataFrame] = []
+    btc_returns: pd.Series | None = None  # cached for cross-pair feature injection
+
     for symbol in symbols_to_fetch:
         try:
             raw = fetch_symbol_dataset(
@@ -173,6 +175,16 @@ def retrain_and_promote(
                 include_funding=True,
                 include_open_interest=True,
             )
+
+            # Compute & cache BTC returns from the primary symbol
+            if symbol == primary_symbol and btc_returns is None:
+                btc_close = pd.to_numeric(raw["close"], errors="coerce").dropna()
+                btc_returns = btc_close.pct_change()
+
+            # Inject BTC returns so cross-pair features match inference
+            if btc_returns is not None and "_btc_returns" not in raw.columns:
+                raw["_btc_returns"] = btc_returns.reindex(raw.index, method="ffill").fillna(0.0)
+
             sym_featured = build_features(raw)
             if not sym_featured.empty:
                 all_featured_frames.append(sym_featured)

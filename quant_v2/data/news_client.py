@@ -28,19 +28,28 @@ _CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
 # ---------------------------------------------------------------------------
 _FEAR_GREED_URL = "https://api.alternative.me/fng/"
 
-# Keyword lists for lightweight headline sentiment classification.
-_BEARISH_KEYWORDS = frozenset({
-    "hack", "hacked", "exploit", "breach", "sec", "lawsuit", "ban", "banned",
-    "fraud", "crash", "liquidat", "delist", "sanction", "indictment", "arrest",
-    "investigation", "rug pull", "rugpull", "scam", "vulnerability", "attack",
-    "bankrupt", "insolvency", "default",
-})
-_BULLISH_KEYWORDS = frozenset({
-    "etf", "approval", "approved", "partnership", "upgrade", "launch",
-    "adoption", "institutional", "bullish", "record high", "ath",
-    "integration", "listing", "listed", "rally", "fund", "inflow",
-    "accumulation", "acquisition",
-})
+# Weighted keyword lists for headline sentiment classification.
+# High-impact keywords (weight 3) represent clear market-moving events.
+# Moderate keywords (weight 1) represent softer directional signals.
+_BEARISH_KEYWORDS: dict[str, int] = {
+    # High-impact (weight 3)
+    "hack": 3, "hacked": 3, "exploit": 3, "breach": 3, "crash": 3,
+    "ban": 3, "banned": 3, "fraud": 3, "bankrupt": 3, "rug pull": 3,
+    "rugpull": 3, "scam": 3, "indictment": 3, "arrest": 3,
+    # Moderate (weight 1)
+    "sec": 1, "lawsuit": 1, "liquidat": 1, "delist": 1, "sanction": 1,
+    "investigation": 1, "vulnerability": 1, "attack": 1,
+    "insolvency": 1, "default": 1,
+}
+_BULLISH_KEYWORDS: dict[str, int] = {
+    # High-impact (weight 3)
+    "etf": 3, "approval": 3, "approved": 3, "record high": 3, "ath": 3,
+    "institutional": 3, "inflow": 3,
+    # Moderate (weight 1)
+    "partnership": 1, "upgrade": 1, "launch": 1, "adoption": 1,
+    "bullish": 1, "integration": 1, "listing": 1, "listed": 1,
+    "rally": 1, "fund": 1, "accumulation": 1, "acquisition": 1,
+}
 
 
 @dataclass(frozen=True)
@@ -214,12 +223,17 @@ class FearGreedClient:
 # ---------------------------------------------------------------------------
 
 def _classify_headline_sentiment(headline: str) -> str:
-    """Classify a headline as bullish, bearish, or neutral via keyword match."""
-    bearish_hits = sum(1 for kw in _BEARISH_KEYWORDS if kw in headline)
-    bullish_hits = sum(1 for kw in _BULLISH_KEYWORDS if kw in headline)
-    if bearish_hits > bullish_hits:
+    """Classify a headline as bullish, bearish, or neutral via weighted keyword scoring.
+
+    High-impact keywords (hack, crash, ETF approval) contribute weight 3;
+    moderate keywords contribute weight 1. This ensures a single high-impact
+    keyword outweighs multiple soft signals.
+    """
+    bearish_score = sum(w for kw, w in _BEARISH_KEYWORDS.items() if kw in headline)
+    bullish_score = sum(w for kw, w in _BULLISH_KEYWORDS.items() if kw in headline)
+    if bearish_score > bullish_score:
         return "bearish"
-    if bullish_hits > bearish_hits:
+    if bullish_score > bearish_score:
         return "bullish"
     return "neutral"
 
