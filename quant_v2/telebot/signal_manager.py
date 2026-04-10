@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from quant_v2.models.ensemble import HorizonEnsemble, FullEnsemble
 
 import pandas as pd
 
