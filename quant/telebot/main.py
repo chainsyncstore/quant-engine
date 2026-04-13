@@ -316,12 +316,11 @@ def _get_manager(*, allow_reload_with_active_sessions: bool = False) -> BotManag
             return MANAGER
 
         if MANAGER.get_active_count() > 0 and not allow_reload_with_active_sessions:
-            logger.warning(
-                "Deferred manager model switch from %s to %s because active sessions are running.",
+            logger.info(
+                "Hot-reloading manager model switch from %s to %s despite active sessions.",
                 current_dir,
                 target_dir,
             )
-            return MANAGER
 
     if resolved_model_dir is None:
         return None
@@ -355,12 +354,11 @@ def _get_v2_signal_manager(*, allow_reload_with_active_sessions: bool = False) -
             return V2_SIGNAL_MANAGER
 
         if V2_SIGNAL_MANAGER.get_active_count() > 0 and not allow_reload_with_active_sessions:
-            logger.warning(
-                "Deferred native v2 signal manager model switch from %s to %s because active sessions are running.",
+            logger.info(
+                "Hot-reloading native v2 signal manager model switch from %s to %s despite active sessions.",
                 current_dir,
                 target_dir,
             )
-            return V2_SIGNAL_MANAGER
 
     V2_SIGNAL_MANAGER = V2SignalManager(
         model_dir=resolved_model_dir,

@@ -403,6 +403,12 @@ class BinanceClient:
 
         start_ms = int(date_from.timestamp() * 1000)
         end_ms = int(date_to.timestamp() * 1000)
+
+        # Binance ONLY retains the last 30 days of open interest data.
+        # Queries for dates older than ~30 days will fail with an invalid startTime error (-1130).
+        thirty_days_ago_ms = int(time.time() * 1000) - (29 * 24 * 3600 * 1000)
+        start_ms = max(start_ms, thirty_days_ago_ms)
+
         all_records: list[dict] = []
 
         # Binance OI endpoint limits date range to ~30 days per request
