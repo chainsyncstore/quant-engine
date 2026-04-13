@@ -270,6 +270,56 @@ class V2SignalManager:
             "symbols": len(symbols),
         }
 
+    def get_traded_signal_stats(self, user_id: int) -> dict[str, Any]:
+        """Return stats for only actionable (BUY/SELL) model picks."""
+
+        session = self.sessions.get(user_id)
+        if session is None:
+            return {"total_trades": 0, "buys": 0, "sells": 0, "symbols": 0, "per_symbol": {}}
+
+        buys = 0
+        sells = 0
+        per_symbol: dict[str, dict[str, int]] = {}
+
+        for entry in session.signal_log:
+            signal_type = str(entry.get("signal", "")).upper()
+            if signal_type not in ("BUY", "SELL"):
+                continue
+            symbol = str(entry.get("symbol", "")).strip().upper()
+            if signal_type == "BUY":
+                buys += 1
+            else:
+                sells += 1
+            if symbol:
+                sym_stats = per_symbol.setdefault(symbol, {"buys": 0, "sells": 0})
+                sym_stats["buys" if signal_type == "BUY" else "sells"] += 1
+
+        return {
+            "total_trades": buys + sells,
+            "buys": buys,
+            "sells": sells,
+            "symbols": len(per_symbol),
+            "per_symbol": per_symbol,
+        }
+
+    def get_recent_traded_signals(self, user_id: int, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
+        """Return recent BUY/SELL signals only (actual model trade picks)."""
+
+        session = self.sessions.get(user_id)
+        if session is None or limit <= 0:
+            return ()
+
+        traded = [
+            entry for entry in session.signal_log
+            if str(entry.get("signal", "")).upper() in ("BUY", "SELL")
+        ]
+        recent = traded[-int(limit):]
+        return tuple(dict(item) for item in recent)
+
+    def get_scorecard_summary(self) -> dict[str, dict[str, Any]]:
+        """Expose per-symbol scorecard accuracy for diagnostics."""
+        return self.scorecard.get_summary()
+
     def get_recent_signals(self, user_id: int, *, limit: int = 5) -> tuple[dict[str, Any], ...]:
         """Return recent emitted signals for diagnostics display."""
 

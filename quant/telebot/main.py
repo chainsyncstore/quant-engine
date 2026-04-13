@@ -1333,41 +1333,58 @@ def _build_kill_switch_text(bridge: V2ExecutionBridge, user_id: int) -> str:
 
 
 def _build_source_signal_diagnostics_text(source_manager, user_id: int) -> str:
-    """Format native signal-source diagnostics when available."""
+    """Format model trade picks diagnostics when available."""
 
     if source_manager is None:
         return ""
 
-    stats_getter = getattr(source_manager, "get_signal_stats", None)
-    if not callable(stats_getter):
+    # --- Traded signal stats (BUY/SELL only) ---
+    traded_getter = getattr(source_manager, "get_traded_signal_stats", None)
+    if not callable(traded_getter):
         return ""
 
-    stats = stats_getter(user_id)
-    if not isinstance(stats, dict):
+    traded = traded_getter(user_id)
+    if not isinstance(traded, dict):
         return ""
 
-    total_signals = int(stats.get("total_signals", 0) or 0)
-    buys = int(stats.get("buys", 0) or 0)
-    sells = int(stats.get("sells", 0) or 0)
-    holds = int(stats.get("holds", 0) or 0)
-    drift_alerts = int(stats.get("drift_alerts", 0) or 0)
-    symbols = int(stats.get("symbols", 0) or 0)
-
-    max_log = int(getattr(source_manager, "max_signal_log", 0) or 0)
-    cap_label = f", cap={max_log}" if max_log > 0 else ""
+    total_trades = int(traded.get("total_trades", 0) or 0)
+    buys = int(traded.get("buys", 0) or 0)
+    sells = int(traded.get("sells", 0) or 0)
+    symbols_active = int(traded.get("symbols", 0) or 0)
 
     lines = [
-        "Signal Source (rolling window):",
-        f"- Emitted signals: {total_signals}{cap_label} "
-        f"(BUY={buys}, SELL={sells}, HOLD={holds}, DRIFT_ALERT={drift_alerts})",
-        f"- Symbols observed: {symbols}",
+        "Model Trade Picks (session):",
+        f"- Trades: {total_trades} (BUY={buys}, SELL={sells})",
+        f"- Active symbols: {symbols_active}",
     ]
 
-    recent_getter = getattr(source_manager, "get_recent_signals", None)
+    # --- Per-symbol scorecard accuracy ---
+    scorecard_getter = getattr(source_manager, "get_scorecard_summary", None)
+    if callable(scorecard_getter):
+        scorecard = scorecard_getter()
+        if scorecard:
+            lines.append("- Symbol Accuracy (72h rolling):")
+            for sym in sorted(scorecard):
+                sc = scorecard[sym]
+                resolved = int(sc.get("resolved", 0) or 0)
+                pending = int(sc.get("pending", 0) or 0)
+                hits = int(sc.get("hits", 0) or 0)
+                hit_rate = sc.get("hit_rate")
+                if hit_rate is not None:
+                    lines.append(
+                        f"  {sym}: {hit_rate*100:.0f}% ({hits}/{resolved}) | pending={pending}"
+                    )
+                else:
+                    lines.append(
+                        f"  {sym}: evaluating ({resolved} resolved, {pending} pending)"
+                    )
+
+    # --- Recent traded signals ---
+    recent_getter = getattr(source_manager, "get_recent_traded_signals", None)
     if callable(recent_getter):
-        recent = recent_getter(user_id, limit=5)
+        recent = recent_getter(user_id, limit=8)
         if recent:
-            lines.append("- Recent:")
+            lines.append("- Recent Picks:")
             for entry in recent:
                 signal_type = str(entry.get("signal", "?")).upper()
                 symbol = str(entry.get("symbol", "?")).upper()
@@ -1379,8 +1396,9 @@ def _build_source_signal_diagnostics_text(source_manager, user_id: int) -> str:
                     probability = float(entry.get("probability", 0.0) or 0.0)
                 except (TypeError, ValueError):
                     probability = 0.0
+                regime = entry.get("regime", "?")
                 lines.append(
-                    f"  - {symbol} {signal_type} @ {price:.2f} (P={probability:.3f})"
+                    f"  {symbol} {signal_type} @ {price:.2f} (P={probability:.3f}, R={regime})"
                 )
 
     return "\n".join(lines)

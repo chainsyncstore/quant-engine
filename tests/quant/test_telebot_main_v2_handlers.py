@@ -38,6 +38,9 @@ class _FakeSourceManager:
     stop_result: bool = True
     stats: dict | None = None
     recent: tuple[dict, ...] = ()
+    traded_stats: dict | None = None
+    recent_traded: tuple[dict, ...] = ()
+    scorecard: dict | None = None
     stop_calls: list[int] = field(default_factory=list)
 
     def is_running(self, user_id: int) -> bool:
@@ -63,6 +66,17 @@ class _FakeSourceManager:
     def get_recent_signals(self, user_id: int, *, limit: int = 5) -> tuple[dict, ...]:
         _ = user_id
         return self.recent[:limit]
+
+    def get_traded_signal_stats(self, user_id: int) -> dict:
+        _ = user_id
+        return self.traded_stats or {"total_trades": 0, "buys": 0, "sells": 0, "symbols": 0, "per_symbol": {}}
+
+    def get_recent_traded_signals(self, user_id: int, *, limit: int = 8) -> tuple[dict, ...]:
+        _ = user_id
+        return self.recent_traded[:limit]
+
+    def get_scorecard_summary(self) -> dict:
+        return self.scorecard or {}
 
 
 @dataclass
@@ -143,20 +157,20 @@ def test_stats_v2_degraded_includes_source_diagnostics(monkeypatch) -> None:
 
     source_manager = _FakeSourceManager(
         running=True,
-        stats={
-            "total_signals": 4,
+        traded_stats={
+            "total_trades": 3,
             "buys": 2,
             "sells": 1,
-            "holds": 1,
-            "drift_alerts": 0,
             "symbols": 1,
+            "per_symbol": {"BTCUSDT": {"buys": 2, "sells": 1}},
         },
-        recent=(
+        recent_traded=(
             {
                 "symbol": "btcusdt",
                 "signal": "buy",
-                "close_price": object(),
-                "probability": "oops",
+                "close_price": 50000.0,
+                "probability": 0.72,
+                "regime": 3,
             },
         ),
     )
@@ -171,8 +185,8 @@ def test_stats_v2_degraded_includes_source_diagnostics(monkeypatch) -> None:
     assert update.message.replies
     msg = update.message.replies[-1]
     assert "Session Degraded" in msg
-    assert "Signal Source (rolling window):" in msg
-    assert "BTCUSDT BUY @ 0.00 (P=0.000)" in msg
+    assert "Model Trade Picks (session):" in msg
+    assert "BTCUSDT BUY @ 50000.00 (P=0.720, R=3)" in msg
 
 
 def test_refresh_v2_stats_market_snapshot_ingests_normalized_prices() -> None:
