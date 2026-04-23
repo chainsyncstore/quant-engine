@@ -469,7 +469,8 @@ class V2SignalManager:
 
         while session.running:
             try:
-                await self._run_cycle(session)
+                cycle_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+                await self._run_cycle(session, cycle_cache=cycle_cache)
                 consecutive_errors = 0
             except asyncio.CancelledError:
                 break
@@ -517,7 +518,12 @@ class V2SignalManager:
 
         session.running = False
 
-    async def _run_cycle(self, session: _SignalSession) -> None:
+    async def _run_cycle(
+        self,
+        session: _SignalSession,
+        *,
+        cycle_cache: dict[tuple[str, str, str], dict[str, Any]] | None = None,
+    ) -> None:
         loop = asyncio.get_running_loop()
         date_to = datetime.now(timezone.utc)
         date_from = date_to - timedelta(hours=self.history_bars)
@@ -652,10 +658,25 @@ class V2SignalManager:
                 self._price_history_cache[symbol] = close_hist
 
             session.last_bar_timestamp[symbol] = latest_ts
-            payload = self._build_signal_payload(
-                symbol, bars, btc_returns=btc_returns, data_quality_flag=data_quality_flag,
-                ob_snapshot=ob_snapshot,
-            )
+
+            # --- Per-cycle cache: compute once per (symbol, bar_timestamp) ---
+            bar_ts_iso = latest_ts.isoformat()
+            cache_key = (symbol, self.anchor_interval, bar_ts_iso)
+            if cycle_cache is not None:
+                cached_payload = cycle_cache.get(cache_key)
+                if cached_payload is not None:
+                    payload = dict(cached_payload)
+                else:
+                    payload = self._build_signal_payload(
+                        symbol, bars, btc_returns=btc_returns, data_quality_flag=data_quality_flag,
+                        ob_snapshot=ob_snapshot,
+                    )
+                    cycle_cache[cache_key] = dict(payload)
+            else:
+                payload = self._build_signal_payload(
+                    symbol, bars, btc_returns=btc_returns, data_quality_flag=data_quality_flag,
+                    ob_snapshot=ob_snapshot,
+                )
 
             # --- Collect price for scorecard evaluation ---
             close_price = float(payload.get("close_price", 0.0) or 0.0)
