@@ -169,8 +169,8 @@ class RiskParityOptimizer:
             w = raw_weights[sym] * original_gross * directions.get(sym, 1.0)
             signed_weights[sym] = w
 
-        # --- Step 5: Minimum notional filter (dynamic: max(base, equity × 2%)) ---
-        effective_min_notional = max(self.min_notional_usd, equity_usd * 0.02)
+        # --- Step 5: Minimum notional filter (dynamic: max(base, equity × 0.5%)) ---
+        effective_min_notional = max(self.min_notional_usd, equity_usd * 0.005)
         dropped: list[str] = []
         for sym in list(signed_weights.keys()):
             notional = abs(signed_weights[sym]) * equity_usd
