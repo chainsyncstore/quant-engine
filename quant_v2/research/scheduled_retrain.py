@@ -12,7 +12,7 @@ Environment:
     RETRAIN_INTERVAL_HOURS – hours between retrain runs (default: 168 = 7 days)
     RETRAIN_TRAIN_MONTHS   – months of training data (default: 12)
     RETRAIN_MIN_ACCURACY   – minimum accuracy to promote a model (default: 0.525)
-    RETRAIN_TRAIN_SYMBOLS  – comma-separated extra symbols to include in training (default: ETHUSDT,BNBUSDT)
+    RETRAIN_TRAIN_SYMBOLS  – comma-separated extra symbols to include in training (default: full universe from default_universe_symbols() minus BTCUSDT)
 """
 
 from __future__ import annotations
@@ -336,7 +336,11 @@ def run_scheduler_loop() -> None:
     interval_hours = int(os.getenv("RETRAIN_INTERVAL_HOURS", "168"))
     train_months = int(os.getenv("RETRAIN_TRAIN_MONTHS", "12"))
     min_accuracy = float(os.getenv("RETRAIN_MIN_ACCURACY", "0.525"))
-    _extra_sym_raw = os.getenv("RETRAIN_TRAIN_SYMBOLS", "ETHUSDT,BNBUSDT").strip()
+    # Default extra symbols track the live signal universe minus the anchor BTCUSDT.
+    # Override via RETRAIN_TRAIN_SYMBOLS=<comma-separated>.
+    _universe = [s for s in default_universe_symbols() if s != "BTCUSDT"]
+    _default_extra_syms = ",".join(_universe) if _universe else "ETHUSDT,BNBUSDT"
+    _extra_sym_raw = os.getenv("RETRAIN_TRAIN_SYMBOLS", _default_extra_syms).strip()
     extra_symbols = [s.strip() for s in _extra_sym_raw.split(",") if s.strip()] if _extra_sym_raw else []
 
     logger.info(
