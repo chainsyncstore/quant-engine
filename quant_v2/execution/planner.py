@@ -40,12 +40,18 @@ def build_execution_intents(
     reduce_only: bool = False,
     optimizer: RiskParityOptimizer | None = None,
     price_histories: dict[str, "pd.Series"] | None = None,
+    current_positions: dict[str, float] | None = None,
 ) -> IntentPlan:
     """Convert strategy signals into policy-compliant execution intents.
 
     When *optimizer* is provided (and config.enable_optimizer is True),
     the allocation exposures are adjusted using risk-parity weights before
     the risk policy is applied.
+
+    *current_positions* (symbol → quantity) lets the optimizer synthesise
+    flatten targets for held positions that produced no incoming signal,
+    preventing silent HOLDs from trapping a position indefinitely.  See
+    audit_20260423 P0-3 / P0-3b.
     """
     import pandas as pd  # local import to avoid circular dependency
 
@@ -59,11 +65,22 @@ def build_execution_intents(
 
     # --- Risk-parity optimization pass ---
     optimized_exposures = allocation.target_exposures
-    if config.enable_optimizer and optimizer is not None and allocation.target_exposures:
+    # Run the optimizer whenever there are incoming targets OR we need to
+    # synthesise a flatten for a held position that lost its signal.
+    has_held_without_signal = bool(current_positions) and any(
+        abs(qty) > 1e-12 and sym not in allocation.target_exposures
+        for sym, qty in (current_positions or {}).items()
+    )
+    if (
+        config.enable_optimizer
+        and optimizer is not None
+        and (allocation.target_exposures or has_held_without_signal)
+    ):
         opt_result = optimizer.optimize(
             target_exposures=allocation.target_exposures,
             price_histories=price_histories or {},
             equity_usd=config.equity_usd,
+            current_positions=current_positions,
         )
         if opt_result.weights:
             optimized_exposures = opt_result.weights

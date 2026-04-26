@@ -72,6 +72,8 @@ class RiskParityOptimizer:
         target_exposures: dict[str, float],
         price_histories: dict[str, pd.Series],
         equity_usd: float,
+        *,
+        current_positions: dict[str, float] | None = None,
     ) -> OptimizerResult:
         """Optimize exposures using risk-parity weights.
 
@@ -89,6 +91,23 @@ class RiskParityOptimizer:
         OptimizerResult
             Optimized signed weights, ready to replace ``target_exposures``.
         """
+        # --- Synthesise flatten targets for held positions with no incoming signal ---
+        # Prevents "silent HOLD traps a position" by ensuring every held symbol
+        # gets a portfolio decision each cycle. A zero target + nonzero current
+        # position will be transformed into an explicit flatten by the caller.
+        augmented_targets = dict(target_exposures)
+        synthesised_flatten: list[str] = []
+        if current_positions:
+            for sym, pos in current_positions.items():
+                if abs(pos) < 1e-12:
+                    continue
+                if sym in augmented_targets:
+                    continue
+                augmented_targets[sym] = 0.0
+                synthesised_flatten.append(sym)
+
+        target_exposures = augmented_targets
+
         if not target_exposures:
             return OptimizerResult(
                 weights={}, vols={}, correlations={},
@@ -166,13 +185,20 @@ class RiskParityOptimizer:
         original_gross = sum(abs(v) for v in target_exposures.values())
         signed_weights: dict[str, float] = {}
         for sym in symbols:
+            if sym in synthesised_flatten:
+                # Preserve explicit flatten intent (weight 0 means close any open position).
+                signed_weights[sym] = 0.0
+                continue
             w = raw_weights[sym] * original_gross * directions.get(sym, 1.0)
             signed_weights[sym] = w
 
-        # --- Step 5: Minimum notional filter (dynamic: max(base, equity × 2%)) ---
-        effective_min_notional = max(self.min_notional_usd, equity_usd * 0.02)
+        # --- Step 5: Minimum notional filter (dynamic: max(base, equity × 0.5%)) ---
+        effective_min_notional = max(self.min_notional_usd, equity_usd * 0.005)
         dropped: list[str] = []
         for sym in list(signed_weights.keys()):
+            if sym in synthesised_flatten:
+                # Flatten intents bypass notional filter — closing is always allowed.
+                continue
             notional = abs(signed_weights[sym]) * equity_usd
             if notional < effective_min_notional:
                 dropped.append(sym)
@@ -191,6 +217,9 @@ class RiskParityOptimizer:
             {s: f"{v:.4f}" for s, v in vols.items()},
             len(correlations),
         )
+
+        if synthesised_flatten:
+            constraints.append("flatten_held_no_signal")
 
         return OptimizerResult(
             weights=signed_weights,

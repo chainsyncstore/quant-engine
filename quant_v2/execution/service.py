@@ -877,6 +877,7 @@ class RoutedExecutionService:
             bucket_map=bucket_map,
             optimizer=self._optimizer,
             price_histories=price_histories_series,
+            current_positions=current_positions,
         )
         order_plans = reconcile_target_exposures(
             intent_plan.policy_result.exposures,
