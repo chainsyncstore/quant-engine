@@ -219,6 +219,26 @@ with ENGINE.connect() as conn:
     conn.execute(text("PRAGMA journal_mode=WAL"))
     conn.commit()
 
+
+def checkpoint_wal(engine) -> tuple[int, int]:
+    """Run PRAGMA wal_checkpoint(TRUNCATE) to prevent WAL bloat.
+
+    Returns (pages_checkpointed, wal_size_frames_before).
+    Safe to call on a live DB: TRUNCATE blocks only briefly.
+    Silently no-ops on non-SQLite engines.
+    """
+    from sqlalchemy import text as _text
+    if engine.url.get_backend_name() != "sqlite":
+        return (0, 0)
+    with engine.connect() as conn:
+        result = conn.execute(_text("PRAGMA wal_checkpoint(TRUNCATE);")).fetchone()
+        # Result format: (busy, log_frames, checkpointed_frames)
+        if result is None:
+            return (0, 0)
+        return (int(result[2]) if len(result) > 2 else 0,
+                int(result[1]) if len(result) > 1 else 0)
+
+
 # Crypto
 _load_or_create_master_key()
 
@@ -3387,7 +3407,14 @@ def main():
         logger.info("Background retrain scheduler disabled (RETRAIN_ENABLED=0)")
 
     print("Bot is polling...")
-    application.run_polling(drop_pending_updates=True)
+    try:
+        application.run_polling(drop_pending_updates=True)
+    finally:
+        try:
+            pages, frames = checkpoint_wal(ENGINE)
+            logger.info("SQLite WAL checkpoint: pages=%d frames=%d", pages, frames)
+        except Exception as exc:
+            logger.warning("WAL checkpoint on shutdown failed: %s", exc)
 
 if __name__ == '__main__':
     main()
