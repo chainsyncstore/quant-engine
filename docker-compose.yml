@@ -45,6 +45,14 @@ services:
       - BOT_V2_ENFORCE_GO_NO_GO=${BOT_V2_ENFORCE_GO_NO_GO:-true}
       - BOT_V2_LIVE_GO_NO_GO=${BOT_V2_LIVE_GO_NO_GO:-true}
       - BOT_V2_FORCE_ROLLBACK=${BOT_V2_FORCE_ROLLBACK:-}
+      # --- signal-loop tuning knobs (audit_20260423) ---
+      - BOT_V2_SIGNAL_LOOP_SECONDS=${BOT_V2_SIGNAL_LOOP_SECONDS:-900}
+      - BOT_V2_MAX_HOLD_HOURS=${BOT_V2_MAX_HOLD_HOURS:-12}
+      - BOT_V2_QUIET_HEARTBEAT=${BOT_V2_QUIET_HEARTBEAT:-0}
+      # --- P0-4 stranded-position flatten (mirrors optimizer floor) ---
+      - BOT_V2_MIN_NOTIONAL_USD=${BOT_V2_MIN_NOTIONAL_USD:-10}
+      - BOT_V2_MIN_NOTIONAL_EQUITY_PCT=${BOT_V2_MIN_NOTIONAL_EQUITY_PCT:-0.005}
+      - BOT_V2_STRANDED_FLATTEN_CYCLES=${BOT_V2_STRANDED_FLATTEN_CYCLES:-4}
       - BOT_MODEL_ROOT=/app/models/production
       - BOT_MODEL_REGISTRY_ROOT=/app/models/production/registry
       - CRYPTOCOMPARE_API_KEY=${CRYPTOCOMPARE_API_KEY:-}
