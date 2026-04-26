@@ -171,11 +171,12 @@ class TestTask3MaxDrawdownDuration:
 
 
 # ====================================================================
-# TASK 4 — Dynamic min_notional: max(10, equity×0.02)
+# TASK 4 — Dynamic min_notional: max(10, equity×0.005)
+#   audit_20260423 P0-1: reduced floor from 2% to 0.5% of equity.
 # ====================================================================
 
 class TestTask4DynamicMinNotional:
-    """RiskParityOptimizer should use max(base_min, equity_usd * 0.02)."""
+    """RiskParityOptimizer should use max(base_min, equity_usd * 0.005)."""
 
     def _make_price_hist(self, n: int = 100, base: float = 100.0, seed: int = 42) -> pd.Series:
         np.random.seed(seed)
@@ -184,22 +185,24 @@ class TestTask4DynamicMinNotional:
         return pd.Series(prices)
 
     def test_low_equity_uses_base_notional(self):
-        """When equity is $300, 2% = $6 < $10, so $10 is used."""
+        """When equity is $300, 0.5% = $1.50 < $10, so $10 is used."""
         opt = RiskParityOptimizer(min_notional_usd=10.0)
         hist = self._make_price_hist()
         exposures = {"BTCUSDT": 0.10, "ETHUSDT": 0.05}
         result = opt.optimize(exposures, {"BTCUSDT": hist, "ETHUSDT": hist}, equity_usd=300.0)
-        # At $300 equity, 2% = $6, so effective min = max(10, 6) = $10
+        # At $300 equity, 0.5% = $1.50, so effective min = max(10, 1.50) = $10
         # A 5% exposure = $15, which is above $10 — may survive
         # Verify we didn't drop everything
         assert isinstance(result.weights, dict)
 
     def test_high_equity_uses_dynamic_notional(self):
-        """When equity is $10,000, 2% = $200 > $10, so $200 is used.
+        """When equity is $10,000, 0.5% = $50 > $10, so $50 is the floor.
 
-        Risk-parity uses inverse-vol weighting, so ETHUSDT needs much higher
-        volatility to receive a tiny weight.  With ~10× vol, its risk-parity
-        share shrinks to ~9%, giving notional ≈ 0.009 * 10000 ≈ $90 < $200.
+        Post-audit_20260423 P0-1: the 2% floor was reduced to 0.5% because the
+        upstream scorecard/regime dampeners routinely cut exposure to 0.30× of
+        Kelly — at 2% the optimizer was rejecting 84% of cycles.  At 0.5% a
+        high-vol symbol that earns ~9% of gross at $10k equity produces ~$180
+        notional, comfortably above the $50 floor, so it survives.
         """
         opt = RiskParityOptimizer(min_notional_usd=10.0)
         hist_btc = self._make_price_hist(seed=42)
@@ -215,14 +218,18 @@ class TestTask4DynamicMinNotional:
             equity_usd=10_000.0,
         )
         # ETH inv-vol weight ≈ 1/0.20 vs BTC 1/0.02 → ETH gets ~9% of gross
-        # notional ≈ 0.09 * 0.20 * 10000 ≈ $180 < $200 effective min
-        assert "ETHUSDT" in result.dropped_symbols
+        # notional ≈ 0.09 * 0.20 * 10000 ≈ $180, above $50 effective min → KEPT
+        assert "ETHUSDT" not in result.dropped_symbols
+        assert "ETHUSDT" in result.weights
 
     def test_dynamic_notional_in_source(self):
-        """Verify the dynamic formula exists in optimizer source code."""
+        """Verify the dynamic formula exists in optimizer source code.
+
+        audit_20260423 P0-1: constant reduced from 0.02 to 0.005.
+        """
         import inspect
         source = inspect.getsource(RiskParityOptimizer.optimize)
-        assert "equity_usd * 0.02" in source or "equity_usd * 0.02" in source.replace(" ", "")
+        assert "equity_usd * 0.005" in source or "equity_usd*0.005" in source.replace(" ", "")
 
 
 # ====================================================================
