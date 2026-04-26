@@ -47,6 +47,7 @@ class _SignalSession:
     task: asyncio.Task | None = None
     last_bar_timestamp: dict[str, pd.Timestamp] = field(default_factory=dict)
     signal_log: list[dict[str, Any]] = field(default_factory=list)
+    paper_entry_timestamps: dict[str, datetime] = field(default_factory=dict)
 
 
 class V2SignalManager:
@@ -62,6 +63,7 @@ class V2SignalManager:
         horizon_bars: int = 4,
         history_bars: int = 192,
         loop_interval_seconds: int | None = None,
+        max_hold_hours: int | None = None,
         max_consecutive_errors: int = 20,
         max_signal_log: int = 300,
         client_factory: ClientFactory | None = None,
@@ -90,6 +92,7 @@ class V2SignalManager:
         self.horizon_bars = int(horizon_bars)
         self.history_bars = max(int(history_bars), 48)
         self.loop_interval_seconds = self._resolve_loop_interval(loop_interval_seconds)
+        self.max_hold_hours = self._resolve_max_hold_hours(max_hold_hours)
         self.max_consecutive_errors = max(int(max_consecutive_errors), 1)
         self.max_signal_log = max(int(max_signal_log), 20)
         self._client_factory = client_factory or self._default_client_factory
@@ -153,6 +156,18 @@ class V2SignalManager:
             overflow = len(self._shared_inference_cache) - self._shared_inference_cache_max
             for stale_key in list(self._shared_inference_cache.keys())[:overflow]:
                 self._shared_inference_cache.pop(stale_key, None)
+
+    @staticmethod
+    def _resolve_max_hold_hours(max_hold_hours: int | None) -> int:
+        if max_hold_hours is not None:
+            return max(int(max_hold_hours), 1)
+
+        raw = os.getenv("BOT_V2_MAX_HOLD_HOURS", "12").strip() or "12"
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = 12
+        return max(parsed, 1)
 
     async def start_session(
         self,
@@ -743,9 +758,41 @@ class V2SignalManager:
                 logger.info("Scorecard: resolved %d pending predictions", resolved)
 
     async def _emit(self, session: _SignalSession, payload: dict[str, Any]) -> None:
+        self._apply_time_stop(session, payload)
         callback_result = session.on_signal(payload)
         if inspect.isawaitable(callback_result):
             await callback_result
+
+    def _apply_time_stop(self, session: _SignalSession, payload: dict[str, Any]) -> None:
+        """Upgrade HOLD to SELL when an open paper position exceeds max_hold_hours.
+
+        This is a SAFETY net: the model/optimizer must not silently trap a
+        position forever. Fires only on HOLD signals for symbols with an
+        existing long position whose entry was more than max_hold_hours ago.
+        """
+        if session.live:
+            return
+        signal_type = str(payload.get("signal", "HOLD")).upper()
+        if signal_type != "HOLD":
+            return
+        symbol = str(payload.get("symbol", "")).upper()
+        if not symbol:
+            return
+        entry_ts = session.paper_entry_timestamps.get(symbol)
+        if entry_ts is None:
+            return
+        age_hours = (datetime.now(timezone.utc) - entry_ts).total_seconds() / 3600.0
+        if age_hours < self.max_hold_hours:
+            return
+        logger.warning(
+            "Time-stop triggered for user %s %s: held %.1fh >= %.1fh. Upgrading HOLD → SELL.",
+            session.user_id, symbol, age_hours, self.max_hold_hours,
+        )
+        payload["signal"] = "SELL"
+        payload["reason"] = (
+            (payload.get("reason") or "") + f" [time_stop={age_hours:.1f}h]"
+        ).strip()
+        payload["time_stop"] = True
 
     def _build_signal_payload(
         self,

@@ -486,8 +486,8 @@ class RoutedExecutionService:
     def get_paper_state(self, user_id: int) -> dict | None:
         """Return paper session state for WAL persistence.
 
-        Returns dict with equity_baseline_usd, open_positions, and
-        paper_entry_prices — or None if session doesn't exist.
+        Returns dict with equity_baseline_usd, open_positions,
+        paper_entry_prices, and paper_entry_timestamps — or None if session doesn't exist.
         """
         state = self._sessions.get(user_id)
         if state is None:
@@ -497,6 +497,7 @@ class RoutedExecutionService:
             "equity_baseline_usd": float(state.equity_baseline_usd),
             "open_positions": {k: float(v) for k, v in positions.items() if abs(float(v)) > 1e-12},
             "paper_entry_prices": dict(state.paper_entry_price),
+            "paper_entry_timestamps": {sym: ts.isoformat() for sym, ts in state.position_opened_at.items()},
         }
 
     async def restore_paper_state(
@@ -506,6 +507,7 @@ class RoutedExecutionService:
         equity_baseline_usd: float,
         open_positions: dict[str, float],
         paper_entry_prices: dict[str, float],
+        paper_entry_timestamps: dict[str, str] | None = None,
     ) -> None:
         """Restore paper session equity, positions, and entry prices from WAL checkpoint."""
         state = self._sessions.get(user_id)
@@ -525,6 +527,14 @@ class RoutedExecutionService:
             state.paper_entry_price.update(
                 {k: float(v) for k, v in paper_entry_prices.items()}
             )
+            # Restore entry timestamps with fallback to "now" for missing timestamps
+            now_utc = datetime.now(timezone.utc)
+            if paper_entry_timestamps:
+                for sym, ts_str in paper_entry_timestamps.items():
+                    try:
+                        state.position_opened_at[sym] = datetime.fromisoformat(ts_str)
+                    except Exception:
+                        state.position_opened_at[sym] = now_utc
 
         logger.info(
             "Restored paper state for user %d: equity=$%.2f, %d positions",

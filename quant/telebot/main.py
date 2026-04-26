@@ -93,6 +93,13 @@ try:
     )
 except ValueError:
     V2_SIGNAL_LOOP_SECONDS = 900
+try:
+    V2_MAX_HOLD_HOURS = max(
+        int((os.getenv("BOT_V2_MAX_HOLD_HOURS", "12").strip() or "12")),
+        1,
+    )
+except ValueError:
+    V2_MAX_HOLD_HOURS = 12
 DEFAULT_V2_SYMBOL = default_universe_symbols()[0] if default_universe_symbols() else "BTCUSDT"
 
 
@@ -365,6 +372,7 @@ def _get_v2_signal_manager(*, allow_reload_with_active_sessions: bool = False) -
         registry_root=MODEL_REGISTRY_ROOT,
         symbols=default_universe_symbols(),
         loop_interval_seconds=V2_SIGNAL_LOOP_SECONDS,
+        max_hold_hours=V2_MAX_HOLD_HOURS,
     )
     source_label = MODEL_RESOLUTION.source
     if MODEL_RESOLUTION.active_version_id:
@@ -1752,6 +1760,7 @@ async def _restore_active_sessions(application):
                                     equity_baseline_usd=float(saved_paper.get("equity_baseline_usd", 10_000.0)),
                                     open_positions={k: float(v) for k, v in saved_paper.get("open_positions", {}).items()},
                                     paper_entry_prices={k: float(v) for k, v in saved_paper.get("paper_entry_prices", {}).items()},
+                                    paper_entry_timestamps=saved_paper.get("paper_entry_timestamps"),
                                 )
                                 paper_restored = True
                                 logger.info(
