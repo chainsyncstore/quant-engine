@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from sqlalchemy import create_engine, text
@@ -342,6 +342,24 @@ def _get_manager(*, allow_reload_with_active_sessions: bool = False) -> BotManag
     return MANAGER
 
 
+def _on_v2_model_rotated(new_version: str, new_source: str) -> None:
+    """Persist rotated model metadata onto every active user_context row."""
+    manager = V2_SIGNAL_MANAGER
+    if manager is None:
+        return
+    for user_id in list(manager.sessions.keys()):
+        try:
+            _persist_user_session_flags(
+                user_id,
+                active_model_version=new_version,
+                active_model_source=new_source,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist rotated model for user %s: %s", user_id, exc
+            )
+
+
 def _get_v2_signal_manager(*, allow_reload_with_active_sessions: bool = False) -> V2SignalManager | None:
     """Get native v2 signal manager bound to active model pointer."""
 
@@ -373,6 +391,7 @@ def _get_v2_signal_manager(*, allow_reload_with_active_sessions: bool = False) -
         symbols=default_universe_symbols(),
         loop_interval_seconds=V2_SIGNAL_LOOP_SECONDS,
         max_hold_hours=V2_MAX_HOLD_HOURS,
+        on_model_rotated=_on_v2_model_rotated,
     )
     source_label = MODEL_RESOLUTION.source
     if MODEL_RESOLUTION.active_version_id:

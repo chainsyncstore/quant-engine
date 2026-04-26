@@ -68,6 +68,7 @@ class V2SignalManager:
         max_signal_log: int = 300,
         client_factory: ClientFactory | None = None,
         fetch_bars_fn: FetchBarsFn | None = None,
+        on_model_rotated: Callable[[str, str], None] | None = None,
     ) -> None:
         from quant_v2.model_registry import ModelRegistry
         from quant_v2.models.trainer import load_model, TrainedModel
@@ -97,6 +98,7 @@ class V2SignalManager:
         self.max_signal_log = max(int(max_signal_log), 20)
         self._client_factory = client_factory or self._default_client_factory
         self._fetch_bars_fn = fetch_bars_fn or self._default_fetch_bars
+        self._on_model_rotated = on_model_rotated
         self.sessions: dict[int, _SignalSession] = {}
         # OI cache for API 202 fallback: symbol -> (timestamp, oi_value)
         self._oi_cache: dict[str, tuple[datetime, float]] = {}
@@ -612,6 +614,15 @@ class V2SignalManager:
                         self.full_ensemble = None
                 else:
                     self.full_ensemble = None
+
+                # Fire model rotation hook after successful reload
+                if self._on_model_rotated is not None:
+                    try:
+                        new_version = active_pointer.version_id
+                        new_source = f"registry_active:{active_pointer.version_id}"
+                        self._on_model_rotated(new_version, new_source)
+                    except Exception as exc:
+                        logger.warning("on_model_rotated hook failed: %s", exc)
         except Exception as e:
             logger.warning("Failed to refresh active model from registry: %s", e)
 
