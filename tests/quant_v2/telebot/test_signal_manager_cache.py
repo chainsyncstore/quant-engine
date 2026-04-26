@@ -128,17 +128,33 @@ def test_cache_does_not_leak_per_user_mutations(tmp_path: Path) -> None:
 
 
 def test_cache_scoped_to_cycle(tmp_path: Path) -> None:
-    """Running two cycles with separate caches should compute twice per symbol."""
-    bars = _sample_bars(trend_up=True)
+    """Same bar across cycles uses shared cache; new bar triggers recompute.
+
+    P2-2 semantics: the cache key is (symbol, anchor_interval, bar_ts_iso).  When
+    successive cycles see the same bar timestamp (e.g. inside one bar interval),
+    the shared inference cache prevents redundant work.  When the bar advances,
+    the key changes and recompute fires.
+    """
+    bars_first = _sample_bars(trend_up=True, n=120)
+    # Build a second fixture whose latest bar is at a strictly newer timestamp.
+    bars_second = bars_first.copy()
+    bars_second.index = bars_second.index + pd.Timedelta(hours=1)
+
+    current_bars = {"value": bars_first}
+
+    class _SwitchingClient:
+        def fetch_historical(self, date_from, date_to, *, symbol, interval):
+            _ = (date_from, date_to, symbol, interval)
+            return current_bars["value"]
 
     manager = V2SignalManager(
         model_dir=tmp_path,
         symbols=("BTCUSDT",),
         loop_interval_seconds=3600,
-        client_factory=lambda creds, live, symbol, interval: _FakeClient(bars),
+        client_factory=lambda creds, live, symbol, interval: _SwitchingClient(),
     )
 
-    async def scenario() -> int:
+    async def scenario() -> tuple[int, int]:
         await manager.start_session(
             user_id=301,
             creds={"live": False},
@@ -157,20 +173,29 @@ def test_cache_scoped_to_cycle(tmp_path: Path) -> None:
         with patch.object(manager, "_build_signal_payload", side_effect=patched_build):
             session = manager.sessions[301]
 
-            # First cycle with fresh cache
+            # Cycle 1: fresh compute on bars_first
             cycle_cache_1: dict[tuple[str, str, str], dict[str, Any]] = {}
             await manager._run_cycle(session, cycle_cache=cycle_cache_1)
+            after_first = call_count
 
-            # Second cycle with fresh cache - should compute again
+            # Cycle 2 on the SAME bar → shared cache hit, no extra compute
             cycle_cache_2: dict[tuple[str, str, str], dict[str, Any]] = {}
             await manager._run_cycle(session, cycle_cache=cycle_cache_2)
+            after_same_bar = call_count
+
+            # Advance to a newer bar → cache miss, recompute
+            current_bars["value"] = bars_second
+            cycle_cache_3: dict[tuple[str, str, str], dict[str, Any]] = {}
+            await manager._run_cycle(session, cycle_cache=cycle_cache_3)
+            after_new_bar = call_count
 
         await manager.stop_session(301)
-        return call_count
+        return (after_first, after_same_bar, after_new_bar)
 
-    call_count = asyncio.run(scenario())
-    # Each cycle computes once per symbol (cache doesn't persist between cycles)
-    assert call_count == 2
+    after_first, after_same_bar, after_new_bar = asyncio.run(scenario())
+    assert after_first == 1, f"expected 1 compute on first cycle, got {after_first}"
+    assert after_same_bar == 1, f"same bar must hit cache (got {after_same_bar} computes)"
+    assert after_new_bar == 2, f"new bar must miss cache (got {after_new_bar} computes)"
 
 
 def test_cache_used_within_cycle(tmp_path: Path) -> None:
@@ -315,3 +340,107 @@ def test_cycle_cache_parameter_is_optional(tmp_path: Path) -> None:
 
     result = asyncio.run(scenario())
     assert result["success"] is True
+
+
+# ====================================================================
+# audit_20260423 P2-2 — explicit cross-user dedup assertion
+# ====================================================================
+
+
+def test_compute_called_once_per_symbol_across_concurrent_users(tmp_path: Path) -> None:
+    """When N users run a cycle on the same bar, _build_signal_payload fires once per symbol.
+
+    This is the central regression for P2-2: prior to the shared inference cache,
+    each user's _loop spawned its own per-cycle dict, producing N×len(symbols)
+    invocations per bar.  After the fix, the manager-level shared cache catches
+    the second user's lookup and skips the recompute.
+    """
+    bars = _sample_bars(trend_up=True)
+
+    manager = V2SignalManager(
+        model_dir=tmp_path,
+        symbols=("BTCUSDT", "ETHUSDT"),
+        anchor_interval="1h",
+        loop_interval_seconds=900,
+        client_factory=lambda creds, live, symbol, interval: _FakeClient(bars),
+    )
+
+    call_count = 0
+    original_build = manager._build_signal_payload
+
+    def counting_build(*args: Any, **kwargs: Any) -> dict:
+        nonlocal call_count
+        call_count += 1
+        return original_build(*args, **kwargs)
+
+    async def scenario() -> int:
+        # Two concurrent users
+        for user_id in (1101, 1102):
+            await manager.start_session(
+                user_id=user_id,
+                creds={"live": False},
+                on_signal=lambda p: None,
+                execute_orders=False,
+            )
+
+        with patch.object(manager, "_build_signal_payload", side_effect=counting_build):
+            # Each user's _loop would create its own cycle_cache; emulate that
+            # by running both with separate dicts but the SAME shared manager.
+            user_a_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+            user_b_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+            await manager._run_cycle(manager.sessions[1101], cycle_cache=user_a_cache)
+            await manager._run_cycle(manager.sessions[1102], cycle_cache=user_b_cache)
+
+        for user_id in (1101, 1102):
+            await manager.stop_session(user_id)
+        return call_count
+
+    total_compute_calls = asyncio.run(scenario())
+
+    # 2 symbols × 1 compute = 2 (NOT 2 symbols × 2 users = 4)
+    assert total_compute_calls == 2, (
+        f"Expected 2 compute calls (one per symbol, deduped across users), "
+        f"got {total_compute_calls}.  Shared inference cache may not be wired."
+    )
+
+
+def test_shared_cache_evicts_stale_entries(tmp_path: Path) -> None:
+    """Entries older than 1.5x loop_interval are evicted on lookup."""
+    manager = V2SignalManager(
+        model_dir=tmp_path,
+        symbols=("BTCUSDT",),
+        loop_interval_seconds=900,
+    )
+
+    key = ("BTCUSDT", "1h", "2026-04-23T07:00:00+00:00")
+    payload = {"signal": "BUY", "probability": 0.7}
+
+    # Fresh insert returns the payload
+    manager._shared_cache_put(key, payload)
+    assert manager._shared_cache_get(key) == payload
+
+    # Backdate the entry beyond TTL → next get returns None and evicts
+    inserted_at, cached_payload = manager._shared_inference_cache[key]
+    manager._shared_inference_cache[key] = (
+        inserted_at - manager._shared_cache_ttl() - 1.0,
+        cached_payload,
+    )
+    assert manager._shared_cache_get(key) is None
+    assert key not in manager._shared_inference_cache
+
+
+def test_shared_cache_bounded_eviction(tmp_path: Path) -> None:
+    """Cache stays under cap by dropping oldest entries on overflow."""
+    manager = V2SignalManager(
+        model_dir=tmp_path,
+        symbols=("BTCUSDT",),
+        loop_interval_seconds=900,
+    )
+    manager._shared_inference_cache_max = 3
+
+    for i in range(5):
+        manager._shared_cache_put(("BTCUSDT", "1h", f"ts-{i}"), {"i": i})
+
+    assert len(manager._shared_inference_cache) <= 3
+    # Newest entries survived
+    assert ("BTCUSDT", "1h", "ts-4") in manager._shared_inference_cache

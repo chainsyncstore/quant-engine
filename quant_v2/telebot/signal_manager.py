@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -109,6 +110,12 @@ class V2SignalManager:
         self._events_fetched_at: datetime | None = None
         # Rolling close price histories for optimizer (symbol -> Series of close prices)
         self._price_history_cache: dict[str, pd.Series] = {}
+        # Shared per-cycle prediction cache (key=(symbol, anchor_interval, bar_ts_iso))
+        # value=(monotonic_inserted_at, payload_dict).  De-duplicates `_build_signal_payload`
+        # work across concurrent user sessions running on the same bar timestamp.
+        # Refs: audit_20260423 P2-2.
+        self._shared_inference_cache: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+        self._shared_inference_cache_max: int = max(len(self.symbols) * 4, 32)
 
     @staticmethod
     def _resolve_loop_interval(loop_interval_seconds: int | None) -> int:
@@ -121,6 +128,31 @@ class V2SignalManager:
         except ValueError:
             parsed = 900
         return max(parsed, 1)
+
+    def _shared_cache_ttl(self) -> float:
+        # Allow modest stagger between concurrent user loops; anything older than
+        # 1.5x the loop interval is definitely from a previous bar and must be
+        # refreshed.  Cap at 30 minutes so paper/live divergence on a stuck loop
+        # is still bounded.
+        return min(float(self.loop_interval_seconds) * 1.5, 1800.0)
+
+    def _shared_cache_get(self, key: tuple[str, str, str]) -> dict[str, Any] | None:
+        entry = self._shared_inference_cache.get(key)
+        if entry is None:
+            return None
+        inserted_at, payload = entry
+        if (time.monotonic() - inserted_at) > self._shared_cache_ttl():
+            self._shared_inference_cache.pop(key, None)
+            return None
+        return payload
+
+    def _shared_cache_put(self, key: tuple[str, str, str], payload: dict[str, Any]) -> None:
+        self._shared_inference_cache[key] = (time.monotonic(), dict(payload))
+        # Bounded eviction: drop oldest insertions when over the cap.
+        if len(self._shared_inference_cache) > self._shared_inference_cache_max:
+            overflow = len(self._shared_inference_cache) - self._shared_inference_cache_max
+            for stale_key in list(self._shared_inference_cache.keys())[:overflow]:
+                self._shared_inference_cache.pop(stale_key, None)
 
     async def start_session(
         self,
@@ -660,23 +692,27 @@ class V2SignalManager:
             session.last_bar_timestamp[symbol] = latest_ts
 
             # --- Per-cycle cache: compute once per (symbol, bar_timestamp) ---
+            # Lookup order: per-cycle (in-memory) cache → manager-level shared cache
+            # → fresh compute.  The shared cache de-duplicates work across concurrent
+            # user sessions; the per-cycle cache is the authoritative copy within one
+            # session's loop iteration.  Refs: audit_20260423 P2-2.
             bar_ts_iso = latest_ts.isoformat()
             cache_key = (symbol, self.anchor_interval, bar_ts_iso)
+            cached_payload: dict[str, Any] | None = None
             if cycle_cache is not None:
                 cached_payload = cycle_cache.get(cache_key)
-                if cached_payload is not None:
-                    payload = dict(cached_payload)
-                else:
-                    payload = self._build_signal_payload(
-                        symbol, bars, btc_returns=btc_returns, data_quality_flag=data_quality_flag,
-                        ob_snapshot=ob_snapshot,
-                    )
-                    cycle_cache[cache_key] = dict(payload)
+            if cached_payload is None:
+                cached_payload = self._shared_cache_get(cache_key)
+            if cached_payload is not None:
+                payload = dict(cached_payload)
             else:
                 payload = self._build_signal_payload(
                     symbol, bars, btc_returns=btc_returns, data_quality_flag=data_quality_flag,
                     ob_snapshot=ob_snapshot,
                 )
+                self._shared_cache_put(cache_key, payload)
+            if cycle_cache is not None:
+                cycle_cache[cache_key] = dict(payload)
 
             # --- Collect price for scorecard evaluation ---
             close_price = float(payload.get("close_price", 0.0) or 0.0)
