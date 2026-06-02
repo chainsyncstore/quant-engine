@@ -576,6 +576,8 @@ def test_help_command_admin_lists_prepare_update(monkeypatch) -> None:
     assert "/prepare_update - Save user snapshots and send pre-update notice" in msg
     assert "/update_complete - Notify users deploy is done and share recovery steps" in msg
     assert "/model_candidates - List retrain candidates" in msg
+    assert "/model_eval - Show quarantine forward-evaluation summary" in msg
+    assert "/model_auto_promote on|off - Toggle gated automatic promotion" in msg
     assert "/model_promote <version_id> - Manually activate a candidate" in msg
 
 

@@ -81,5 +81,35 @@ services:
       - RETRAIN_MIN_ACCURACY=${RETRAIN_MIN_ACCURACY:-0.50}
       - RETRAIN_STARTUP_DELAY_SECONDS=${RETRAIN_STARTUP_DELAY_SECONDS:-90}
 
+  model_evaluator:
+    build: .
+    image: quant_bot:latest
+    container_name: quant_model_eval
+    restart: unless-stopped
+    command: python -m quant_v2.research.model_evaluator
+    depends_on:
+      - redis
+    volumes:
+      - ./models:/app/models
+      - ./state:/state
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    environment:
+      - BOT_DB_PATH=/state/quant_bot.db
+      - BOT_MODEL_ROOT=/app/models/production
+      - BOT_MODEL_REGISTRY_ROOT=/app/models/production/registry
+      - BOT_ENABLE_CHRONOS=${BOT_ENABLE_CHRONOS:-0}
+      - MODEL_EVAL_INTERVAL_SECONDS=${MODEL_EVAL_INTERVAL_SECONDS:-900}
+      - MODEL_EVAL_STARTUP_DELAY_SECONDS=${MODEL_EVAL_STARTUP_DELAY_SECONDS:-180}
+      - MODEL_EVAL_THRESHOLD_TUNING_HOURS=${MODEL_EVAL_THRESHOLD_TUNING_HOURS:-72}
+      - MODEL_EVAL_PROMOTION_WINDOW_HOURS=${MODEL_EVAL_PROMOTION_WINDOW_HOURS:-168}
+      - MODEL_EVAL_AUTO_PROMOTE=${MODEL_EVAL_AUTO_PROMOTE:-0}
+      - MODEL_EVAL_MIN_RESOLVED_DECISIONS=${MODEL_EVAL_MIN_RESOLVED_DECISIONS:-500}
+      - MODEL_EVAL_MIN_ACTIONABLE_DECISIONS=${MODEL_EVAL_MIN_ACTIONABLE_DECISIONS:-30}
+      - MODEL_EVAL_MIN_EDGE_BPS=${MODEL_EVAL_MIN_EDGE_BPS:-25}
+
 volumes:
   redis_data:

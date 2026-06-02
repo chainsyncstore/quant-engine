@@ -22,6 +22,11 @@ from quant_v2.execution.service import HardRiskPauseEvent, RouteAuditEvent, Rout
 from quant_v2.model_registry import ModelRegistry
 from quant_v2.monitoring.health_dashboard import build_session_health_summary
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
+from quant_v2.research.model_evaluator import (
+    build_evaluation_report,
+    load_evaluator_control,
+    write_evaluator_control,
+)
 from quant_v2.telebot.bridge import V2ExecutionBridge, convert_legacy_signal_payload
 from quant_v2.telebot.signal_manager import V2SignalManager
 
@@ -2728,6 +2733,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/model_active - Show runtime model routing\n"
                 "/model_versions - List registered model versions\n"
                 "/model_candidates - List retrain candidates\n"
+                "/model_eval - Show quarantine forward-evaluation summary\n"
+                "/model_eval_detail <version_id> - Show candidate vs incumbent metrics\n"
+                "/model_auto_promote on|off - Toggle gated automatic promotion\n"
                 "/model_promote <version_id> - Manually activate a candidate\n"
                 "/model_quarantine <version_id> - Mark candidate for paper quarantine\n"
                 "/model_rollback [version_id] - Switch active pointer (default: previous)"
@@ -3604,6 +3612,163 @@ def _format_model_record_summary(record) -> str:
     )
 
 
+def _fmt_eval_float(value: object, suffix: str = "") -> str:
+    try:
+        return f"{float(value):.2f}{suffix}"
+    except (TypeError, ValueError):
+        return f"n/a{suffix}" if suffix else "n/a"
+
+
+def _format_eval_summary_line(item: dict[str, Any]) -> str:
+    version_id = str(item.get("version_id") or "unknown")
+    status = str(item.get("status") or "unknown")
+    paper_eval = item.get("paper_evaluation") or {}
+    if not isinstance(paper_eval, dict) or not paper_eval:
+        return f"`{version_id}` [{status}] - no forward paper evaluation yet"
+
+    delta = paper_eval.get("delta_metrics") or {}
+    candidate = paper_eval.get("candidate_metrics") or {}
+    blockers = paper_eval.get("promotion_blockers") or []
+    decision = str(paper_eval.get("promotion_decision") or "pending")
+    window_hours = paper_eval.get("evaluation_window_hours", 0.0)
+    actionable = candidate.get("actionable_decisions", 0)
+    return (
+        f"`{version_id}` [{status}] decision={decision}\n"
+        f"  window={_fmt_eval_float(window_hours, 'h')} "
+        f"actionable={actionable} "
+        f"net_edge={_fmt_eval_float(delta.get('net_return_bps'), 'bps')}\n"
+        f"  blockers={', '.join(str(b) for b in blockers[:4]) if blockers else 'none'}"
+    )
+
+
+async def model_eval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show model quarantine forward-evaluation summary (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    control = load_evaluator_control(MODEL_REGISTRY_ROOT)
+    active = MODEL_REGISTRY.get_active_version()
+    report = build_evaluation_report(
+        registry_root=MODEL_REGISTRY_ROOT,
+        db_path=DB_PATH,
+        limit=6,
+    )
+    lines = [
+        "Model Evaluation",
+        "",
+        f"Active: `{active.version_id if active else '(none)'}`",
+        f"Auto-promote: `{'on' if control.get('auto_promote') else 'off'}`",
+        "Tuning gate: `72h`",
+        "Promotion gate: `168h / 7d`",
+        "",
+    ]
+    if not report:
+        lines.append("No candidates found.")
+    else:
+        for item in report:
+            lines.append(_format_eval_summary_line(item))
+            lines.append("")
+
+    lines.append("Use: `/model_eval_detail <version_id>` or `/model_auto_promote on|off`")
+    await update.message.reply_text("\n".join(lines).rstrip() + FOOTER)
+
+
+async def model_eval_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show detailed forward-evaluation metrics for one model (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: `/model_eval_detail <version_id>`" + FOOTER)
+        return
+
+    version_id = str(context.args[0]).strip()
+    record = MODEL_REGISTRY.get_version(version_id)
+    if record is None:
+        await update.message.reply_text(f"Unknown model version: `{version_id}`" + FOOTER)
+        return
+
+    paper_eval = (record.metrics or {}).get("paper_evaluation") or {}
+    if not isinstance(paper_eval, dict) or not paper_eval:
+        await update.message.reply_text(
+            f"`{record.version_id}` has no forward paper evaluation yet." + FOOTER
+        )
+        return
+
+    candidate = paper_eval.get("candidate_metrics") or {}
+    incumbent = paper_eval.get("incumbent_metrics") or {}
+    delta = paper_eval.get("delta_metrics") or {}
+    blockers = paper_eval.get("promotion_blockers") or []
+    lines = [
+        "Model Evaluation Detail",
+        "",
+        f"Version: `{record.version_id}`",
+        f"Status: `{record.status}`",
+        f"Decision: `{paper_eval.get('promotion_decision', 'pending')}`",
+        f"Tuning ready: `{bool(paper_eval.get('threshold_tuning_ready'))}`",
+        f"Window: `{_fmt_eval_float(paper_eval.get('evaluation_window_hours'), 'h')}`",
+        "",
+        "Candidate",
+        f"- resolved: `{candidate.get('resolved_decisions', 0)}`",
+        f"- actionable: `{candidate.get('actionable_decisions', 0)}`",
+        f"- net: `{_fmt_eval_float(candidate.get('net_return_bps'), 'bps')}`",
+        f"- drawdown: `{_fmt_eval_float(candidate.get('max_drawdown_bps'), 'bps')}`",
+        f"- hit rate: `{_fmt_eval_float(float(candidate.get('hit_rate', 0.0)) * 100.0, '%')}`",
+        "",
+        "Incumbent",
+        f"- resolved: `{incumbent.get('resolved_decisions', 0)}`",
+        f"- actionable: `{incumbent.get('actionable_decisions', 0)}`",
+        f"- net: `{_fmt_eval_float(incumbent.get('net_return_bps'), 'bps')}`",
+        f"- drawdown: `{_fmt_eval_float(incumbent.get('max_drawdown_bps'), 'bps')}`",
+        "",
+        "Delta",
+        f"- net: `{_fmt_eval_float(delta.get('net_return_bps'), 'bps')}`",
+        f"- mean: `{_fmt_eval_float(delta.get('mean_return_bps'), 'bps')}`",
+        f"- drawdown: `{_fmt_eval_float(delta.get('max_drawdown_bps'), 'bps')}`",
+        "",
+        f"Blockers: `{', '.join(str(b) for b in blockers) if blockers else 'none'}`",
+        f"Notes: `{record.promotion_notes or 'n/a'}`",
+    ]
+    await update.message.reply_text("\n".join(lines) + FOOTER)
+
+
+async def model_auto_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View or toggle automatic paper-evaluation promotion (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if not context.args:
+        control = load_evaluator_control(MODEL_REGISTRY_ROOT)
+        await update.message.reply_text(
+            f"Model evaluator auto-promote is `{'on' if control.get('auto_promote') else 'off'}`."
+            + FOOTER
+        )
+        return
+
+    raw = str(context.args[0]).strip().lower()
+    if raw not in {"on", "off", "1", "0", "true", "false"}:
+        await update.message.reply_text("Usage: `/model_auto_promote on|off`" + FOOTER)
+        return
+
+    enabled = raw in {"on", "1", "true"}
+    write_evaluator_control(
+        MODEL_REGISTRY_ROOT,
+        auto_promote=enabled,
+        updated_by=f"telegram:{user_id}",
+    )
+    await update.message.reply_text(
+        "Model evaluator auto-promote set to "
+        f"`{'on' if enabled else 'off'}`.\n"
+        "Promotion still requires the 7-day forward gate and no runtime blockers."
+        + FOOTER
+    )
+
+
 async def model_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List candidate and paper-quarantine model versions (admin only)."""
 
@@ -4286,6 +4451,9 @@ def main():
     application.add_handler(CommandHandler('model_active', model_active))
     application.add_handler(CommandHandler('model_versions', model_versions))
     application.add_handler(CommandHandler('model_candidates', model_candidates))
+    application.add_handler(CommandHandler('model_eval', model_eval))
+    application.add_handler(CommandHandler('model_eval_detail', model_eval_detail))
+    application.add_handler(CommandHandler('model_auto_promote', model_auto_promote))
     application.add_handler(CommandHandler('model_promote', model_promote))
     application.add_handler(CommandHandler('model_quarantine', model_quarantine))
     application.add_handler(CommandHandler('model_rollback', model_rollback))

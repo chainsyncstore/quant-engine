@@ -76,3 +76,29 @@ class ExecutionRouteEvent(Base):
     future_mark_price = Column(Float)
     future_return_bps = Column(Float)
     shadow_evaluated_at = Column(DateTime)
+
+
+class ModelShadowDecision(Base):
+    __tablename__ = "model_shadow_decisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    quarantine_version_id = Column(String, index=True, nullable=False)
+    model_version_id = Column(String, index=True, nullable=False)
+    baseline_version_id = Column(String, index=True, nullable=False)
+    decision_role = Column(String, index=True, nullable=False)
+    evaluated_at = Column(DateTime, index=True)
+    bar_timestamp = Column(String, index=True)
+    symbol = Column(String, index=True)
+    signal = Column(String)
+    probability = Column(Float)
+    buy_threshold = Column(Float)
+    sell_threshold = Column(Float)
+    close_price = Column(Float, default=0.0)
+    horizon_hours = Column(Integer, default=8)
+    future_mark_price = Column(Float)
+    future_return_bps = Column(Float)
+    resolved_at = Column(DateTime)
+    reason = Column(Text)
+    threshold_config_hash = Column(String)
+    risk_config_hash = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
