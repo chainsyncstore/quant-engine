@@ -1054,6 +1054,8 @@ def _build_startup_health_report() -> str:
     strategy_profile, active_model_version, active_model_source = _resolve_runtime_metadata(
         bridge=None,
     )
+    if _using_v2_backend() and strategy_profile == "legacy_v1":
+        strategy_profile = "core_v2"
     retrain_enabled = os.getenv("RETRAIN_ENABLED", "1").strip().lower() not in {
         "0",
         "false",
