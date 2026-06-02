@@ -89,6 +89,9 @@ services:
     command: python -m quant_v2.research.model_evaluator
     depends_on:
       - redis
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
       - ./models:/app/models
       - ./state:/state
