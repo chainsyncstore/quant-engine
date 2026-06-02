@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from quant_v2.contracts import StrategySignal
+from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
 from quant_v2.portfolio.cost_model import BinanceCostModel, confidence_to_edge_bps, get_default_cost_model
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,13 @@ _SESSION_DAMPEN: float = 0.65  # multiplier for low-edge hours
 _REGIME_ALIGN_MULT: float = 1.0   # signal aligns with momentum
 _REGIME_NEUTRAL_MULT: float = 0.85  # no clear momentum
 _REGIME_OPPOSE_MULT: float = 0.55  # signal fights the prevailing trend
+_REGIME2_SELL_ALLOCATION_MULT_ENV = "BOT_V2_REGIME2_SELL_ALLOCATION_MULT"
+_REGIME2_SELL_ALLOCATION_MULT_DEFAULT: float = 0.50
+_CHRONOS_REQUIRE_AGREEMENT_ENV = "BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY"
+_CHRONOS_DISAGREEMENT_MULT_ENV = "BOT_V2_CHRONOS_DISAGREEMENT_MULT"
+_CHRONOS_DISAGREEMENT_MULT_DEFAULT: float = 0.25
+_CHRONOS_EXTREME_CONFIDENCE_ENV = "BOT_V2_CHRONOS_EXTREME_CONFIDENCE"
+_CHRONOS_EXTREME_CONFIDENCE_DEFAULT: float = 0.80
 
 # ---------------------------------------------------------------------------
 # Symbol prediction accuracy dampening
@@ -104,6 +112,59 @@ def _model_agreement_multiplier(agreement: float | None) -> float:
     return _AGREEMENT_WEAK_MULT
 
 
+def _bounded_float_env(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    raw = os.getenv(name, str(default)).strip() or str(default)
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float(default)
+    return max(float(minimum), min(value, float(maximum)))
+
+
+def _regime2_sell_allocation_multiplier() -> float:
+    return _bounded_float_env(
+        _REGIME2_SELL_ALLOCATION_MULT_ENV,
+        _REGIME2_SELL_ALLOCATION_MULT_DEFAULT,
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _chronos_disagreement_multiplier() -> float:
+    return _bounded_float_env(
+        _CHRONOS_DISAGREEMENT_MULT_ENV,
+        _CHRONOS_DISAGREEMENT_MULT_DEFAULT,
+        minimum=0.0,
+        maximum=1.0,
+    )
+
+
+def _chronos_extreme_confidence() -> float:
+    return _bounded_float_env(
+        _CHRONOS_EXTREME_CONFIDENCE_ENV,
+        _CHRONOS_EXTREME_CONFIDENCE_DEFAULT,
+        minimum=0.5,
+        maximum=1.0,
+    )
+
+
+def _lgbm_directional_confidence(signal_direction: str, details: ModelSourceDetails) -> float | None:
+    if details.lgbm_probability is None:
+        return None
+    if signal_direction == "BUY":
+        return float(details.lgbm_probability)
+    if signal_direction == "SELL":
+        return 1.0 - float(details.lgbm_probability)
+    return None
+
+
 def _regime_multiplier(signal_direction: str, momentum_bias: float | None) -> float:
     """Return a soft regime-alignment multiplier.
 
@@ -133,6 +194,15 @@ class AllocationDecision:
     gross_exposure: float
     net_exposure: float
     skipped_symbols: dict[str, str] = field(default_factory=dict)
+    constraints_applied: tuple[str, ...] = ()
+
+
+def _active_market_short_guard(signals: Iterable[StrategySignal]) -> MarketRiskSnapshot | None:
+    for signal in signals:
+        market_risk = signal.market_risk
+        if market_risk is not None and market_risk.broad_selloff:
+            return market_risk
+    return None
 
 
 def allocate_signals(
@@ -149,6 +219,7 @@ def allocate_signals(
     enable_cost_gate: bool = True,
     equity_usd: float = 300.0,
     cost_model: BinanceCostModel | None = None,
+    current_positions: dict[str, float] | None = None,
 ) -> AllocationDecision:
     """Allocate portfolio exposures from model signals under confidence-scaled caps.
 
@@ -172,13 +243,18 @@ def allocate_signals(
     if not 0.0 <= min_confidence <= 1.0:
         raise ValueError("min_confidence must be in [0, 1]")
 
+    signal_list = tuple(signals)
+    market_short_guard = _active_market_short_guard(signal_list)
+    current_positions = current_positions or {}
+
     actionable: list[tuple[str, float]] = []
     skipped: dict[str, str] = {}
+    constraints: list[str] = []
     kelly_reference_confidence = 0.80
     kelly_reference_edge = max((2.0 * kelly_reference_confidence) - 1.0, 1e-12)
     kelly_scale = max_symbol_exposure_frac / kelly_reference_edge
 
-    for signal in signals:
+    for signal in signal_list:
         if signal.signal == "HOLD":
             skipped[signal.symbol] = "hold"
             continue
@@ -246,7 +322,180 @@ def allocate_signals(
 
         signed_exposure *= sess_mult * regime_mult * accuracy_mult * event_mult * agreement_mult
 
+        model_sources = signal.model_sources
+        if (
+            model_sources is not None
+            and model_sources.agreement is False
+            and model_sources.chronos_enabled
+        ):
+            extreme_threshold = _chronos_extreme_confidence()
+            lgbm_confidence = _lgbm_directional_confidence(signal.signal, model_sources)
+            extreme_override = (
+                lgbm_confidence is not None
+                and lgbm_confidence >= extreme_threshold
+                and model_sources.lgbm_direction == signal.signal
+            )
+            current_qty = float(current_positions.get(signal.symbol, 0.0) or 0.0)
+            opposing_position = (
+                (signal.signal == "SELL" and current_qty > 1e-12)
+                or (signal.signal == "BUY" and current_qty < -1e-12)
+            )
+
+            if extreme_override:
+                constraints.append("chronos_disagreement_extreme_override")
+                logger.info(
+                    "Chronos disagreement overridden for %s %s: lgbm_confidence=%.3f "
+                    "threshold=%.2f chronos_direction=%s",
+                    signal.symbol,
+                    signal.signal,
+                    lgbm_confidence,
+                    extreme_threshold,
+                    model_sources.chronos_direction,
+                )
+            elif opposing_position:
+                skipped[signal.symbol] = "chronos_disagreement_flatten_only"
+                constraints.append("chronos_disagreement_flatten_only")
+                logger.info(
+                    "Chronos disagreement allows flatten-only for %s %s: current_qty=%.8f "
+                    "lgbm_p=%s chronos_p=%s final_p=%.3f",
+                    signal.symbol,
+                    signal.signal,
+                    current_qty,
+                    (
+                        f"{model_sources.lgbm_probability:.3f}"
+                        if model_sources.lgbm_probability is not None
+                        else "n/a"
+                    ),
+                    (
+                        f"{model_sources.chronos_probability:.3f}"
+                        if model_sources.chronos_probability is not None
+                        else "n/a"
+                    ),
+                    model_sources.final_probability,
+                )
+                continue
+            elif _bool_env(_CHRONOS_REQUIRE_AGREEMENT_ENV, True):
+                skipped[signal.symbol] = "chronos_disagreement_entry_block"
+                constraints.append("chronos_disagreement_entry_block")
+                logger.info(
+                    "Chronos disagreement blocked %s entry for %s: lgbm_p=%s chronos_p=%s "
+                    "final_p=%.3f lgbm_dir=%s chronos_dir=%s",
+                    signal.signal,
+                    signal.symbol,
+                    (
+                        f"{model_sources.lgbm_probability:.3f}"
+                        if model_sources.lgbm_probability is not None
+                        else "n/a"
+                    ),
+                    (
+                        f"{model_sources.chronos_probability:.3f}"
+                        if model_sources.chronos_probability is not None
+                        else "n/a"
+                    ),
+                    model_sources.final_probability,
+                    model_sources.lgbm_direction,
+                    model_sources.chronos_direction,
+                )
+                continue
+            else:
+                disagreement_mult = _chronos_disagreement_multiplier()
+                signed_exposure *= disagreement_mult
+                constraints.append("chronos_disagreement_dampen")
+                logger.info(
+                    "Chronos disagreement dampened %s %s: multiplier=%.2f lgbm_p=%s "
+                    "chronos_p=%s final_p=%.3f",
+                    signal.signal,
+                    signal.symbol,
+                    disagreement_mult,
+                    (
+                        f"{model_sources.lgbm_probability:.3f}"
+                        if model_sources.lgbm_probability is not None
+                        else "n/a"
+                    ),
+                    (
+                        f"{model_sources.chronos_probability:.3f}"
+                        if model_sources.chronos_probability is not None
+                        else "n/a"
+                    ),
+                    model_sources.final_probability,
+                )
+
+        if (
+            model_sources is not None
+            and model_sources.agreement is None
+            and model_sources.chronos_enabled
+            and model_sources.chronos_probability is None
+            and _bool_env(_CHRONOS_REQUIRE_AGREEMENT_ENV, True)
+        ):
+            current_qty = float(current_positions.get(signal.symbol, 0.0) or 0.0)
+            opposing_position = (
+                (signal.signal == "SELL" and current_qty > 1e-12)
+                or (signal.signal == "BUY" and current_qty < -1e-12)
+            )
+            if opposing_position:
+                skipped[signal.symbol] = "chronos_unavailable_flatten_only"
+                constraints.append("chronos_unavailable_flatten_only")
+                logger.info(
+                    "Chronos unavailable; allowing flatten-only for %s %s: current_qty=%.8f",
+                    signal.symbol,
+                    signal.signal,
+                    current_qty,
+                )
+                continue
+            skipped[signal.symbol] = "chronos_unavailable_entry_block"
+            constraints.append("chronos_unavailable_entry_block")
+            logger.info(
+                "Chronos unavailable; blocked %s entry for %s because agreement is required",
+                signal.signal,
+                signal.symbol,
+            )
+            continue
+
         if signal.signal == "SELL":
+            if signal.regime == 2:
+                current_qty = float(current_positions.get(signal.symbol, 0.0) or 0.0)
+                if current_qty > 1e-12:
+                    skipped[signal.symbol] = "regime2_sell_flatten_only"
+                    constraints.append("regime2_sell_flatten_only")
+                    logger.info(
+                        "Regime 2 SELL treated as flatten-only for %s: current_qty=%.8f",
+                        signal.symbol,
+                        current_qty,
+                    )
+                    continue
+
+                regime2_mult = _regime2_sell_allocation_multiplier()
+                signed_exposure *= regime2_mult
+                constraints.append("regime2_sell_dampen")
+                logger.info(
+                    "Regime 2 SELL dampened for %s: multiplier=%.2f confidence=%.3f",
+                    signal.symbol,
+                    regime2_mult,
+                    signal.confidence,
+                )
+
+            if market_short_guard is not None and signal.confidence < market_short_guard.strong_short_confidence:
+                skipped[signal.symbol] = (
+                    "market_short_guard:"
+                    f"broad_selloff weak_sell confidence<{market_short_guard.strong_short_confidence:.2f}"
+                )
+                constraints.append("market_short_guard_block")
+                logger.info(
+                    "Market short guard blocked SELL %s: confidence=%.3f down_ratio=%.2f "
+                    "median_return=%.4f btc_return=%s lookback=%sh current_qty=%.8f",
+                    signal.symbol,
+                    signal.confidence,
+                    market_short_guard.down_ratio,
+                    market_short_guard.median_return,
+                    (
+                        f"{market_short_guard.btc_return:.4f}"
+                        if market_short_guard.btc_return is not None
+                        else "n/a"
+                    ),
+                    market_short_guard.lookback_hours,
+                    float(current_positions.get(signal.symbol, 0.0) or 0.0),
+                )
+                continue
             signed_exposure *= -1.0
         capped_exposure = max(-max_symbol_exposure_frac, min(signed_exposure, max_symbol_exposure_frac))
         if abs(capped_exposure) <= 0.0:
@@ -260,6 +509,7 @@ def allocate_signals(
             gross_exposure=0.0,
             net_exposure=0.0,
             skipped_symbols=skipped,
+            constraints_applied=tuple(dict.fromkeys(constraints)),
         )
 
     gross_requested = sum(abs(exposure) for _, exposure in actionable)
@@ -269,12 +519,39 @@ def allocate_signals(
             gross_exposure=0.0,
             net_exposure=0.0,
             skipped_symbols=skipped,
+            constraints_applied=tuple(dict.fromkeys(constraints)),
         )
 
     exposures: dict[str, float] = {}
     scale_to_budget = min(1.0, total_risk_budget_frac / gross_requested)
     for symbol, signed_exposure in actionable:
         exposures[symbol] = signed_exposure * scale_to_budget
+
+    if market_short_guard is not None:
+        long_sum = sum(v for v in exposures.values() if v > 0.0)
+        short_sum = sum(abs(v) for v in exposures.values() if v < 0.0)
+        target_short_sum = float(market_short_guard.short_net_cap_frac) + long_sum
+        if short_sum > target_short_sum and short_sum > 0.0:
+            scale = max(target_short_sum, 0.0) / short_sum
+            for symbol, value in list(exposures.items()):
+                if value < 0.0:
+                    exposures[symbol] = value * scale
+            constraints.append("market_short_guard_net_cap")
+            logger.info(
+                "Market short guard capped net short exposure: short_sum=%.4f target=%.4f "
+                "scale=%.3f down_ratio=%.2f median_return=%.4f btc_return=%s lookback=%sh",
+                short_sum,
+                target_short_sum,
+                scale,
+                market_short_guard.down_ratio,
+                market_short_guard.median_return,
+                (
+                    f"{market_short_guard.btc_return:.4f}"
+                    if market_short_guard.btc_return is not None
+                    else "n/a"
+                ),
+                market_short_guard.lookback_hours,
+            )
 
     gross = float(sum(abs(v) for v in exposures.values()))
     net = float(sum(exposures.values()))
@@ -283,4 +560,5 @@ def allocate_signals(
         gross_exposure=gross,
         net_exposure=net,
         skipped_symbols=skipped,
+        constraints_applied=tuple(dict.fromkeys(constraints)),
     )

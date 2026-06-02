@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import inspect
 import logging
@@ -9,15 +10,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, or_, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from quant.telebot.models import Base, User, UserContext
+from quant.telebot.models import Base, ExecutionRouteEvent, User, UserContext
 from quant.telebot.auth import CryptoManager
 from quant.telebot.model_selection import resolve_model_dir
 from quant_v2.config import default_universe_symbols
 from quant_v2.contracts import StrategySignal
-from quant_v2.execution.service import RoutedExecutionService
+from quant_v2.execution.service import HardRiskPauseEvent, RouteAuditEvent, RoutedExecutionService
 from quant_v2.model_registry import ModelRegistry
 from quant_v2.monitoring.health_dashboard import build_session_health_summary
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
@@ -209,6 +210,11 @@ def _ensure_user_context_schema() -> None:
         ("maintenance_resume_payload", "TEXT"),
         ("maintenance_resume_pending", "BOOLEAN DEFAULT 0"),
         ("maintenance_post_notified", "BOOLEAN DEFAULT 0"),
+        ("hard_risk_paused", "BOOLEAN DEFAULT 0"),
+        ("hard_risk_pause_reason", "TEXT"),
+        ("hard_risk_pause_triggered_at", "DATETIME"),
+        ("hard_risk_pause_breach_type", "VARCHAR"),
+        ("hard_risk_pause_details", "TEXT"),
         ("lifetime_demo_pnl_usd", "FLOAT DEFAULT 0.0"),
         ("lifetime_live_pnl_usd", "FLOAT DEFAULT 0.0"),
         ("current_demo_equity_usd", "FLOAT DEFAULT 0.0"),
@@ -237,6 +243,33 @@ def _ensure_user_context_schema() -> None:
 
 
 _ensure_user_context_schema()
+
+
+def _ensure_execution_route_event_schema() -> None:
+    """Backfill route telemetry columns for existing SQLite deployments."""
+
+    required: tuple[tuple[str, str], ...] = (
+        ("future_mark_price", "FLOAT"),
+        ("future_return_bps", "FLOAT"),
+        ("shadow_evaluated_at", "DATETIME"),
+    )
+
+    with ENGINE.connect() as conn:
+        existing = {
+            str(row[1])
+            for row in conn.execute(text("PRAGMA table_info(execution_route_events)"))
+        }
+        for column_name, column_sql in required:
+            if column_name in existing:
+                continue
+            conn.execute(
+                text(f"ALTER TABLE execution_route_events ADD COLUMN {column_name} {column_sql}")
+            )
+            logger.info("Added missing execution_route_events column `%s`", column_name)
+        conn.commit()
+
+
+_ensure_execution_route_event_schema()
 
 # Enable WAL mode for better concurrent read/write
 with ENGINE.connect() as conn:
@@ -327,9 +360,17 @@ def _get_v2_bridge() -> V2ExecutionBridge | None:
 
     if EXECUTION_BACKEND in {"v2", "v2_memory", "v2_shadow_memory"}:
         if EXECUTION_BACKEND == "v2":
-            service = RoutedExecutionService(allow_live_execution=V2_ALLOW_LIVE_EXECUTION)
+            service = RoutedExecutionService(
+                allow_live_execution=V2_ALLOW_LIVE_EXECUTION,
+                hard_risk_pause_callback=_persist_hard_risk_pause_event,
+                route_audit_callback=_persist_route_audit_event,
+            )
         elif EXECUTION_BACKEND in {"v2_memory", "v2_shadow_memory"}:
-            service = RoutedExecutionService(allow_live_execution=False)
+            service = RoutedExecutionService(
+                allow_live_execution=False,
+                hard_risk_pause_callback=_persist_hard_risk_pause_event,
+                route_audit_callback=_persist_route_audit_event,
+            )
 
         V2_BRIDGE = V2ExecutionBridge(
             service,
@@ -673,6 +714,47 @@ def _format_lifetime_timestamp(value: object) -> str:
     return "n/a"
 
 
+def _paper_state_position_summary(paper_state: dict | None) -> tuple[float, int, bool]:
+    """Return approximate active notional/symbol count from persisted paper state."""
+
+    if not isinstance(paper_state, dict):
+        return 0.0, 0, False
+
+    positions = _normalize_symbol_float_map(paper_state.get("open_positions"))
+    entry_prices = _normalize_symbol_float_map(paper_state.get("paper_entry_prices"))
+    mark_prices = _normalize_symbol_float_map(paper_state.get("mark_prices"))
+    prices = {**entry_prices, **mark_prices}
+
+    total_notional = 0.0
+    priced_symbols = 0
+    for symbol, qty in positions.items():
+        price = _safe_float(prices.get(symbol), 0.0)
+        if price > 0.0:
+            total_notional += abs(qty) * price
+            priced_symbols += 1
+
+    return total_notional, len(positions), priced_symbols == len(positions)
+
+
+def _format_persisted_paper_state_text(user_id: int) -> str:
+    paper_state = _load_paper_state(user_id)
+    if not isinstance(paper_state, dict):
+        return ""
+
+    notional, symbol_count, fully_priced = _paper_state_position_summary(paper_state)
+    positions = _normalize_symbol_float_map(paper_state.get("open_positions"))
+    if symbol_count <= 0:
+        return "\n\nPersisted paper positions: `none`"
+
+    stale_note = "" if fully_priced else " (notional estimate is stale/incomplete)"
+    held = ", ".join(sorted(positions))
+    return (
+        "\n\nPersisted paper positions\n"
+        f"- Symbols: `{symbol_count}` ({held})\n"
+        f"- Approx. notional: `{_format_usd(notional)}`{stale_note}"
+    )
+
+
 def _persist_paper_state(user_id: int, *, bridge: V2ExecutionBridge | None) -> None:
     """Persist paper session state (equity, positions, entry prices) to SQLite."""
     if bridge is None or not bridge.is_running(user_id):
@@ -684,6 +766,18 @@ def _persist_paper_state(user_id: int, *, bridge: V2ExecutionBridge | None) -> N
     paper_state = paper_getter(user_id)
     if paper_state is None:
         return
+    snapshot = None
+    snapshot_getter = getattr(service, "get_portfolio_snapshot", None)
+    if callable(snapshot_getter):
+        try:
+            snapshot = snapshot_getter(user_id)
+        except Exception as exc:
+            logger.debug("Paper snapshot fetch failed for user %s: %s", user_id, exc)
+    session_mode = None
+    try:
+        session_mode = bridge.get_session_mode(user_id)
+    except Exception:
+        session_mode = None
     session = SessionLocal()
     try:
         db_user = session.query(User).filter_by(telegram_id=user_id).first()
@@ -694,6 +788,23 @@ def _persist_paper_state(user_id: int, *, bridge: V2ExecutionBridge | None) -> N
             ctx = UserContext(telegram_id=user_id)
             db_user.context = ctx
         ctx.paper_state_json = json.dumps(paper_state, default=str)
+        if session_mode != "live":
+            equity_usd = _safe_float(paper_state.get("equity_usd"), 0.0)
+            if equity_usd > 0.0:
+                ctx.current_demo_equity_usd = equity_usd
+            if snapshot is not None:
+                symbol_notionals = getattr(snapshot, "symbol_notional_usd", {}) or {}
+                if isinstance(symbol_notionals, dict):
+                    ctx.current_demo_notional_usd = max(
+                        sum(abs(_safe_float(v, 0.0)) for v in symbol_notionals.values()),
+                        0.0,
+                    )
+                ctx.current_demo_symbols = max(int(getattr(snapshot, "symbol_count", 0) or 0), 0)
+            else:
+                notional, symbol_count, _fully_priced = _paper_state_position_summary(paper_state)
+                ctx.current_demo_notional_usd = max(notional, 0.0)
+                ctx.current_demo_symbols = max(symbol_count, 0)
+            ctx.lifetime_stats_updated_at = datetime.utcnow()
         session.commit()
     except Exception as exc:
         session.rollback()
@@ -836,12 +947,25 @@ def _load_lifetime_stats_summary(user_id: int) -> dict[str, Any] | None:
         if bool(getattr(ctx, "is_active", False)):
             active_mode = "LIVE" if bool(getattr(ctx, "live_mode", False)) else "DEMO"
 
+        demo_notional = max(_safe_float(getattr(ctx, "current_demo_notional_usd", 0.0), 0.0), 0.0)
+        demo_symbols = max(int(getattr(ctx, "current_demo_symbols", 0) or 0), 0)
+        paper_state_raw = getattr(ctx, "paper_state_json", None)
+        if paper_state_raw:
+            try:
+                paper_state = json.loads(paper_state_raw)
+            except json.JSONDecodeError:
+                paper_state = None
+            paper_notional, paper_symbols, _fully_priced = _paper_state_position_summary(paper_state)
+            if paper_symbols > 0:
+                demo_symbols = paper_symbols
+                demo_notional = paper_notional
+
         return {
             "current_demo_equity_usd": max(_safe_float(getattr(ctx, "current_demo_equity_usd", 0.0), 0.0), 0.0),
             "current_live_equity_usd": max(_safe_float(getattr(ctx, "current_live_equity_usd", 0.0), 0.0), 0.0),
-            "current_demo_notional_usd": max(_safe_float(getattr(ctx, "current_demo_notional_usd", 0.0), 0.0), 0.0),
+            "current_demo_notional_usd": demo_notional,
             "current_live_notional_usd": max(_safe_float(getattr(ctx, "current_live_notional_usd", 0.0), 0.0), 0.0),
-            "current_demo_symbols": max(int(getattr(ctx, "current_demo_symbols", 0) or 0), 0),
+            "current_demo_symbols": demo_symbols,
             "current_live_symbols": max(int(getattr(ctx, "current_live_symbols", 0) or 0), 0),
             "lifetime_demo_pnl_usd": _safe_float(getattr(ctx, "lifetime_demo_pnl_usd", 0.0), 0.0),
             "lifetime_live_pnl_usd": _safe_float(getattr(ctx, "lifetime_live_pnl_usd", 0.0), 0.0),
@@ -922,6 +1046,73 @@ def _resolve_runtime_metadata(*, bridge: V2ExecutionBridge | None) -> tuple[str,
     active_model_version = MODEL_RESOLUTION.active_version_id
     active_model_source = MODEL_RESOLUTION.source
     return strategy_profile, active_model_version, active_model_source
+
+
+def _build_startup_health_report() -> str:
+    """Build a compact local-vs-deployed parity report for startup logs."""
+
+    strategy_profile, active_model_version, active_model_source = _resolve_runtime_metadata(
+        bridge=None,
+    )
+    retrain_enabled = os.getenv("RETRAIN_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    chronos_enabled = os.getenv("BOT_ENABLE_CHRONOS", "0").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+    try:
+        with ENGINE.connect() as conn:
+            journal_mode = str(conn.execute(text("PRAGMA journal_mode")).scalar() or "unknown")
+    except Exception:
+        journal_mode = "unknown"
+
+    session = SessionLocal()
+    try:
+        active_users = session.query(UserContext).filter(UserContext.is_active.is_(True)).count()
+        hard_paused = (
+            session.query(UserContext)
+            .filter(UserContext.hard_risk_paused.is_(True))
+            .count()
+        )
+        route_events = session.query(ExecutionRouteEvent).count()
+        evaluated_shadows = (
+            session.query(ExecutionRouteEvent)
+            .filter(ExecutionRouteEvent.future_return_bps.isnot(None))
+            .count()
+        )
+    except Exception as exc:
+        logger.warning("Startup DB health query failed: %s", exc)
+        active_users = hard_paused = route_events = evaluated_shadows = -1
+    finally:
+        session.close()
+
+    warnings: list[str] = []
+    if hard_paused > 0:
+        warnings.append(f"hard_risk_paused_users={hard_paused}")
+    if not active_model_version:
+        warnings.append("no_active_model_version")
+    if EXECUTION_BACKEND == "v2" and not V2_ALLOW_LIVE_EXECUTION:
+        warnings.append("v2_live_backend_with_live_execution_disabled")
+    if not retrain_enabled:
+        warnings.append("retrain_disabled")
+
+    lines = [
+        "Startup Health Report:",
+        f"- backend={EXECUTION_BACKEND} v2_primary={_using_v2_primary_backend()}",
+        f"- strategy={strategy_profile} model={active_model_version or 'none'} source={active_model_source}",
+        f"- signal_loop_seconds={V2_SIGNAL_LOOP_SECONDS} chronos_enabled={chronos_enabled}",
+        f"- retrain_enabled={retrain_enabled} live_execution_allowed={V2_ALLOW_LIVE_EXECUTION}",
+        f"- db_path={DB_PATH.resolve()} journal_mode={journal_mode}",
+        f"- db_users_active={active_users} hard_risk_paused={hard_paused}",
+        f"- route_events={route_events} evaluated_block_shadows={evaluated_shadows}",
+        f"- warnings={', '.join(warnings) if warnings else 'none'}",
+    ]
+    return "\n".join(lines)
 
 
 def _normalize_symbol_float_map(raw: object) -> dict[str, float]:
@@ -1040,6 +1231,366 @@ def _clear_user_maintenance_resume_state(user_id: int) -> None:
     except Exception as exc:
         session.rollback()
         logger.warning("Failed clearing maintenance resume state for user %s: %s", user_id, exc)
+    finally:
+        session.close()
+
+
+def _utc_naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _active_hard_risk_pause_from_context(ctx: UserContext | None) -> dict[str, Any] | None:
+    if ctx is None or not bool(getattr(ctx, "hard_risk_paused", False)):
+        return None
+
+    details_raw = getattr(ctx, "hard_risk_pause_details", None)
+    details: dict[str, Any] = {}
+    if details_raw:
+        try:
+            parsed = json.loads(details_raw)
+            if isinstance(parsed, dict):
+                details = parsed
+        except json.JSONDecodeError:
+            details = {}
+
+    return {
+        "paused": True,
+        "reason": str(getattr(ctx, "hard_risk_pause_reason", None) or "hard_risk_breach"),
+        "triggered_at": getattr(ctx, "hard_risk_pause_triggered_at", None),
+        "breach_type": str(getattr(ctx, "hard_risk_pause_breach_type", None) or "hard_risk_breach"),
+        "details": details,
+    }
+
+
+def _load_active_hard_risk_pause(user_id: int) -> dict[str, Any] | None:
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None:
+            return None
+        return _active_hard_risk_pause_from_context(db_user.context)
+    except Exception as exc:
+        logger.warning("Failed loading hard-risk pause for user %s: %s", user_id, exc)
+        return None
+    finally:
+        session.close()
+
+
+def _load_persisted_routing_state(user_id: int) -> dict[str, Any]:
+    """Load DB routing gates for the user; failures are treated as unsafe."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None or db_user.context is None:
+            return {
+                "exists": bool(db_user is not None),
+                "is_active": False,
+                "live_mode": False,
+                "hard_risk_paused": False,
+                "load_error": None,
+            }
+        ctx = db_user.context
+        return {
+            "exists": True,
+            "is_active": bool(getattr(ctx, "is_active", False)),
+            "live_mode": bool(getattr(ctx, "live_mode", False)),
+            "hard_risk_paused": bool(getattr(ctx, "hard_risk_paused", False)),
+            "load_error": None,
+        }
+    except Exception as exc:
+        logger.warning("Failed loading routing state for user %s: %s", user_id, exc)
+        return {
+            "exists": False,
+            "is_active": False,
+            "live_mode": False,
+            "hard_risk_paused": True,
+            "load_error": str(exc),
+        }
+    finally:
+        session.close()
+
+
+def _audit_v2_route_decision(
+    *,
+    user_id: int,
+    pause_state: str,
+    is_active: bool,
+    live_mode: bool,
+    symbol: str,
+    side: str,
+    qty: float,
+    before_position: float | None,
+    after_position: float | None,
+    action_class: str,
+    reason: str,
+) -> None:
+    logger.info(
+        "V2 route audit user_id=%s pause_state=%s is_active=%s live_mode=%s "
+        "symbol=%s side=%s qty=%.12g before_position=%s after_position=%s "
+        "action_class=%s reason=%s",
+        user_id,
+        pause_state,
+        bool(is_active),
+        bool(live_mode),
+        symbol or "",
+        side or "",
+        float(qty or 0.0),
+        "unknown" if before_position is None else f"{float(before_position):.12g}",
+        "unknown" if after_position is None else f"{float(after_position):.12g}",
+        action_class,
+        reason,
+    )
+
+
+def _v2_routing_allowed_from_db(
+    user_id: int,
+    *,
+    bridge: V2ExecutionBridge | None,
+    signal: StrategySignal | None,
+) -> bool:
+    state = _load_persisted_routing_state(user_id)
+    symbol = str(getattr(signal, "symbol", "") or "").strip().upper()
+    side = str(getattr(signal, "signal", "") or "").strip().upper()
+    pause_state = "hard_risk_paused" if state["hard_risk_paused"] else "none"
+
+    block_reason = ""
+    if state.get("load_error"):
+        block_reason = "routing_state_load_error"
+    elif state["hard_risk_paused"]:
+        block_reason = "persisted_hard_risk_pause"
+    elif not state["is_active"]:
+        block_reason = "inactive_user"
+    else:
+        try:
+            bridge_mode = bridge.get_session_mode(user_id) if bridge is not None else None
+        except Exception:
+            bridge_mode = None
+        if bridge_mode == "live" and not state["live_mode"]:
+            block_reason = "live_mode_mismatch"
+
+    if not block_reason:
+        return True
+
+    _audit_v2_route_decision(
+        user_id=user_id,
+        pause_state=pause_state,
+        is_active=state["is_active"],
+        live_mode=state["live_mode"],
+        symbol=symbol,
+        side=side,
+        qty=0.0,
+        before_position=None,
+        after_position=None,
+        action_class="blocked",
+        reason=block_reason,
+    )
+    return False
+
+
+def _format_hard_risk_pause_text(pause: dict[str, Any]) -> str:
+    triggered_at = pause.get("triggered_at")
+    if isinstance(triggered_at, datetime):
+        triggered_text = triggered_at.isoformat()
+    else:
+        triggered_text = str(triggered_at or "unknown")
+
+    details = pause.get("details") if isinstance(pause.get("details"), dict) else {}
+    mode = str(details.get("mode") or "").upper()
+    mode_text = f"\n- Session mode: `{mode}`" if mode else ""
+
+    return (
+        "**Trading Paused: Hard Risk Breach**\n\n"
+        "Automatic trading and auto-resume are blocked until an operator clears the "
+        "persisted hard-risk pause in the database.\n"
+        f"- Reason: `{pause.get('reason', 'hard_risk_breach')}`\n"
+        f"- Breach type: `{pause.get('breach_type', 'hard_risk_breach')}`\n"
+        f"- Triggered at: `{triggered_text}`"
+        f"{mode_text}"
+    )
+
+
+async def _stop_runtime_sessions_for_hard_risk_pause(user_id: int) -> None:
+    if _using_v2_primary_backend():
+        source_manager = V2_SIGNAL_MANAGER
+    elif _using_manager_signal_source():
+        source_manager = MANAGER
+    else:
+        source_manager = None
+    bridge = V2_BRIDGE
+
+    if source_manager is not None:
+        try:
+            if source_manager.is_running(user_id):
+                await source_manager.stop_session(user_id)
+                logger.warning(
+                    "Stopped signal-source session after hard-risk pause for user %s",
+                    user_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed stopping signal-source session after hard-risk pause for user %s: %s",
+                user_id,
+                exc,
+            )
+
+    if bridge is not None:
+        try:
+            if bridge.is_running(user_id):
+                await bridge.stop_session(user_id)
+                logger.warning(
+                    "Stopped v2 execution session after hard-risk pause for user %s",
+                    user_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed stopping v2 execution session after hard-risk pause for user %s: %s",
+                user_id,
+                exc,
+            )
+
+
+def _schedule_hard_risk_runtime_stop(user_id: int) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_stop_runtime_sessions_for_hard_risk_pause(user_id))
+        return
+    loop.create_task(_stop_runtime_sessions_for_hard_risk_pause(user_id))
+
+
+def _side_adjusted_shadow_return_bps(side: str, blocked_mark: float, future_mark: float) -> float | None:
+    if blocked_mark <= 0.0 or future_mark <= 0.0:
+        return None
+    normalized_side = str(side or "").strip().upper()
+    if normalized_side == "BUY":
+        return ((future_mark / blocked_mark) - 1.0) * 10_000.0
+    if normalized_side == "SELL":
+        return ((blocked_mark / future_mark) - 1.0) * 10_000.0
+    return None
+
+
+def _evaluate_prior_blocked_route_shadows(
+    session,
+    *,
+    event: RouteAuditEvent,
+) -> None:
+    future_mark = float(event.mark_price or 0.0)
+    symbol = str(event.symbol or "").strip().upper()
+    if future_mark <= 0.0 or not symbol:
+        return
+
+    event_time = _utc_naive(event.created_at) or datetime.utcnow()
+    candidates = (
+        session.query(ExecutionRouteEvent)
+        .filter(
+            ExecutionRouteEvent.telegram_id == int(event.user_id),
+            ExecutionRouteEvent.symbol == symbol,
+            ExecutionRouteEvent.future_mark_price.is_(None),
+            ExecutionRouteEvent.mark_price > 0.0,
+            ExecutionRouteEvent.created_at < event_time,
+            or_(
+                ExecutionRouteEvent.accepted.is_(False),
+                ExecutionRouteEvent.action_class == "blocked",
+                ExecutionRouteEvent.reason.like("skipped_by_%"),
+            ),
+        )
+        .order_by(ExecutionRouteEvent.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    for row in candidates:
+        shadow_bps = _side_adjusted_shadow_return_bps(
+            str(row.side or ""),
+            float(row.mark_price or 0.0),
+            future_mark,
+        )
+        if shadow_bps is None:
+            continue
+        row.future_mark_price = future_mark
+        row.future_return_bps = float(shadow_bps)
+        row.shadow_evaluated_at = event_time
+
+
+def _persist_route_audit_event(event: RouteAuditEvent) -> None:
+    """Persist structured execution routing telemetry for later calibration."""
+
+    session = SessionLocal()
+    try:
+        _evaluate_prior_blocked_route_shadows(session, event=event)
+        session.add(
+            ExecutionRouteEvent(
+                telegram_id=int(event.user_id),
+                created_at=_utc_naive(event.created_at),
+                pause_state=event.pause_state,
+                is_active=event.is_active,
+                live_mode=bool(event.live_mode),
+                symbol=event.symbol,
+                side=event.side,
+                quantity=float(event.quantity),
+                before_position=event.before_position,
+                after_position=event.after_position,
+                action_class=event.action_class,
+                reason=event.reason,
+                accepted=event.accepted,
+                status=event.status,
+                order_id=event.order_id,
+                idempotency_key=event.idempotency_key,
+                mark_price=float(event.mark_price or 0.0),
+            )
+        )
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.warning(
+            "Failed persisting route audit event for user %s symbol=%s: %s",
+            event.user_id,
+            event.symbol,
+            exc,
+        )
+    finally:
+        session.close()
+
+
+def _persist_hard_risk_pause_event(event: HardRiskPauseEvent) -> None:
+    """Persist an execution-service hard-risk pause into user_context."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=event.user_id).first()
+        if db_user is None:
+            raise RuntimeError(f"user {event.user_id} not found")
+
+        ctx = db_user.context
+        if ctx is None:
+            ctx = UserContext(telegram_id=event.user_id)
+            db_user.context = ctx
+
+        ctx.hard_risk_paused = True
+        ctx.hard_risk_pause_reason = event.reason
+        ctx.hard_risk_pause_triggered_at = _utc_naive(event.triggered_at)
+        ctx.hard_risk_pause_breach_type = event.breach_type
+        ctx.hard_risk_pause_details = json.dumps(
+            event.details,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        ctx.is_active = False
+        _clear_maintenance_resume_state(ctx)
+        session.commit()
+        logger.error(
+            "Persisted hard-risk pause for user %s; breach_type=%s",
+            event.user_id,
+            event.breach_type,
+        )
+        _schedule_hard_risk_runtime_stop(event.user_id)
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -1259,9 +1810,6 @@ def _build_signal_notifier(bot, user_id: int):
                     await bot.send_message(chat_id=user_id, text=msg)
                     return
 
-                if signal_type == "HOLD":
-                    return  # Don't spam user with HOLD signals
-
                 native_signal = result.get("v2_signal")
                 native_prices = result.get("v2_prices")
 
@@ -1285,6 +1833,12 @@ def _build_signal_notifier(bot, user_id: int):
                         shadow_signal, shadow_prices = mapped
 
                 if shadow_signal is not None and shadow_prices:
+                    if not _v2_routing_allowed_from_db(
+                        user_id,
+                        bridge=bridge,
+                        signal=shadow_signal,
+                    ):
+                        return
                     try:
                         shadow_results = await bridge.route_signals(
                             user_id,
@@ -1352,6 +1906,45 @@ def _build_signal_notifier(bot, user_id: int):
     return notify_signal
 
 
+def _load_route_shadow_summary(user_id: int, *, limit: int = 200) -> dict[str, Any] | None:
+    """Summarize evaluated blocked-route shadows for calibration diagnostics."""
+
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(ExecutionRouteEvent)
+            .filter(
+                ExecutionRouteEvent.telegram_id == int(user_id),
+                ExecutionRouteEvent.future_return_bps.isnot(None),
+            )
+            .order_by(ExecutionRouteEvent.shadow_evaluated_at.desc())
+            .limit(max(int(limit), 1))
+            .all()
+        )
+        if not rows:
+            return None
+        returns = [float(row.future_return_bps or 0.0) for row in rows]
+        positive = sum(1 for value in returns if value > 0.0)
+        by_reason: dict[str, list[float]] = {}
+        for row, value in zip(rows, returns):
+            reason = str(row.reason or "unknown")
+            by_reason.setdefault(reason, []).append(value)
+        top_reason = max(by_reason.items(), key=lambda item: len(item[1]))
+        return {
+            "count": len(returns),
+            "avg_bps": sum(returns) / len(returns),
+            "positive_rate": positive / len(returns),
+            "top_reason": top_reason[0],
+            "top_reason_count": len(top_reason[1]),
+            "top_reason_avg_bps": sum(top_reason[1]) / len(top_reason[1]),
+        }
+    except Exception as exc:
+        logger.debug("Failed loading route shadow summary for user %s: %s", user_id, exc)
+        return None
+    finally:
+        session.close()
+
+
 def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -> str:
     """Format compact execution diagnostics text for Telegram stats."""
 
@@ -1401,6 +1994,21 @@ def _build_execution_diagnostics_text(bridge: V2ExecutionBridge, user_id: int) -
         lines.append(
             "- Effective caps: "
             f"symbol={symbol_cap*100:.2f}% gross={gross_cap*100:.2f}% net={net_cap*100:.2f}%"
+        )
+
+    shadow_summary = _load_route_shadow_summary(user_id)
+    if shadow_summary:
+        lines.append(
+            "- Block shadow: "
+            f"evaluated={shadow_summary['count']}, "
+            f"avg={shadow_summary['avg_bps']:+.1f}bps, "
+            f"favorable={shadow_summary['positive_rate']*100:.1f}%"
+        )
+        lines.append(
+            "- Top block reason: "
+            f"{shadow_summary['top_reason']} "
+            f"n={shadow_summary['top_reason_count']} "
+            f"avg={shadow_summary['top_reason_avg_bps']:+.1f}bps"
         )
 
     rollout_reasons = tuple(getattr(diagnostics, "rollout_gate_reasons", ()) or ())
@@ -1806,6 +2414,7 @@ async def _restore_active_sessions(application):
 
     session = SessionLocal()
     restore_targets: list[tuple[int, bool, dict]] = []
+    paused_targets: list[tuple[int, dict[str, Any]]] = []
     try:
         active_users = (
             session.query(User)
@@ -1820,6 +2429,16 @@ async def _restore_active_sessions(application):
         for db_user in active_users:
             ctx = db_user.context
             if not ctx:
+                continue
+
+            hard_pause = _active_hard_risk_pause_from_context(ctx)
+            if hard_pause is not None:
+                ctx.is_active = False
+                paused_targets.append((db_user.telegram_id, hard_pause))
+                logger.error(
+                    "Auto-restore blocked for user %s by persisted hard-risk pause.",
+                    db_user.telegram_id,
+                )
                 continue
 
             live = bool(ctx.live_mode)
@@ -1839,6 +2458,15 @@ async def _restore_active_sessions(application):
         return
     finally:
         session.close()
+
+    for user_id, hard_pause in paused_targets:
+        try:
+            await application.bot.send_message(
+                chat_id=user_id,
+                text=_format_hard_risk_pause_text(hard_pause) + FOOTER,
+            )
+        except Exception as notify_err:
+            logger.warning("Failed notifying hard-risk paused user %s: %s", user_id, notify_err)
 
     if not restore_targets:
         logger.info("No persisted active sessions to restore.")
@@ -2097,6 +2725,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "/update_complete - Notify users deploy is done and share recovery steps\n"
                 "/model_active - Show runtime model routing\n"
                 "/model_versions - List registered model versions\n"
+                "/model_candidates - List retrain candidates\n"
+                "/model_promote <version_id> - Manually activate a candidate\n"
+                "/model_quarantine <version_id> - Mark candidate for paper quarantine\n"
                 "/model_rollback [version_id] - Switch active pointer (default: previous)"
             )
         
@@ -2139,6 +2770,11 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
             user.context = UserContext(telegram_id=user_id)
             session.commit()
         ctx = user.context
+        hard_pause = _active_hard_risk_pause_from_context(ctx)
+        if hard_pause is not None:
+            await update.message.reply_text(_format_hard_risk_pause_text(hard_pause) + FOOTER)
+            session.close()
+            return
         creds = _build_creds_from_context(ctx, live=live)
     except Exception as e:
         if live and "Binance API credentials required for live trading" in str(e):
@@ -2490,6 +3126,11 @@ async def _continue_from_maintenance(
             return
 
         ctx = db_user.context
+        hard_pause = _active_hard_risk_pause_from_context(ctx)
+        if hard_pause is not None:
+            await update.message.reply_text(_format_hard_risk_pause_text(hard_pause) + FOOTER)
+            return
+
         parsed_snapshot = _parse_maintenance_resume_payload(ctx.maintenance_resume_payload)
         if not ctx.maintenance_resume_pending or parsed_snapshot is None:
             await update.message.reply_text(
@@ -2887,6 +3528,7 @@ async def model_active(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.extend(
             [
                 f"Active version: `{active.version_id}`",
+                f"Active status: `{getattr(active, 'status', 'active')}`",
                 f"Active artifact: `{active.artifact_dir}`",
             ]
         )
@@ -2928,11 +3570,175 @@ async def model_versions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["🗂️ **Registered Model Versions**", ""]
     for record in records[-12:]:
         marker = "🟢" if record.version_id == active_id else "⚪"
-        lines.append(f"{marker} `{record.version_id}` -> `{record.artifact_dir}`")
+        lines.append(
+            f"{marker} `{record.version_id}` [{getattr(record, 'status', 'candidate')}] -> `{record.artifact_dir}`"
+        )
 
     lines.append("")
-    lines.append("Use: `/model_rollback <version_id>` or `/model_rollback` (previous)")
+    lines.append("Use: `/model_candidates`, `/model_promote <version_id>`, or `/model_rollback`")
     await update.message.reply_text("\n".join(lines) + FOOTER)
+
+
+def _format_model_record_summary(record) -> str:
+    metrics = getattr(record, "metrics", {}) or {}
+    scores = metrics.get("validation_scores") or {}
+    score_text = ", ".join(f"{h}:{v}" for h, v in scores.items()) if isinstance(scores, dict) else str(scores)
+    if not score_text:
+        score_text = "n/a"
+    train_rows = metrics.get("train_rows", "n/a")
+    symbols = metrics.get("symbols_fetched") or metrics.get("symbols_requested") or []
+    if isinstance(symbols, list):
+        symbols_text = ",".join(str(s) for s in symbols[:6])
+        if len(symbols) > 6:
+            symbols_text += f"+{len(symbols) - 6}"
+    else:
+        symbols_text = str(symbols)
+    notes = metrics.get("promotion_eligibility_notes", "")
+    return (
+        f"`{record.version_id}` [{getattr(record, 'status', 'candidate')}]\n"
+        f"  rows={train_rows} scores={score_text}\n"
+        f"  symbols={symbols_text}\n"
+        f"  notes={notes or 'n/a'}"
+    )
+
+
+async def model_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """List candidate and paper-quarantine model versions (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    records = MODEL_REGISTRY.list_candidates()
+    if not records:
+        await update.message.reply_text("⚠️ No candidate model versions found." + FOOTER)
+        return
+
+    active = MODEL_REGISTRY.get_active_version()
+    lines = ["🧪 **Model Candidates**", ""]
+    if active:
+        lines.append(f"Active: `{active.version_id}`")
+        lines.append("")
+    for record in records[-10:]:
+        lines.append(_format_model_record_summary(record))
+        lines.append("")
+
+    lines.append("Use: `/model_promote <version_id>` or `/model_quarantine <version_id>`")
+    await update.message.reply_text("\n".join(lines).rstrip() + FOOTER)
+
+
+async def model_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manually promote a registered candidate model version (admin only)."""
+
+    global MANAGER
+    global V2_SIGNAL_MANAGER
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: `/model_promote <version_id>`" + FOOTER)
+        return
+
+    target_version = str(context.args[0]).strip()
+    target_record = MODEL_REGISTRY.get_version(target_version)
+    if target_record is None:
+        await update.message.reply_text(f"❌ Unknown model version: `{target_version}`" + FOOTER)
+        return
+
+    bridge = _get_v2_bridge()
+    source_manager = _get_signal_source_manager()
+    source_active_sessions = source_manager.get_active_count() if source_manager is not None else 0
+    bridge_active_sessions = bridge.get_active_count() if bridge is not None else 0
+    if source_active_sessions > 0 or bridge_active_sessions > 0:
+        await update.message.reply_text(
+            "⚠️ Cannot promote model while sessions are running. Stop active sessions first." + FOOTER
+        )
+        return
+
+    previous = MODEL_REGISTRY.get_active_version()
+    previous_id = previous.version_id if previous else "(none)"
+    pre_switch_pointer = MODEL_REGISTRY.get_active_pointer()
+
+    try:
+        promoted = MODEL_REGISTRY.promote_version(
+            target_record.version_id,
+            promoted_by=f"telegram:{user_id}",
+            notes="manual Telegram admin promotion",
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Model promotion rejected: `{exc}`" + FOOTER)
+        return
+
+    MANAGER = None
+    V2_SIGNAL_MANAGER = None
+    reloaded_source = _get_signal_source_manager(allow_reload_with_active_sessions=True)
+    if reloaded_source is None:
+        try:
+            if pre_switch_pointer is not None:
+                MODEL_REGISTRY.set_active_version(
+                    pre_switch_pointer.version_id,
+                    previous_version_id=pre_switch_pointer.previous_version_id,
+                )
+            elif previous is not None:
+                MODEL_REGISTRY.set_active_version(previous.version_id)
+            else:
+                MODEL_REGISTRY.clear_active_version()
+        except Exception as restore_err:
+            logger.error("Failed restoring previous model pointer after promotion load failure: %s", restore_err)
+
+        MANAGER = None
+        V2_SIGNAL_MANAGER = None
+        await update.message.reply_text(
+            "❌ Promotion updated the pointer but runtime load failed; reverted to previous pointer.\n"
+            f"Restored active version: `{previous_id}`"
+            + FOOTER
+        )
+        return
+
+    logger.warning(
+        "Manual model promotion applied by user=%s from=%s to=%s",
+        user_id,
+        previous_id,
+        promoted.version_id,
+    )
+    await update.message.reply_text(
+        "✅ **Model Promotion Applied**\n\n"
+        f"From: `{previous_id}`\n"
+        f"To: `{promoted.version_id}`\n"
+        f"Runtime model: `{Path(reloaded_source.model_dir).expanduser()}`"
+        + FOOTER
+    )
+
+
+async def model_quarantine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a candidate model for paper quarantine evaluation (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: `/model_quarantine <version_id>`" + FOOTER)
+        return
+
+    target_version = str(context.args[0]).strip()
+    try:
+        record = MODEL_REGISTRY.mark_paper_quarantine(
+            target_version,
+            notes=f"selected by telegram:{user_id}",
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Cannot mark quarantine: `{exc}`" + FOOTER)
+        return
+
+    await update.message.reply_text(
+        "🧪 **Paper Quarantine Marked**\n\n"
+        f"Candidate: `{record.version_id}`\n"
+        "Run paper-only evaluation externally, then promote with `/model_promote <version_id>` if it passes."
+        + FOOTER
+    )
 
 
 async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2963,7 +3769,10 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     target_artifact = Path(target_record.artifact_dir).expanduser().resolve()
-    if not target_artifact.is_dir() or not (target_artifact / "config.json").exists():
+    if not target_artifact.is_dir() or (
+        not (target_artifact / "config.json").exists()
+        and not any(target_artifact.glob("model_*m.pkl"))
+    ):
         await update.message.reply_text(
             "❌ Registered version artifact missing required `config.json`: "
             f"`{target_artifact}`"
@@ -3158,10 +3967,18 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
     manager = _get_manager() if _using_v1_primary_backend() else None
+    user_id = update.effective_user.id
+    hard_pause = _load_active_hard_risk_pause(user_id)
     if bridge is None and source_manager is None:
+        if hard_pause is not None:
+            await update.message.reply_text(
+                _format_hard_risk_pause_text(hard_pause)
+                + _format_persisted_paper_state_text(user_id)
+                + FOOTER
+            )
+            return
         await update.message.reply_text("❌ No production model found. Contact admin." + FOOTER)
         return
-    user_id = update.effective_user.id
     _refresh_lifetime_stats_from_runtime(user_id, bridge=bridge)
 
     if manager and manager.is_running(user_id) and _using_v1_primary_backend():
@@ -3244,11 +4061,21 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if shadow_kill_switch:
                 msg += "\n\n" + shadow_kill_switch
 
+        if hard_pause is not None:
+            msg += "\n\n" + _format_hard_risk_pause_text(hard_pause)
+
         await update.message.reply_text(msg + FOOTER)
         return
 
     if bridge:
         if not bridge.is_running(user_id):
+            if hard_pause is not None:
+                await update.message.reply_text(
+                    _format_hard_risk_pause_text(hard_pause)
+                    + _format_persisted_paper_state_text(user_id)
+                    + FOOTER
+                )
+                return
             if _using_v2_primary_backend() and source_manager and source_manager.is_running(user_id):
                 source_diag = _build_source_signal_diagnostics_text(
                     source_manager,
@@ -3310,6 +4137,9 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if source_diag_text:
                 stats_text += "\n\n" + source_diag_text
 
+        if hard_pause is not None:
+            stats_text += "\n\n" + _format_hard_risk_pause_text(hard_pause)
+
         await update.message.reply_text(stats_text + FOOTER)
         return
 
@@ -3343,7 +4173,8 @@ async def lifetime_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     running = bool(bridge and bridge.is_running(user_id)) or bool(
         source_manager and source_manager.is_running(user_id)
     )
-    engine_status = "RUNNING" if running else "STOPPED"
+    hard_pause = _load_active_hard_risk_pause(user_id)
+    engine_status = "PAUSED" if hard_pause is not None else ("RUNNING" if running else "STOPPED")
 
     msg = (
         "📚 **Lifetime Trading Stats**\n\n"
@@ -3362,8 +4193,10 @@ async def lifetime_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"- Strategy profile: `{summary.get('strategy_profile', 'core_v2')}`\n"
         f"- Account created: `{_format_lifetime_timestamp(summary.get('created_at'))}`\n"
         f"- Last stats refresh: `{_format_lifetime_timestamp(summary.get('last_updated_at'))}`"
-        + FOOTER
     )
+    if hard_pause is not None:
+        msg += "\n\n" + _format_hard_risk_pause_text(hard_pause)
+    msg += FOOTER
     await update.message.reply_text(msg)
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3372,10 +4205,25 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
     if bridge is None and source_manager is None:
+        hard_pause = _load_active_hard_risk_pause(update.effective_user.id)
+        if hard_pause is not None:
+            await update.message.reply_text(_format_hard_risk_pause_text(hard_pause) + FOOTER)
+            return
         await update.message.reply_text("❌ Bot Manager not initialized." + FOOTER)
         return
         
     user_id = update.effective_user.id
+    hard_pause = _load_active_hard_risk_pause(user_id)
+    if hard_pause is not None:
+        source_running = bool(source_manager and source_manager.is_running(user_id))
+        exec_running = bool(bridge and bridge.is_running(user_id))
+        runtime_state = "RUNNING" if (source_running or exec_running) else "STOPPED"
+        await update.message.reply_text(
+            _format_hard_risk_pause_text(hard_pause)
+            + f"\n- Runtime engine: `{runtime_state}`"
+            + FOOTER
+        )
+        return
 
     if _using_v2_primary_backend() and (source_manager is None or bridge is None):
         await update.message.reply_text(
@@ -3419,6 +4267,7 @@ def main():
     if not token:
         print("Error: TELEGRAM_TOKEN environment variable is missing.")
         return
+    logger.info("\n%s", _build_startup_health_report())
         
     async def post_init(app):
         await _restore_active_sessions(app)
@@ -3434,6 +4283,9 @@ def main():
     application.add_handler(CommandHandler('revoke', revoke))
     application.add_handler(CommandHandler('model_active', model_active))
     application.add_handler(CommandHandler('model_versions', model_versions))
+    application.add_handler(CommandHandler('model_candidates', model_candidates))
+    application.add_handler(CommandHandler('model_promote', model_promote))
+    application.add_handler(CommandHandler('model_quarantine', model_quarantine))
     application.add_handler(CommandHandler('model_rollback', model_rollback))
     application.add_handler(CommandHandler('setup', setup))
     application.add_handler(CommandHandler('start_demo', start_demo))

@@ -2,22 +2,49 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from quant_v2.contracts import StrategySignal
+from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
 from quant_v2.execution.adapters import ExecutionResult
 from quant_v2.execution.planner import PlannerConfig
 from quant_v2.execution.service import (
+    HardRiskPauseEvent,
     InMemoryExecutionService,
+    RouteAuditEvent,
     RoutedExecutionService,
     SessionRequest,
 )
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
 from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
+
+
+def _active_selloff_snapshot(*, strong_short_confidence: float = 0.75) -> MarketRiskSnapshot:
+    return MarketRiskSnapshot(
+        lookback_hours=30,
+        symbols_evaluated=4,
+        down_ratio=0.75,
+        median_return=-0.025,
+        btc_return=-0.03,
+        broad_selloff=True,
+        strong_short_confidence=strong_short_confidence,
+        short_net_cap_frac=0.10,
+    )
+
+
+def _chronos_disagreement_sources() -> ModelSourceDetails:
+    return ModelSourceDetails(
+        lgbm_probability=0.28,
+        chronos_probability=0.62,
+        final_probability=0.399,
+        lgbm_direction="SELL",
+        chronos_direction="BUY",
+        agreement=False,
+        chronos_enabled=True,
+    )
 
 
 def test_in_memory_execution_service_lifecycle() -> None:
@@ -134,6 +161,27 @@ def test_routed_execution_service_live_routes_request_into_live_factory() -> Non
     assert captured["request"].credentials["binance_api_key"] == "k"
 
 
+def test_routed_execution_service_emits_hard_risk_pause_event() -> None:
+    events: list[HardRiskPauseEvent] = []
+    service = RoutedExecutionService(hard_risk_pause_callback=events.append)
+
+    assert asyncio.run(service.start_session(SessionRequest(user_id=304, live=False))) is True
+
+    evaluation = service.set_monitoring_snapshot(
+        304,
+        MonitoringSnapshot(hard_risk_breach=True),
+    )
+
+    assert evaluation.pause_trading is True
+    assert "hard_risk_breach" in evaluation.reasons
+    assert len(events) == 1
+    event = events[0]
+    assert event.user_id == 304
+    assert event.reason == "hard_risk_breach"
+    assert event.breach_type == "external_monitoring"
+    assert event.details["mode"] == "paper"
+
+
 def test_routed_execution_service_live_session_falls_back_to_paper_when_live_disabled() -> None:
     called = {"live_factory": False}
 
@@ -203,6 +251,39 @@ def test_routed_execution_service_route_signals_executes_orders_and_updates_snap
     assert second == ()
 
 
+def test_routed_execution_service_emits_route_audit_events() -> None:
+    events: list[RouteAuditEvent] = []
+    service = RoutedExecutionService(route_audit_callback=events.append)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4011, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+
+    routed = asyncio.run(
+        service.route_signals(
+            4011,
+            signals=(signal,),
+            prices={"BTCUSDT": 100.0},
+        )
+    )
+
+    assert len(routed) == 1
+    assert events
+    event = events[-1]
+    assert event.user_id == 4011
+    assert event.symbol == "BTCUSDT"
+    assert event.side == "BUY"
+    assert event.accepted is True
+    assert event.status == "filled"
+    assert event.action_class == "entry"
+    assert event.mark_price == pytest.approx(100.0)
+
+
 def test_routed_execution_service_hold_only_signals_do_not_flatten_existing_positions() -> None:
     service = RoutedExecutionService()
     req = SessionRequest(user_id=402, live=False)
@@ -236,6 +317,137 @@ def test_routed_execution_service_hold_only_signals_do_not_flatten_existing_posi
     after = service.get_portfolio_snapshot(402)
     assert after is not None
     assert float(after.open_positions.get("BTCUSDT", 0.0)) == pytest.approx(before_qty)
+
+
+def test_routed_execution_service_market_short_guard_blocks_fresh_weak_sell() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4021, live=False))) is True
+
+    weak_sell = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.70,
+        uncertainty=0.0,
+        market_risk=_active_selloff_snapshot(),
+    )
+
+    routed = asyncio.run(
+        service.route_signals(
+            4021,
+            signals=(weak_sell,),
+            prices={"ETHUSDT": 2500.0},
+        )
+    )
+
+    assert routed == ()
+    snap = service.get_portfolio_snapshot(4021)
+    assert snap is not None
+    assert snap.open_positions == {}
+
+
+def test_routed_execution_service_market_short_guard_allows_flattening_long() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4022, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.82,
+        uncertainty=0.0,
+    )
+    prices = {"ETHUSDT": 2500.0}
+    opened = asyncio.run(service.route_signals(4022, signals=(buy_signal,), prices=prices))
+    assert opened
+
+    weak_sell = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.70,
+        uncertainty=0.0,
+        market_risk=_active_selloff_snapshot(),
+    )
+    flattened = asyncio.run(service.route_signals(4022, signals=(weak_sell,), prices=prices))
+
+    assert len(flattened) == 1
+    assert flattened[0].side == "SELL"
+    snap = service.get_portfolio_snapshot(4022)
+    assert snap is not None
+    assert abs(float(snap.open_positions.get("ETHUSDT", 0.0))) <= 1e-12
+
+
+def test_routed_execution_service_regime2_sell_flattens_long_without_flip() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4023, live=False))) is True
+
+    prices = {"ETHUSDT": 2500.0}
+    buy_signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.82,
+        uncertainty=0.0,
+        regime=1,
+    )
+    opened = asyncio.run(service.route_signals(4023, signals=(buy_signal,), prices=prices))
+    assert opened
+
+    regime2_sell = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.82,
+        uncertainty=0.0,
+        regime=2,
+    )
+    flattened = asyncio.run(service.route_signals(4023, signals=(regime2_sell,), prices=prices))
+
+    assert len(flattened) == 1
+    assert flattened[0].side == "SELL"
+    snap = service.get_portfolio_snapshot(4023)
+    assert snap is not None
+    assert abs(float(snap.open_positions.get("ETHUSDT", 0.0))) <= 1e-12
+
+
+def test_routed_execution_service_chronos_disagreement_allows_flattening_long() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4024, live=False))) is True
+
+    prices = {"ETHUSDT": 2500.0}
+    buy_signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.82,
+        uncertainty=0.0,
+    )
+    opened = asyncio.run(service.route_signals(4024, signals=(buy_signal,), prices=prices))
+    assert opened
+
+    disagreed_sell = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.72,
+        uncertainty=0.0,
+        model_sources=_chronos_disagreement_sources(),
+    )
+    flattened = asyncio.run(service.route_signals(4024, signals=(disagreed_sell,), prices=prices))
+
+    assert len(flattened) == 1
+    assert flattened[0].side == "SELL"
+    snap = service.get_portfolio_snapshot(4024)
+    assert snap is not None
+    assert abs(float(snap.open_positions.get("ETHUSDT", 0.0))) <= 1e-12
 
 
 def test_routed_execution_service_rejects_adapter_without_get_positions() -> None:
@@ -316,6 +528,191 @@ def test_routed_execution_service_kill_switch_block_still_updates_price_cache() 
 
     last_prices = service.get_last_prices(4051)
     assert last_prices.get("BTCUSDT") == pytest.approx(125.0)
+
+
+def test_internal_hard_risk_reduce_only_cannot_flip_short_to_long() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4053, live=False))) is True
+
+    restored = asyncio.run(
+        service.sync_positions(
+            4053,
+            target_positions={"BTCUSDT": -1.0},
+            prices={"BTCUSDT": 100.0},
+        )
+    )
+    assert restored
+
+    state = service._sessions[4053]
+    now = datetime.now(timezone.utc)
+    state.breach_history = [
+        now - timedelta(minutes=40),
+        now - timedelta(minutes=20),
+        now,
+    ]
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.95,
+    )
+    routed = asyncio.run(
+        service.route_signals(
+            4053,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            risk_policy=PortfolioRiskPolicy(
+                max_symbol_exposure_frac=0.001,
+                max_gross_exposure_frac=0.001,
+                max_net_exposure_frac=0.001,
+            ),
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=1.0,
+                max_symbol_exposure_frac=1.0,
+                min_confidence=0.5,
+                enable_optimizer=False,
+                equity_usd=10_000.0,
+            ),
+        )
+    )
+
+    assert routed
+    assert all(not result.accepted for result in routed)
+    assert any("hard_pause_position_flip_blocked" in (result.reason or "") for result in routed)
+    snapshot = service.get_portfolio_snapshot(4053)
+    assert snapshot is not None
+    assert float(snapshot.open_positions["BTCUSDT"]) == pytest.approx(-1.0)
+
+
+def test_soft_risk_reduction_bypasses_rebalance_cooldown(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_MIN_REBALANCE_ABSOLUTE_DRIFT_USD", "500")
+    service = RoutedExecutionService(
+        min_rebalance_notional_usd=200.0,
+        rebalance_cooldown_seconds=3600,
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4054, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+    planner = PlannerConfig(
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.10,
+        min_confidence=0.0,
+        enable_optimizer=False,
+        equity_usd=10_000.0,
+    )
+
+    opened = asyncio.run(
+        service.route_signals(
+            4054,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=planner,
+        )
+    )
+    assert len(opened) == 1
+    assert opened[0].accepted is True
+
+    state = service._sessions[4054]
+    state.last_rebalance_at["BTCUSDT"] = datetime.now(timezone.utc)
+
+    reduced = asyncio.run(
+        service.route_signals(
+            4054,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            risk_policy=PortfolioRiskPolicy(
+                max_symbol_exposure_frac=0.09,
+                max_gross_exposure_frac=0.09,
+                max_net_exposure_frac=0.09,
+            ),
+            planner_config=planner,
+        )
+    )
+
+    assert len(reduced) == 1
+    assert reduced[0].accepted is True
+    assert reduced[0].side == "SELL"
+    assert reduced[0].reason == ""
+
+
+def test_internal_hard_risk_reduces_before_persisting_pause() -> None:
+    events: list[HardRiskPauseEvent] = []
+    service = RoutedExecutionService(
+        hard_risk_pause_callback=events.append,
+        rebalance_cooldown_seconds=3600,
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4055, live=False))) is True
+
+    buy_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+    planner = PlannerConfig(
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.10,
+        min_confidence=0.0,
+        enable_optimizer=False,
+        equity_usd=10_000.0,
+    )
+    opened = asyncio.run(
+        service.route_signals(
+            4055,
+            signals=(buy_signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=planner,
+        )
+    )
+    assert len(opened) == 1
+    assert opened[0].accepted is True
+
+    state = service._sessions[4055]
+    now = datetime.now(timezone.utc)
+    state.breach_history = [
+        now - timedelta(minutes=40),
+        now - timedelta(minutes=20),
+        now,
+    ]
+    state.last_rebalance_at["BTCUSDT"] = now
+
+    hold_signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="HOLD",
+        confidence=0.50,
+    )
+    reduced = asyncio.run(
+        service.route_signals(
+            4055,
+            signals=(hold_signal,),
+            prices={"BTCUSDT": 100.0},
+            risk_policy=PortfolioRiskPolicy(
+                max_symbol_exposure_frac=0.09,
+                max_gross_exposure_frac=0.09,
+                max_net_exposure_frac=0.09,
+            ),
+            planner_config=planner,
+        )
+    )
+
+    assert len(reduced) == 1
+    assert reduced[0].accepted is True
+    assert reduced[0].side == "SELL"
+    assert events == []
+    evaluation = service.get_kill_switch_evaluation(4055)
+    assert evaluation is not None
+    assert evaluation.pause_trading is False
 
 
 def test_routed_execution_service_ingest_market_prices_refreshes_snapshot() -> None:

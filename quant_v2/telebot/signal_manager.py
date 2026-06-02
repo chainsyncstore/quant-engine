@@ -21,7 +21,7 @@ import pandas as pd
 from quant.config import BinanceAPIConfig
 from quant.data.binance_client import BinanceClient
 from quant_v2.config import default_universe_symbols
-from quant_v2.contracts import StrategySignal
+from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
 from quant_v2.data.news_client import CryptoCompareNewsClient, FearGreedClient, symbol_to_base_ticker
 from quant_v2.strategy.event_gate import evaluate_event_gate
@@ -95,6 +95,7 @@ class V2SignalManager:
         self.horizon_ensemble: "HorizonEnsemble | None" = None  # Phase 1: multi-horizon ensemble
         self.full_ensemble: "FullEnsemble | None" = None  # Phase 3: LightGBM + Chronos
         self._last_model_agreement: float | None = None  # Phase 3: cached per-symbol
+        self._last_model_sources: ModelSourceDetails | None = None
 
         # Ensure BTCUSDT is processed first (needed for cross-pair features)
         symbols_list = list(symbols or default_universe_symbols())
@@ -113,6 +114,49 @@ class V2SignalManager:
         )
         self.stranded_flatten_cycles = self._resolve_stranded_flatten_cycles(
             stranded_flatten_cycles
+        )
+        self.market_short_guard_lookback_hours = self._resolve_int_env(
+            "BOT_V2_MARKET_SHORT_GUARD_LOOKBACK_HOURS",
+            30,
+            minimum=1,
+        )
+        self.market_short_guard_down_ratio = self._resolve_float_env(
+            "BOT_V2_MARKET_SHORT_GUARD_DOWN_RATIO",
+            0.70,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        self.market_short_guard_median_return = self._resolve_float_env(
+            "BOT_V2_MARKET_SHORT_GUARD_MEDIAN_RETURN",
+            -0.015,
+        )
+        self.market_short_guard_btc_return = self._resolve_float_env(
+            "BOT_V2_MARKET_SHORT_GUARD_BTC_RETURN",
+            -0.020,
+        )
+        self.market_short_guard_strong_confidence = self._resolve_float_env(
+            "BOT_V2_MARKET_SHORT_GUARD_STRONG_CONFIDENCE",
+            0.75,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        self.market_short_guard_net_cap_frac = self._resolve_float_env(
+            "BOT_V2_MARKET_SHORT_GUARD_NET_CAP_FRAC",
+            0.15,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        self.regime2_buy_threshold = self._resolve_float_env(
+            "BOT_V2_REGIME2_BUY_THRESHOLD",
+            0.57,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        self.regime2_sell_threshold = self._resolve_float_env(
+            "BOT_V2_REGIME2_SELL_THRESHOLD",
+            0.35,
+            minimum=0.0,
+            maximum=1.0,
         )
         self.max_consecutive_errors = max(int(max_consecutive_errors), 1)
         self.max_signal_log = max(int(max_signal_log), 20)
@@ -224,6 +268,36 @@ class V2SignalManager:
         except ValueError:
             parsed = 0.005
         return max(parsed, 0.0)
+
+    @staticmethod
+    def _resolve_int_env(name: str, default: int, *, minimum: int | None = None) -> int:
+        raw = os.getenv(name, str(default)).strip() or str(default)
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = int(default)
+        if minimum is not None:
+            parsed = max(parsed, int(minimum))
+        return parsed
+
+    @staticmethod
+    def _resolve_float_env(
+        name: str,
+        default: float,
+        *,
+        minimum: float | None = None,
+        maximum: float | None = None,
+    ) -> float:
+        raw = os.getenv(name, str(default)).strip() or str(default)
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = float(default)
+        if minimum is not None:
+            parsed = max(parsed, float(minimum))
+        if maximum is not None:
+            parsed = min(parsed, float(maximum))
+        return parsed
 
     @staticmethod
     def _resolve_stranded_flatten_cycles(stranded_flatten_cycles: int | None) -> int:
@@ -728,6 +802,8 @@ class V2SignalManager:
         cycle_prices: dict[str, float] = {}
         btc_returns: pd.Series | None = None
         cycle_decisions: list[dict[str, Any]] = []
+        cycle_bars: dict[str, pd.DataFrame] = {}
+        cycle_close_histories: dict[str, pd.Series] = {}
 
         for symbol in self.symbols:
             fetch_call = partial(
@@ -742,10 +818,22 @@ class V2SignalManager:
             if bars is None or bars.empty or "close" not in bars.columns:
                 continue
 
+            cycle_bars[symbol] = bars
+            close_hist = pd.to_numeric(bars["close"], errors="coerce").dropna()
+            if not close_hist.empty:
+                cycle_close_histories[symbol] = close_hist
+                self._price_history_cache[symbol] = close_hist
+
             # Cache BTC returns for cross-pair feature injection
             if symbol == "BTCUSDT":
-                btc_close = pd.to_numeric(bars["close"], errors="coerce").dropna()
-                btc_returns = btc_close.pct_change()
+                btc_returns = close_hist.pct_change()
+
+        market_risk = self._compute_market_risk_snapshot(cycle_close_histories)
+
+        for symbol in self.symbols:
+            bars = cycle_bars.get(symbol)
+            if bars is None:
+                continue
 
             latest_ts = pd.Timestamp(bars.index[-1])
             prev_ts = session.last_bar_timestamp.get(symbol)
@@ -817,6 +905,8 @@ class V2SignalManager:
             if cycle_cache is not None:
                 cycle_cache[cache_key] = dict(payload)
 
+            self._apply_market_short_guard(session, payload, market_risk)
+
             # --- Collect price for scorecard evaluation ---
             close_price = float(payload.get("close_price", 0.0) or 0.0)
             if close_price > 0.0:
@@ -863,6 +953,199 @@ class V2SignalManager:
                     await self._emit(session, digest_payload)
                 except Exception as exc:
                     logger.warning("cycle digest emit failed for user %s: %s", session.user_id, exc)
+
+    def _compute_market_risk_snapshot(
+        self,
+        close_histories: dict[str, pd.Series],
+    ) -> MarketRiskSnapshot | None:
+        lookback = int(self.market_short_guard_lookback_hours)
+        returns: dict[str, float] = {}
+
+        for symbol, raw_close in close_histories.items():
+            close = pd.to_numeric(raw_close, errors="coerce").dropna()
+            if len(close) < lookback + 1:
+                continue
+            start = float(close.iloc[-(lookback + 1)])
+            end = float(close.iloc[-1])
+            if start <= 0.0 or end <= 0.0:
+                continue
+            returns[str(symbol).strip().upper()] = (end / start) - 1.0
+
+        if not returns:
+            return None
+
+        values = list(returns.values())
+        down_ratio = sum(1 for value in values if value < 0.0) / len(values)
+        median_return = float(pd.Series(values).median())
+        btc_return = returns.get("BTCUSDT")
+        broad_selloff = (
+            down_ratio >= self.market_short_guard_down_ratio
+            and (
+                median_return <= self.market_short_guard_median_return
+                or (
+                    btc_return is not None
+                    and btc_return <= self.market_short_guard_btc_return
+                )
+            )
+        )
+
+        snapshot = MarketRiskSnapshot(
+            lookback_hours=lookback,
+            symbols_evaluated=len(values),
+            down_ratio=float(down_ratio),
+            median_return=median_return,
+            btc_return=float(btc_return) if btc_return is not None else None,
+            broad_selloff=bool(broad_selloff),
+            down_ratio_threshold=float(self.market_short_guard_down_ratio),
+            median_return_threshold=float(self.market_short_guard_median_return),
+            btc_return_threshold=float(self.market_short_guard_btc_return),
+            strong_short_confidence=float(self.market_short_guard_strong_confidence),
+            short_net_cap_frac=float(self.market_short_guard_net_cap_frac),
+        )
+
+        if snapshot.broad_selloff:
+            logger.warning(
+                "Market short guard active: down_ratio=%.2f median_return=%.4f "
+                "btc_return=%s lookback=%sh symbols=%d",
+                snapshot.down_ratio,
+                snapshot.median_return,
+                f"{snapshot.btc_return:.4f}" if snapshot.btc_return is not None else "n/a",
+                snapshot.lookback_hours,
+                snapshot.symbols_evaluated,
+            )
+        else:
+            logger.debug(
+                "Market short guard inactive: down_ratio=%.2f median_return=%.4f "
+                "btc_return=%s lookback=%sh symbols=%d",
+                snapshot.down_ratio,
+                snapshot.median_return,
+                f"{snapshot.btc_return:.4f}" if snapshot.btc_return is not None else "n/a",
+                snapshot.lookback_hours,
+                snapshot.symbols_evaluated,
+            )
+        return snapshot
+
+    def _apply_market_short_guard(
+        self,
+        session: _SignalSession,
+        payload: dict[str, Any],
+        snapshot: MarketRiskSnapshot | None,
+    ) -> None:
+        if snapshot is None:
+            return
+
+        payload["_market_risk_snapshot"] = snapshot
+        payload["market_risk"] = snapshot.as_dict()
+
+        signal_type = str(payload.get("signal", "HOLD")).strip().upper()
+        if signal_type != "SELL" or not snapshot.broad_selloff:
+            payload["v2_signal"] = self._attach_native_v2_fields(payload)["v2_signal"]
+            return
+
+        proba_up = self._bounded_rate(payload.get("probability", 0.5))
+        sell_confidence = 1.0 - proba_up
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        current_qty = float(session.last_known_positions.get(symbol, 0.0) or 0.0)
+
+        if sell_confidence >= snapshot.strong_short_confidence:
+            payload["market_short_guard"] = "strong_sell_allowed"
+            logger.info(
+                "Market short guard allowed strong SELL %s: sell_confidence=%.3f "
+                "down_ratio=%.2f median_return=%.4f btc_return=%s lookback=%sh",
+                symbol,
+                sell_confidence,
+                snapshot.down_ratio,
+                snapshot.median_return,
+                f"{snapshot.btc_return:.4f}" if snapshot.btc_return is not None else "n/a",
+                snapshot.lookback_hours,
+            )
+            payload["v2_signal"] = self._attach_native_v2_fields(payload)["v2_signal"]
+            return
+
+        if current_qty > 1e-12:
+            payload["market_short_guard"] = "sell_allowed_to_reduce_long"
+            payload["v2_signal"] = self._attach_native_v2_fields(payload)["v2_signal"]
+            return
+
+        original_reason = str(payload.get("reason", "") or "")
+        payload["signal"] = "HOLD"
+        payload["market_short_guard"] = "blocked_weak_sell"
+        payload["reason"] = (
+            original_reason
+            + (
+                f" [market_short_guard blocked weak SELL: down_ratio={snapshot.down_ratio:.2f}, "
+                f"median_return={snapshot.median_return:.4f}, "
+                f"btc_return={snapshot.btc_return if snapshot.btc_return is not None else 'n/a'}, "
+                f"lookback={snapshot.lookback_hours}h]"
+            )
+        ).strip()
+        logger.info(
+            "Market short guard blocked SELL %s: sell_confidence=%.3f current_qty=%.8f "
+            "down_ratio=%.2f median_return=%.4f btc_return=%s lookback=%sh",
+            symbol,
+            sell_confidence,
+            current_qty,
+            snapshot.down_ratio,
+            snapshot.median_return,
+            f"{snapshot.btc_return:.4f}" if snapshot.btc_return is not None else "n/a",
+            snapshot.lookback_hours,
+        )
+        payload["v2_signal"] = self._attach_native_v2_fields(payload)["v2_signal"]
+
+    def _resolve_regime_thresholds(
+        self,
+        *,
+        regime: int,
+        regime_risk: float,
+    ) -> tuple[float, float, str]:
+        base_buy = min(0.90, 0.55 + 0.08 * regime_risk)
+        base_sell = max(0.10, 1.0 - base_buy)
+
+        if int(regime) != 2:
+            return base_buy, base_sell, ""
+
+        buy_threshold = max(base_buy, float(self.regime2_buy_threshold))
+        sell_threshold = min(base_sell, float(self.regime2_sell_threshold))
+        note = (
+            "regime2_conservative:"
+            f"base_buy={base_buy:.2f},buy={buy_threshold:.2f},"
+            f"base_sell={base_sell:.2f},sell={sell_threshold:.2f}"
+        )
+        logger.info(
+            "Regime 2 conservatism applied: buy_th %.2f -> %.2f, sell_th %.2f -> %.2f",
+            base_buy,
+            buy_threshold,
+            base_sell,
+            sell_threshold,
+        )
+        return buy_threshold, sell_threshold, note
+
+    @staticmethod
+    def _format_model_source_details(details: ModelSourceDetails | None) -> str:
+        if details is None:
+            return ""
+        chronos = (
+            f"{details.chronos_probability:.3f}"
+            if details.chronos_probability is not None
+            else "n/a"
+        )
+        lgbm = (
+            f"{details.lgbm_probability:.3f}"
+            if details.lgbm_probability is not None
+            else "n/a"
+        )
+        agreement = (
+            "agree"
+            if details.agreement is True
+            else "disagree"
+            if details.agreement is False
+            else "single_source"
+        )
+        return (
+            f"lgbm={lgbm},chronos={chronos},final={details.final_probability:.3f},"
+            f"lgbm_dir={details.lgbm_direction or 'n/a'},"
+            f"chronos_dir={details.chronos_direction or 'n/a'},agreement={agreement}"
+        )
 
     async def _emit(self, session: _SignalSession, payload: dict[str, Any]) -> None:
         # Order matters: time-stop runs first because it may upgrade HOLD→SELL,
@@ -1159,10 +1442,13 @@ class V2SignalManager:
         # --- Model inference with regime-scaled thresholds ---
         # Base 0.55 is reachable by a ~53% accuracy model; regime_risk
         # widens the deadband proportionally (0 = calm → 0.55, 1 = adverse → 0.63).
-        buy_threshold = min(0.90, 0.55 + 0.08 * regime_risk)
-        sell_threshold = max(0.10, 1.0 - buy_threshold)
+        buy_threshold, sell_threshold, regime_threshold_note = self._resolve_regime_thresholds(
+            regime=regime,
+            regime_risk=regime_risk,
+        )
 
         self._last_model_agreement = None  # Reset before each symbol prediction
+        self._last_model_sources = None
         if (self.active_model is not None or self.full_ensemble is not None) and not drift_alert:
             try:
                 if featured is not None and not featured.empty:
@@ -1195,11 +1481,25 @@ class V2SignalManager:
                         f"ML_Proba: {proba_up:.3f} inside deadband "
                         f"[{sell_threshold:.2f},{buy_threshold:.2f}] (regime={regime})"
                     )
+                if regime_threshold_note:
+                    reason += f" [{regime_threshold_note}]"
+                model_source_note = self._format_model_source_details(self._last_model_sources)
+                if model_source_note:
+                    reason += f" [model_sources: {model_source_note}]"
 
                 regime_probability = max(proba_up, 1.0 - proba_up)
                 logger.info(
-                    "Signal decision: %s %s proba=%.4f buy_th=%.2f sell_th=%.2f regime=%d risk=%.1f",
-                    symbol, signal, proba_up, buy_threshold, sell_threshold, regime, regime_risk,
+                    "Signal decision: %s %s proba=%.4f buy_th=%.2f sell_th=%.2f "
+                    "regime=%d risk=%.2f%s model_sources=%s",
+                    symbol,
+                    signal,
+                    proba_up,
+                    buy_threshold,
+                    sell_threshold,
+                    regime,
+                    regime_risk,
+                    " regime2_conservative" if regime_threshold_note else "",
+                    model_source_note or "n/a",
                 )
             except Exception as e:
                 logger.error("Error generating ML prediction for %s: %s", symbol, e)
@@ -1232,6 +1532,12 @@ class V2SignalManager:
             "_low_series": low_series,
             "_buy_th": buy_threshold,
             "_sell_th": sell_threshold,
+            "_model_sources": self._last_model_sources,
+            "model_sources": (
+                self._last_model_sources.as_dict()
+                if self._last_model_sources is not None
+                else None
+            ),
             }
         )
 
@@ -1243,9 +1549,21 @@ class V2SignalManager:
         # Phase 3: Try full ensemble (LightGBM + Chronos) first
         if self.full_ensemble is not None and close_series is not None:
             try:
-                p, u, agreement = self.full_ensemble.predict(
-                    feature_row, close_series, prediction_length=self.horizon_bars,
-                )
+                if hasattr(self.full_ensemble, "predict_with_details"):
+                    p, u, agreement, details = self.full_ensemble.predict_with_details(
+                        feature_row, close_series, prediction_length=self.horizon_bars,
+                    )
+                    self._last_model_sources = details
+                else:
+                    p, u, agreement = self.full_ensemble.predict(
+                        feature_row, close_series, prediction_length=self.horizon_bars,
+                    )
+                    self._last_model_sources = None
+                if self._last_model_sources is not None:
+                    logger.info(
+                        "FullEnsemble source probabilities: %s",
+                        self._format_model_source_details(self._last_model_sources),
+                    )
                 # Store agreement for later attachment to StrategySignal
                 self._last_model_agreement = agreement
                 return p, u
@@ -1360,6 +1678,13 @@ class V2SignalManager:
         uncertainty = self._bounded_rate(1.0 - confidence)
 
         reason = str(payload.get("reason", ""))
+        regime_value: int | None = None
+        try:
+            parsed_regime = int(payload.get("regime"))
+            if parsed_regime in {1, 2, 3, 4}:
+                regime_value = parsed_regime
+        except Exception:
+            regime_value = None
 
         # --- Session hour (UTC) from signal timestamp ---
         session_hour_utc: int | None = None
@@ -1435,6 +1760,14 @@ class V2SignalManager:
         # --- Model agreement (Phase 3) ---
         model_agreement: float | None = self._last_model_agreement
 
+        market_risk = payload.get("_market_risk_snapshot")
+        if not isinstance(market_risk, MarketRiskSnapshot):
+            market_risk = None
+
+        model_sources = payload.get("_model_sources")
+        if not isinstance(model_sources, ModelSourceDetails):
+            model_sources = None
+
         # --- Estimated transaction cost (Phase A) ---
         estimated_cost_bps: float | None = None
         if signal_type in ("BUY", "SELL"):
@@ -1454,6 +1787,7 @@ class V2SignalManager:
             confidence=confidence,
             uncertainty=uncertainty,
             reason=reason,
+            regime=regime_value,
             session_hour_utc=session_hour_utc,
             momentum_bias=momentum_bias,
             atr_pct=atr_pct,
@@ -1461,6 +1795,8 @@ class V2SignalManager:
             event_gate_mult=event_gate_mult,
             model_agreement=model_agreement,
             estimated_cost_bps=estimated_cost_bps,
+            market_risk=market_risk,
+            model_sources=model_sources,
         )
 
         monitoring_snapshot = MonitoringSnapshot(

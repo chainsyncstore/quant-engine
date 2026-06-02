@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from quant_v2.contracts import ModelDirection, ModelSourceDetails
 from quant_v2.models.trainer import TrainedModel, load_model
 from quant_v2.models.predictor import predict_proba_with_uncertainty
 
@@ -15,6 +16,16 @@ logger = logging.getLogger(__name__)
 
 # Decay weights: shorter horizon gets more weight
 DEFAULT_HORIZON_WEIGHTS = {2: 0.45, 4: 0.35, 8: 0.20}
+
+
+def _direction_from_probability(probability: float | None) -> ModelDirection | None:
+    if probability is None:
+        return None
+    if probability > 0.5:
+        return "BUY"
+    if probability < 0.5:
+        return "SELL"
+    return "HOLD"
 
 
 class HorizonEnsemble:
@@ -129,19 +140,35 @@ class FullEnsemble:
             None if only one source contributed.
         """
 
+        probability, uncertainty, agreement, _details = self.predict_with_details(
+            feature_row,
+            close_series,
+            prediction_length=prediction_length,
+        )
+        return probability, uncertainty, agreement
+
+    def predict_with_details(
+        self,
+        feature_row: pd.DataFrame,
+        close_series: pd.Series,
+        prediction_length: int = 4,
+    ) -> tuple[float, float, float | None, ModelSourceDetails]:
+        """Combined prediction plus source-level probabilities."""
+
         probas: list[float] = []
         uncertainties: list[float] = []
         weights: list[float] = []
-        source_labels: list[str] = []
+        lgbm_probability: float | None = None
+        chronos_probability: float | None = None
 
         # LightGBM ensemble
         if self.lgbm_ensemble is not None:
             try:
                 p, u = self.lgbm_ensemble.predict(feature_row)
+                lgbm_probability = float(p)
                 probas.append(p)
                 uncertainties.append(u)
                 weights.append(self._lgbm_weight)
-                source_labels.append("lgbm")
             except Exception as e:
                 logger.warning("LightGBM ensemble failed: %s", e)
 
@@ -151,15 +178,24 @@ class FullEnsemble:
                 from quant_v2.models.chronos_wrapper import predict_next_bar_direction
 
                 p, u = predict_next_bar_direction(close_series, prediction_length)
+                chronos_probability = float(p)
                 probas.append(p)
                 uncertainties.append(u)
                 weights.append(self._chronos_weight)
-                source_labels.append("chronos")
             except Exception as e:
                 logger.warning("Chronos prediction failed: %s", e)
 
         if not probas:
-            return 0.5, 1.0, None
+            details = ModelSourceDetails(
+                lgbm_probability=None,
+                chronos_probability=None,
+                final_probability=0.5,
+                lgbm_direction=None,
+                chronos_direction=None,
+                agreement=None,
+                chronos_enabled=bool(self.enable_chronos),
+            )
+            return 0.5, 1.0, None, details
 
         w = np.array(weights)
         w = w / w.sum()
@@ -168,17 +204,33 @@ class FullEnsemble:
 
         # Compute model agreement
         model_agreement: float | None = None
-        if len(probas) > 1:
-            directions = [1 if p > 0.5 else 0 for p in probas]
-            if len(set(directions)) == 1:
+        agreement_flag: bool | None = None
+        lgbm_direction = _direction_from_probability(lgbm_probability)
+        chronos_direction = _direction_from_probability(chronos_probability)
+        if lgbm_direction is not None and chronos_direction is not None:
+            agreement_flag = lgbm_direction == chronos_direction
+            if agreement_flag:
                 # Both agree on direction
                 model_agreement = 1.0
                 final_u *= 0.80  # 20% uncertainty reduction for agreement
             else:
                 model_agreement = 0.0
 
+        final_p = float(np.clip(final_p, 0.0, 1.0))
+        final_u = float(np.clip(final_u, 0.0, 1.0))
+        details = ModelSourceDetails(
+            lgbm_probability=lgbm_probability,
+            chronos_probability=chronos_probability,
+            final_probability=final_p,
+            lgbm_direction=lgbm_direction,
+            chronos_direction=chronos_direction,
+            agreement=agreement_flag,
+            chronos_enabled=bool(self.enable_chronos),
+        )
+
         return (
-            float(np.clip(final_p, 0.0, 1.0)),
-            float(np.clip(final_u, 0.0, 1.0)),
+            final_p,
+            final_u,
             model_agreement,
+            details,
         )

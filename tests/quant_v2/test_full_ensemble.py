@@ -52,6 +52,31 @@ class TestFullEnsemble:
         # Weighted: 0.65*0.70 + 0.35*0.80 = 0.455 + 0.28 = 0.735
         assert prob == pytest.approx(0.735, abs=0.01)
 
+    def test_predict_with_details_exposes_source_probabilities(self) -> None:
+        mock_lgbm = MagicMock()
+        mock_lgbm.predict.return_value = (0.25, 0.20)
+
+        feature_row = _make_feature_row()
+        close = _make_close_series()
+
+        with patch(
+            "quant_v2.models.chronos_wrapper.predict_next_bar_direction",
+            return_value=(0.70, 0.15),
+        ):
+            ensemble = FullEnsemble(lgbm_ensemble=mock_lgbm, enable_chronos=True)
+            prob, unc, agreement, details = ensemble.predict_with_details(feature_row, close)
+
+        assert prob == pytest.approx(0.4075)
+        assert 0.0 <= unc <= 1.0
+        assert agreement == 0.0
+        assert details.lgbm_probability == pytest.approx(0.25)
+        assert details.chronos_probability == pytest.approx(0.70)
+        assert details.final_probability == pytest.approx(prob)
+        assert details.lgbm_direction == "SELL"
+        assert details.chronos_direction == "BUY"
+        assert details.agreement is False
+        assert details.chronos_enabled is True
+
     def test_agreement_bonus_reduces_uncertainty(self) -> None:
         """When both models agree, uncertainty is reduced by 20%."""
         mock_lgbm = MagicMock()
@@ -110,6 +135,28 @@ class TestFullEnsemble:
 
         # Only one source → agreement is None
         assert agreement is None
+        assert prob == pytest.approx(0.72)
+        assert unc == pytest.approx(0.25)
+
+    def test_predict_with_details_marks_chronos_unavailable_after_failure(self) -> None:
+        mock_lgbm = MagicMock()
+        mock_lgbm.predict.return_value = (0.72, 0.25)
+
+        feature_row = _make_feature_row()
+        close = _make_close_series()
+
+        with patch(
+            "quant_v2.models.chronos_wrapper.predict_next_bar_direction",
+            side_effect=RuntimeError("chronos unavailable"),
+        ):
+            ensemble = FullEnsemble(lgbm_ensemble=mock_lgbm, enable_chronos=True)
+            prob, unc, agreement, details = ensemble.predict_with_details(feature_row, close)
+
+        assert agreement is None
+        assert details.lgbm_probability == pytest.approx(0.72)
+        assert details.chronos_probability is None
+        assert details.chronos_enabled is True
+        assert details.agreement is None
         assert prob == pytest.approx(0.72)
         assert unc == pytest.approx(0.25)
 

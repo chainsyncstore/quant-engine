@@ -3,13 +3,15 @@ Four-state Markov regime classifier for signal gating.
 
 States:
     1 (Momentum):  Trending with non-crowded funding
-    2 (Reversion): Counter-trend with non-crowded funding
+    2 (Reversion): Strong downtrend with non-crowded funding
     3 (Neutral):   Default state — reduced confidence
     4 (Adverse):   Extreme funding crowding or price deviation
 
 RegimeRisk mapping:
-    Regime 1, 2 → RegimeRisk = 0 (favourable for trading)
-    Regime 3, 4 → RegimeRisk = 1 (reduced confidence)
+    Regime 1 -> RegimeRisk = 0.00 (normal directional trading)
+    Regime 2 -> RegimeRisk = 0.35 (reversion/downtrend caution)
+    Regime 3 -> RegimeRisk = 0.50 (neutral caution)
+    Regime 4 -> RegimeRisk = 1.00 (most conservative)
 
 Transitions require a 5-bar persistence guard to reduce whipsaw.
 """
@@ -31,7 +33,7 @@ class RegimeState:
     persistence_count: int  # consecutive bars in current regime
 
 
-_REGIME_RISK_MAP: dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.5, 4: 1.0}
+_REGIME_RISK_MAP: dict[int, float] = {1: 0.0, 2: 0.35, 3: 0.5, 4: 1.0}
 
 _PERSISTENCE_GUARD: int = 5  # bars before confirming a transition
 

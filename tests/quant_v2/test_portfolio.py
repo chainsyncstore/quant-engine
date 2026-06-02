@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import pytest
 
-from quant_v2.contracts import StrategySignal
+from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
 from quant_v2.portfolio.allocation import allocate_signals
 from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
 
 
-def _signal(symbol: str, side: str, confidence: float, uncertainty: float | None = None) -> StrategySignal:
+def _signal(
+    symbol: str,
+    side: str,
+    confidence: float,
+    uncertainty: float | None = None,
+    regime: int | None = None,
+) -> StrategySignal:
     return StrategySignal(
         symbol=symbol,
         timeframe="1h",
@@ -15,6 +21,53 @@ def _signal(symbol: str, side: str, confidence: float, uncertainty: float | None
         signal=side,
         confidence=confidence,
         uncertainty=uncertainty,
+        regime=regime,
+    )
+
+
+def _selloff_snapshot(
+    *,
+    active: bool = True,
+    strong_short_confidence: float = 0.75,
+    short_net_cap_frac: float = 0.15,
+) -> MarketRiskSnapshot:
+    return MarketRiskSnapshot(
+        lookback_hours=30,
+        symbols_evaluated=5,
+        down_ratio=0.80 if active else 0.40,
+        median_return=-0.025 if active else 0.002,
+        btc_return=-0.03 if active else 0.01,
+        broad_selloff=active,
+        strong_short_confidence=strong_short_confidence,
+        short_net_cap_frac=short_net_cap_frac,
+    )
+
+
+def _sources(
+    *,
+    lgbm: float | None,
+    chronos: float | None,
+    final: float,
+    agreement: bool | None,
+    chronos_enabled: bool = True,
+) -> ModelSourceDetails:
+    def direction(value: float | None) -> str | None:
+        if value is None:
+            return None
+        if value > 0.5:
+            return "BUY"
+        if value < 0.5:
+            return "SELL"
+        return "HOLD"
+
+    return ModelSourceDetails(
+        lgbm_probability=lgbm,
+        chronos_probability=chronos,
+        final_probability=final,
+        lgbm_direction=direction(lgbm),  # type: ignore[arg-type]
+        chronos_direction=direction(chronos),  # type: ignore[arg-type]
+        agreement=agreement,
+        chronos_enabled=chronos_enabled,
     )
 
 
@@ -78,6 +131,410 @@ def test_allocate_signals_confidence_scales_exposure_before_cap() -> None:
     assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.05)
     assert decision.target_exposures["ETHUSDT"] == pytest.approx(0.025)
     assert decision.gross_exposure == pytest.approx(0.075)
+
+
+def test_market_short_guard_inactive_allows_normal_sell() -> None:
+    signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.70,
+        uncertainty=0.0,
+        market_risk=_selloff_snapshot(active=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["ETHUSDT"] < 0.0
+    assert decision.constraints_applied == ()
+
+
+def test_market_short_guard_blocks_weak_new_sell() -> None:
+    signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.70,
+        uncertainty=0.0,
+        market_risk=_selloff_snapshot(active=True),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures == {}
+    assert "market_short_guard" in decision.skipped_symbols["ETHUSDT"]
+    assert "market_short_guard_block" in decision.constraints_applied
+
+
+def test_market_short_guard_allows_very_strong_sell_but_caps_net_short() -> None:
+    snapshot = _selloff_snapshot(active=True, short_net_cap_frac=0.05)
+    signals = [
+        StrategySignal(
+            symbol="ETHUSDT",
+            timeframe="1h",
+            horizon_bars=4,
+            signal="SELL",
+            confidence=0.82,
+            uncertainty=0.0,
+            market_risk=snapshot,
+        ),
+        StrategySignal(
+            symbol="SOLUSDT",
+            timeframe="1h",
+            horizon_bars=4,
+            signal="SELL",
+            confidence=0.84,
+            uncertainty=0.0,
+            market_risk=snapshot,
+        ),
+    ]
+
+    decision = allocate_signals(
+        signals,
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures
+    assert all(value < 0.0 for value in decision.target_exposures.values())
+    assert decision.net_exposure >= -0.05 - 1e-12
+    assert "market_short_guard_net_cap" in decision.constraints_applied
+
+
+def test_regime2_sell_allocation_is_dampened_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("BOT_V2_REGIME2_SELL_ALLOCATION_MULT", raising=False)
+
+    regime1 = allocate_signals(
+        [_signal("ETHUSDT", "SELL", 0.80, uncertainty=0.0, regime=1)],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+    regime2 = allocate_signals(
+        [_signal("ETHUSDT", "SELL", 0.80, uncertainty=0.0, regime=2)],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert regime1.target_exposures["ETHUSDT"] == pytest.approx(-0.15)
+    assert regime2.target_exposures["ETHUSDT"] == pytest.approx(-0.075)
+    assert "regime2_sell_dampen" in regime2.constraints_applied
+
+
+def test_regime2_sell_allocation_multiplier_env_override(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REGIME2_SELL_ALLOCATION_MULT", "0.25")
+
+    decision = allocate_signals(
+        [_signal("ETHUSDT", "SELL", 0.80, uncertainty=0.0, regime=2)],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["ETHUSDT"] == pytest.approx(-0.0375)
+    assert "regime2_sell_dampen" in decision.constraints_applied
+
+
+def test_regime2_sell_against_existing_long_is_flatten_only(monkeypatch) -> None:
+    monkeypatch.delenv("BOT_V2_REGIME2_SELL_ALLOCATION_MULT", raising=False)
+
+    decision = allocate_signals(
+        [_signal("ETHUSDT", "SELL", 0.82, uncertainty=0.0, regime=2)],
+        total_risk_budget_frac=1.0,
+        max_symbol_exposure_frac=0.15,
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+        current_positions={"ETHUSDT": 0.05},
+    )
+
+    assert decision.target_exposures == {}
+    assert decision.skipped_symbols["ETHUSDT"] == "regime2_sell_flatten_only"
+    assert "regime2_sell_flatten_only" in decision.constraints_applied
+
+
+def test_chronos_agreement_allows_normal_entry(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.80,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.82, chronos=0.66, final=0.764, agreement=True),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["BTCUSDT"] > 0.0
+    assert not any(item.startswith("chronos_") for item in decision.constraints_applied)
+
+
+def test_chronos_disagreement_blocks_fresh_sell_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.72,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.28, chronos=0.62, final=0.399, agreement=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures == {}
+    assert decision.skipped_symbols["ETHUSDT"] == "chronos_disagreement_entry_block"
+    assert "chronos_disagreement_entry_block" in decision.constraints_applied
+
+
+def test_chronos_disagreement_blocks_fresh_buy_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.72,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.72, chronos=0.34, final=0.587, agreement=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures == {}
+    assert decision.skipped_symbols["BTCUSDT"] == "chronos_disagreement_entry_block"
+    assert "chronos_disagreement_entry_block" in decision.constraints_applied
+
+
+def test_chronos_disagreement_dampens_when_agreement_not_required(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "0")
+    monkeypatch.setenv("BOT_V2_CHRONOS_DISAGREEMENT_MULT", "0.25")
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.80,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.75, chronos=0.30, final=0.5925, agreement=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["BTCUSDT"] == pytest.approx(0.0375)
+    assert "chronos_disagreement_dampen" in decision.constraints_applied
+
+
+def test_chronos_disagreement_extreme_lgbm_confidence_overrides(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+    monkeypatch.setenv("BOT_V2_CHRONOS_EXTREME_CONFIDENCE", "0.80")
+
+    signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.85,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.15, chronos=0.58, final=0.3005, agreement=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["ETHUSDT"] < 0.0
+    assert "chronos_disagreement_extreme_override" in decision.constraints_applied
+
+
+def test_chronos_disagreement_still_allows_flattening(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="ETHUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.72,
+        uncertainty=0.0,
+        model_sources=_sources(lgbm=0.28, chronos=0.62, final=0.399, agreement=False),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+        current_positions={"ETHUSDT": 0.05},
+    )
+
+    assert decision.target_exposures == {}
+    assert decision.skipped_symbols["ETHUSDT"] == "chronos_disagreement_flatten_only"
+    assert "chronos_disagreement_flatten_only" in decision.constraints_applied
+
+
+def test_chronos_unavailable_with_required_agreement_blocks_fresh_entry(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.80,
+        uncertainty=0.0,
+        model_sources=_sources(
+            lgbm=0.80,
+            chronos=None,
+            final=0.80,
+            agreement=None,
+            chronos_enabled=True,
+        ),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures == {}
+    assert decision.skipped_symbols["BTCUSDT"] == "chronos_unavailable_entry_block"
+    assert "chronos_unavailable_entry_block" in decision.constraints_applied
+
+
+def test_chronos_disabled_falls_back_to_normal_lgbm_path(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REQUIRE_CHRONOS_AGREEMENT_FOR_ENTRY", "1")
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.80,
+        uncertainty=0.0,
+        model_sources=_sources(
+            lgbm=0.80,
+            chronos=None,
+            final=0.80,
+            agreement=None,
+            chronos_enabled=False,
+        ),
+    )
+
+    decision = allocate_signals(
+        [signal],
+        min_confidence=0.65,
+        enable_session_filter=False,
+        enable_regime_bias=False,
+        enable_symbol_accuracy=False,
+        enable_event_gate=False,
+        enable_model_agreement=False,
+        enable_cost_gate=False,
+    )
+
+    assert decision.target_exposures["BTCUSDT"] > 0.0
+    assert not any(item.startswith("chronos_") for item in decision.constraints_applied)
 
 
 def test_allocate_signals_validate_args() -> None:

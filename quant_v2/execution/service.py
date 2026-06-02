@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import functools
 import logging
 import os
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 import numpy as np
 import pandas as pd
@@ -79,6 +79,40 @@ class ExecutionDiagnostics:
     effective_symbol_cap_frac: float = 0.0
     effective_gross_cap_frac: float = 0.0
     effective_net_cap_frac: float = 0.0
+
+
+@dataclass(frozen=True)
+class HardRiskPauseEvent:
+    """Durable pause event emitted when a hard risk breach is confirmed."""
+
+    user_id: int
+    reason: str
+    triggered_at: datetime
+    breach_type: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RouteAuditEvent:
+    """Structured execution-route decision for durable telemetry."""
+
+    user_id: int
+    created_at: datetime
+    pause_state: str
+    is_active: bool | None
+    live_mode: bool
+    symbol: str
+    side: str
+    quantity: float
+    before_position: float | None
+    after_position: float | None
+    action_class: str
+    reason: str
+    accepted: bool | None = None
+    status: str = ""
+    order_id: str = ""
+    idempotency_key: str = ""
+    mark_price: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -189,6 +223,7 @@ class _SessionState:
     last_partial_fill_check: datetime | None = None
     # Rolling close prices for optimizer: symbol -> list of (timestamp, price)
     price_histories: dict[str, list[float]] = field(default_factory=dict)
+    hard_risk_pause_persisted: bool = False
 
 
 class InMemoryExecutionService:
@@ -342,6 +377,8 @@ class RoutedExecutionService:
         min_rebalance_notional_usd: float | None = None,
         rebalance_cooldown_seconds: int | None = None,
         max_orders_per_cycle: int | None = None,
+        hard_risk_pause_callback: Callable[[HardRiskPauseEvent], None] | None = None,
+        route_audit_callback: Callable[[RouteAuditEvent], None] | None = None,
     ) -> None:
         self._sessions: dict[int, _SessionState] = {}
         self._paper_adapter_factory = paper_adapter_factory or self._default_paper_adapter_factory
@@ -352,6 +389,8 @@ class RoutedExecutionService:
         self._optimizer = RiskParityOptimizer()
         self._kill_switch_config = kill_switch_config or KillSwitchConfig()
         self._allow_live_execution = bool(allow_live_execution)
+        self._hard_risk_pause_callback = hard_risk_pause_callback
+        self._route_audit_callback = route_audit_callback
         if canary_live_risk_cap_frac is None:
             canary_live_risk_cap_frac = get_runtime_profile().deployment.canary_live_risk_cap_frac
         self._canary_live_risk_cap_frac = float(canary_live_risk_cap_frac)
@@ -753,6 +792,7 @@ class RoutedExecutionService:
         self._apply_snapshot_risk_monitoring(
             state,
             risk_policy=precheck_policy,
+            defer_internal_hard_pause=True,
         )
         internal_risk_only = False
         if state.kill_switch.pause_trading:
@@ -908,6 +948,61 @@ class RoutedExecutionService:
         epoch_minute = int(now_utc.timestamp() // 60)
         results: list[ExecutionResult] = []
         activity_by_key: dict[str, str] = {}
+        if internal_risk_only:
+            allowed_plans: list[OrderPlan] = []
+            for plan in order_plans:
+                idempotency_key = build_idempotency_key(
+                    user_id=user_id,
+                    plan=plan,
+                    epoch_minute=epoch_minute,
+                )
+                mark_price = float(planning_prices.get(plan.symbol, 0.0) or 0.0)
+                current_qty = float(current_positions.get(plan.symbol, 0.0))
+                allowed, action_class, reason, after_qty = self._hard_pause_reduce_only_decision(
+                    current_qty=current_qty,
+                    side=plan.side,
+                    quantity=float(plan.quantity),
+                )
+                if allowed:
+                    allowed_plans.append(plan)
+                    self._log_route_audit(
+                        user_id=user_id,
+                        pause_state="internal_hard_risk",
+                        is_active=None,
+                        live_mode=(state.mode == "live"),
+                        symbol=plan.symbol,
+                        side=plan.side,
+                        qty=float(plan.quantity),
+                        before_position=current_qty,
+                        after_position=after_qty,
+                        action_class=action_class,
+                        reason=reason,
+                    )
+                    continue
+
+                self._log_route_audit(
+                    user_id=user_id,
+                    pause_state="internal_hard_risk",
+                    is_active=None,
+                    live_mode=(state.mode == "live"),
+                    symbol=plan.symbol,
+                    side=plan.side,
+                    qty=float(plan.quantity),
+                    before_position=current_qty,
+                    after_position=after_qty,
+                    action_class="blocked",
+                    reason=reason,
+                )
+                results.append(
+                    self._build_skipped_result(
+                        idempotency_key=idempotency_key,
+                        plan=plan,
+                        mark_price=mark_price,
+                        reason=f"skipped_by_filter:{reason}",
+                    )
+                )
+            order_plans = tuple(allowed_plans)
+
         attempted_orders = 0
         for plan in order_plans:
             idempotency_key = build_idempotency_key(
@@ -922,8 +1017,26 @@ class RoutedExecutionService:
                 side=plan.side,
                 quantity=float(plan.quantity),
             )
+            audit_action = self._audit_action_class(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=float(plan.quantity),
+            )
+            audit_after = self._project_after_position(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=float(plan.quantity),
+            )
+            risk_reducing_plan = self._is_risk_reducing_order(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=float(plan.quantity),
+            )
+            bypass_alpha_filters = risk_reducing_plan and (
+                internal_risk_only or bool(getattr(state, "soft_breach_active", False))
+            )
 
-            if activity == "rebalance":
+            if activity == "rebalance" and not bypass_alpha_filters:
                 delta_notional_usd = abs(float(plan.quantity) * mark_price)
                 weight_drift = 0.0
                 if (
@@ -944,6 +1057,19 @@ class RoutedExecutionService:
                                 reason="skipped_by_deadband:weight_drift_and_absolute_usd",
                             )
                         )
+                        self._log_route_audit(
+                            user_id=user_id,
+                            pause_state="internal_hard_risk" if internal_risk_only else "none",
+                            is_active=None,
+                            live_mode=(state.mode == "live"),
+                            symbol=plan.symbol,
+                            side=plan.side,
+                            qty=float(plan.quantity),
+                            before_position=current_qty,
+                            after_position=audit_after,
+                            action_class="blocked",
+                            reason="skipped_by_deadband:weight_drift_and_absolute_usd",
+                        )
                         continue
 
                 current_signal = state.latest_signals.get(plan.symbol)
@@ -953,30 +1079,56 @@ class RoutedExecutionService:
                     previous_signal=previous_signal,
                 )
                 if confidence_delta < self._min_rebalance_confidence_delta:
-                    results.append(
-                        self._build_skipped_result(
-                            idempotency_key=idempotency_key,
-                            plan=plan,
-                            mark_price=mark_price,
+                        results.append(
+                            self._build_skipped_result(
+                                idempotency_key=idempotency_key,
+                                plan=plan,
+                                mark_price=mark_price,
+                                reason="skipped_by_deadband:confidence_delta",
+                            )
+                        )
+                        self._log_route_audit(
+                            user_id=user_id,
+                            pause_state="internal_hard_risk" if internal_risk_only else "none",
+                            is_active=None,
+                            live_mode=(state.mode == "live"),
+                            symbol=plan.symbol,
+                            side=plan.side,
+                            qty=float(plan.quantity),
+                            before_position=current_qty,
+                            after_position=audit_after,
+                            action_class="blocked",
                             reason="skipped_by_deadband:confidence_delta",
                         )
-                    )
-                    continue
+                        continue
 
                 if not self._rebalance_edge_improves_enough(
                     current_signal=current_signal,
                     previous_signal=previous_signal,
                     delta_notional_usd=delta_notional_usd,
                 ):
-                    results.append(
-                        self._build_skipped_result(
-                            idempotency_key=idempotency_key,
-                            plan=plan,
-                            mark_price=mark_price,
+                        results.append(
+                            self._build_skipped_result(
+                                idempotency_key=idempotency_key,
+                                plan=plan,
+                                mark_price=mark_price,
+                                reason="skipped_by_deadband:edge_improvement",
+                            )
+                        )
+                        self._log_route_audit(
+                            user_id=user_id,
+                            pause_state="internal_hard_risk" if internal_risk_only else "none",
+                            is_active=None,
+                            live_mode=(state.mode == "live"),
+                            symbol=plan.symbol,
+                            side=plan.side,
+                            qty=float(plan.quantity),
+                            before_position=current_qty,
+                            after_position=audit_after,
+                            action_class="blocked",
                             reason="skipped_by_deadband:edge_improvement",
                         )
-                    )
-                    continue
+                        continue
 
                 if self._rebalance_cooldown_seconds > 0:
                     previous = state.last_rebalance_at.get(plan.symbol)
@@ -986,14 +1138,31 @@ class RoutedExecutionService:
                             results.append(
                                 self._build_skipped_result(
                                     idempotency_key=idempotency_key,
-                                    plan=plan,
-                                    mark_price=mark_price,
-                                    reason="skipped_by_deadband:cooldown",
-                                )
+                                plan=plan,
+                                mark_price=mark_price,
+                                reason="skipped_by_deadband:cooldown",
                             )
-                            continue
+                        )
+                        self._log_route_audit(
+                            user_id=user_id,
+                            pause_state="internal_hard_risk" if internal_risk_only else "none",
+                            is_active=None,
+                            live_mode=(state.mode == "live"),
+                            symbol=plan.symbol,
+                            side=plan.side,
+                            qty=float(plan.quantity),
+                            before_position=current_qty,
+                            after_position=audit_after,
+                            action_class="blocked",
+                            reason="skipped_by_deadband:cooldown",
+                        )
+                        continue
 
-            if self._max_orders_per_cycle > 0 and attempted_orders >= self._max_orders_per_cycle:
+            if (
+                self._max_orders_per_cycle > 0
+                and attempted_orders >= self._max_orders_per_cycle
+                and not bypass_alpha_filters
+            ):
                 results.append(
                     self._build_skipped_result(
                         idempotency_key=idempotency_key,
@@ -1001,6 +1170,19 @@ class RoutedExecutionService:
                         mark_price=mark_price,
                         reason="skipped_by_deadband:max_orders_per_cycle",
                     )
+                )
+                self._log_route_audit(
+                    user_id=user_id,
+                    pause_state="internal_hard_risk" if internal_risk_only else "none",
+                    is_active=None,
+                    live_mode=(state.mode == "live"),
+                    symbol=plan.symbol,
+                    side=plan.side,
+                    qty=float(plan.quantity),
+                    before_position=current_qty,
+                    after_position=audit_after,
+                    action_class="blocked",
+                    reason="skipped_by_deadband:max_orders_per_cycle",
                 )
                 continue
 
@@ -1050,6 +1232,30 @@ class RoutedExecutionService:
                 )
             results.append(result)
             activity_by_key[idempotency_key] = activity
+            filled_qty = float(result.filled_qty or 0.0) if result.accepted else 0.0
+            actual_after = self._project_after_position(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=filled_qty,
+            )
+            self._log_route_audit(
+                user_id=user_id,
+                pause_state="internal_hard_risk" if internal_risk_only else "none",
+                is_active=None,
+                live_mode=(state.mode == "live"),
+                symbol=plan.symbol,
+                side=plan.side,
+                qty=float(plan.quantity),
+                before_position=current_qty,
+                after_position=actual_after,
+                action_class=audit_action if result.accepted else "blocked",
+                reason=(result.reason or ("order_accepted" if result.accepted else "order_rejected")),
+                accepted=bool(result.accepted),
+                status=str(result.status or ""),
+                order_id=str(result.order_id or ""),
+                idempotency_key=str(result.idempotency_key or idempotency_key),
+                mark_price=mark_price,
+            )
 
         state.diagnostics = self._update_execution_diagnostics(
             state.diagnostics,
@@ -1084,6 +1290,10 @@ class RoutedExecutionService:
             state,
             risk_policy=policy,
             prices=planning_prices,
+        )
+        self._apply_snapshot_risk_monitoring(
+            state,
+            risk_policy=policy,
         )
 
         # Persist position snapshot to disk after every fill
@@ -1559,6 +1769,7 @@ class RoutedExecutionService:
         state: _SessionState,
         *,
         risk_policy: PortfolioRiskPolicy,
+        defer_internal_hard_pause: bool = False,
     ) -> None:
         computed_breach = self._compute_hard_risk_breach(
             state.snapshot,
@@ -1607,6 +1818,77 @@ class RoutedExecutionService:
             state.monitoring_snapshot,
             config=self._kill_switch_config,
         )
+        if (
+            state.kill_switch.pause_trading
+            and "hard_risk_breach" in state.kill_switch.reasons
+            and not state.hard_risk_pause_persisted
+        ):
+            if defer_internal_hard_pause and not state.external_hard_risk_breach:
+                return
+            self._record_hard_risk_pause(state, risk_policy=risk_policy)
+
+    def _record_hard_risk_pause(
+        self,
+        state: _SessionState,
+        *,
+        risk_policy: PortfolioRiskPolicy,
+    ) -> None:
+        callback = self._hard_risk_pause_callback
+        if callback is None:
+            state.hard_risk_pause_persisted = True
+            return
+
+        snapshot = state.snapshot
+        risk = snapshot.risk
+        details: dict[str, Any] = {
+            "mode": state.mode,
+            "live": bool(state.request.live),
+            "equity_usd": float(snapshot.equity_usd),
+            "symbol_count": int(snapshot.symbol_count),
+            "open_positions": {
+                str(symbol): float(qty)
+                for symbol, qty in (snapshot.open_positions or {}).items()
+            },
+            "symbol_notional_usd": {
+                str(symbol): float(notional)
+                for symbol, notional in (snapshot.symbol_notional_usd or {}).items()
+            },
+            "policy": {
+                "max_symbol_exposure_frac": float(risk_policy.max_symbol_exposure_frac),
+                "max_gross_exposure_frac": float(risk_policy.max_gross_exposure_frac),
+                "max_net_exposure_frac": float(risk_policy.max_net_exposure_frac),
+            },
+        }
+        if risk is not None:
+            details["risk"] = {
+                "gross_exposure_frac": float(risk.gross_exposure_frac),
+                "net_exposure_frac": float(risk.net_exposure_frac),
+                "max_drawdown_frac": float(risk.max_drawdown_frac),
+                "risk_budget_used_frac": float(risk.risk_budget_used_frac),
+            }
+
+        event = HardRiskPauseEvent(
+            user_id=state.request.user_id,
+            reason="hard_risk_breach",
+            triggered_at=datetime.now(timezone.utc),
+            breach_type=(
+                "external_monitoring"
+                if state.external_hard_risk_breach
+                else "portfolio_risk_policy"
+            ),
+            details=details,
+        )
+
+        try:
+            callback(event)
+            state.hard_risk_pause_persisted = True
+        except Exception as exc:
+            logger.error(
+                "Failed persisting hard-risk pause for user %s: %s",
+                state.request.user_id,
+                exc,
+                exc_info=True,
+            )
 
     @classmethod
     def _evaluate_lifecycle_forced_exits(
@@ -2081,6 +2363,134 @@ class RoutedExecutionService:
         if abs(next_qty) <= eps and abs(current_qty) > eps:
             return "exit"
         return "rebalance"
+
+    @staticmethod
+    def _project_after_position(*, current_qty: float, side: str, quantity: float) -> float:
+        side_sign = 1.0 if side == "BUY" else -1.0
+        return float(current_qty) + (side_sign * float(quantity))
+
+    @classmethod
+    def _audit_action_class(cls, *, current_qty: float, side: str, quantity: float) -> str:
+        eps = 1e-12
+        next_qty = cls._project_after_position(
+            current_qty=current_qty,
+            side=side,
+            quantity=quantity,
+        )
+        if abs(current_qty) <= eps and abs(next_qty) > eps:
+            return "entry"
+        if current_qty * next_qty < -eps:
+            return "flip"
+        if abs(next_qty) <= eps and abs(current_qty) > eps:
+            return "flatten"
+        if abs(next_qty) < abs(current_qty) - eps:
+            return "reduce"
+        return "rebalance"
+
+    @classmethod
+    def _is_risk_reducing_order(cls, *, current_qty: float, side: str, quantity: float) -> bool:
+        return cls._audit_action_class(
+            current_qty=current_qty,
+            side=side,
+            quantity=quantity,
+        ) in {"flatten", "reduce"}
+
+    @classmethod
+    def _hard_pause_reduce_only_decision(
+        cls,
+        *,
+        current_qty: float,
+        side: str,
+        quantity: float,
+    ) -> tuple[bool, str, str, float]:
+        eps = 1e-12
+        after_qty = cls._project_after_position(
+            current_qty=current_qty,
+            side=side,
+            quantity=quantity,
+        )
+        action_class = cls._audit_action_class(
+            current_qty=current_qty,
+            side=side,
+            quantity=quantity,
+        )
+        if abs(current_qty) <= eps:
+            return False, action_class, "hard_pause_new_symbol_exposure", after_qty
+        if current_qty * after_qty < -eps:
+            return False, "flip", "hard_pause_position_flip_blocked", after_qty
+        if abs(after_qty) > abs(current_qty) + eps:
+            return False, action_class, "hard_pause_increased_abs_exposure_blocked", after_qty
+        if abs(after_qty) <= eps:
+            return True, "flatten", "hard_pause_reduce_only_flatten_allowed", 0.0
+        return True, "reduce", "hard_pause_reduce_only_allowed", after_qty
+
+    def _log_route_audit(
+        self,
+        *,
+        user_id: int,
+        pause_state: str,
+        is_active: bool | None,
+        live_mode: bool,
+        symbol: str,
+        side: str,
+        qty: float,
+        before_position: float | None,
+        after_position: float | None,
+        action_class: str,
+        reason: str,
+        accepted: bool | None = None,
+        status: str = "",
+        order_id: str = "",
+        idempotency_key: str = "",
+        mark_price: float = 0.0,
+    ) -> None:
+        logger.info(
+            "V2 route audit user_id=%s pause_state=%s is_active=%s live_mode=%s "
+            "symbol=%s side=%s qty=%.12g before_position=%s after_position=%s "
+            "action_class=%s reason=%s",
+            user_id,
+            pause_state,
+            "unknown" if is_active is None else bool(is_active),
+            bool(live_mode),
+            symbol,
+            side,
+            float(qty or 0.0),
+            "unknown" if before_position is None else f"{float(before_position):.12g}",
+            "unknown" if after_position is None else f"{float(after_position):.12g}",
+            action_class,
+            reason,
+        )
+        callback = self._route_audit_callback
+        if callback is None:
+            return
+        event = RouteAuditEvent(
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+            pause_state=pause_state,
+            is_active=is_active,
+            live_mode=bool(live_mode),
+            symbol=str(symbol or ""),
+            side=str(side or ""),
+            quantity=float(qty or 0.0),
+            before_position=before_position,
+            after_position=after_position,
+            action_class=str(action_class or ""),
+            reason=str(reason or ""),
+            accepted=accepted,
+            status=str(status or ""),
+            order_id=str(order_id or ""),
+            idempotency_key=str(idempotency_key or ""),
+            mark_price=float(mark_price or 0.0),
+        )
+        try:
+            callback(event)
+        except Exception as exc:
+            logger.warning(
+                "Route-audit callback failed for user %s symbol=%s: %s",
+                user_id,
+                symbol,
+                exc,
+            )
 
     @staticmethod
     def _build_skipped_result(

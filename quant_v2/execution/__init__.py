@@ -13,7 +13,9 @@ from quant_v2.execution.reconciler import reconcile_target_exposures
 from quant_v2.execution.service import (
     ExecutionDiagnostics,
     ExecutionService,
+    HardRiskPauseEvent,
     InMemoryExecutionService,
+    RouteAuditEvent,
     RoutedExecutionService,
     SessionRequest,
 )
@@ -24,11 +26,13 @@ __all__ = [
     "ExecutionDiagnostics",
     "ExecutionResult",
     "ExecutionService",
+    "HardRiskPauseEvent",
     "InMemoryExecutionService",
     "InMemoryIdempotencyJournal",
     "InMemoryPaperAdapter",
     "IntentPlan",
     "PlannerConfig",
+    "RouteAuditEvent",
     "RoutedExecutionService",
     "SessionRequest",
     "build_execution_intents",

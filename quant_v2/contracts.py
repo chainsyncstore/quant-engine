@@ -8,6 +8,91 @@ from typing import Literal
 
 SignalType = Literal["BUY", "SELL", "HOLD", "DRIFT_ALERT"]
 OrderSide = Literal["BUY", "SELL"]
+ModelDirection = Literal["BUY", "SELL", "HOLD"]
+
+
+@dataclass(frozen=True)
+class MarketRiskSnapshot:
+    """Portfolio-wide market context used by short-side safety guards."""
+
+    lookback_hours: int
+    symbols_evaluated: int
+    down_ratio: float
+    median_return: float
+    btc_return: float | None = None
+    broad_selloff: bool = False
+    down_ratio_threshold: float = 0.70
+    median_return_threshold: float = -0.015
+    btc_return_threshold: float = -0.020
+    strong_short_confidence: float = 0.75
+    short_net_cap_frac: float = 0.15
+
+    def __post_init__(self) -> None:
+        if self.lookback_hours <= 0:
+            raise ValueError("lookback_hours must be positive")
+        if self.symbols_evaluated < 0:
+            raise ValueError("symbols_evaluated cannot be negative")
+        if not 0.0 <= self.down_ratio <= 1.0:
+            raise ValueError("down_ratio must be within [0, 1]")
+        if not 0.0 <= self.down_ratio_threshold <= 1.0:
+            raise ValueError("down_ratio_threshold must be within [0, 1]")
+        if not 0.0 <= self.strong_short_confidence <= 1.0:
+            raise ValueError("strong_short_confidence must be within [0, 1]")
+        if not 0.0 <= self.short_net_cap_frac <= 1.0:
+            raise ValueError("short_net_cap_frac must be within [0, 1]")
+
+    def as_dict(self) -> dict[str, float | int | bool | None]:
+        return {
+            "lookback_hours": self.lookback_hours,
+            "symbols_evaluated": self.symbols_evaluated,
+            "down_ratio": self.down_ratio,
+            "median_return": self.median_return,
+            "btc_return": self.btc_return,
+            "broad_selloff": self.broad_selloff,
+            "down_ratio_threshold": self.down_ratio_threshold,
+            "median_return_threshold": self.median_return_threshold,
+            "btc_return_threshold": self.btc_return_threshold,
+            "strong_short_confidence": self.strong_short_confidence,
+            "short_net_cap_frac": self.short_net_cap_frac,
+        }
+
+
+@dataclass(frozen=True)
+class ModelSourceDetails:
+    """Source-level model probabilities used for agreement-aware routing."""
+
+    lgbm_probability: float | None
+    chronos_probability: float | None
+    final_probability: float
+    lgbm_direction: ModelDirection | None
+    chronos_direction: ModelDirection | None
+    agreement: bool | None
+    chronos_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("lgbm_probability", self.lgbm_probability),
+            ("chronos_probability", self.chronos_probability),
+            ("final_probability", self.final_probability),
+        ):
+            if value is not None and not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be within [0, 1]")
+        valid = {"BUY", "SELL", "HOLD"}
+        if self.lgbm_direction is not None and self.lgbm_direction not in valid:
+            raise ValueError("lgbm_direction must be BUY, SELL, or HOLD")
+        if self.chronos_direction is not None and self.chronos_direction not in valid:
+            raise ValueError("chronos_direction must be BUY, SELL, or HOLD")
+
+    def as_dict(self) -> dict[str, float | str | bool | None]:
+        return {
+            "lgbm_probability": self.lgbm_probability,
+            "chronos_probability": self.chronos_probability,
+            "final_probability": self.final_probability,
+            "lgbm_direction": self.lgbm_direction,
+            "chronos_direction": self.chronos_direction,
+            "agreement": self.agreement,
+            "chronos_enabled": self.chronos_enabled,
+        }
 
 
 @dataclass(frozen=True)
@@ -21,6 +106,7 @@ class StrategySignal:
     confidence: float
     uncertainty: float | None = None
     reason: str = ""
+    regime: int | None = None
     session_hour_utc: int | None = None
     momentum_bias: float | None = None
     atr_pct: float | None = None
@@ -30,6 +116,8 @@ class StrategySignal:
     estimated_cost_bps: float | None = None
     pairwise_correlations: dict[str, float] | None = None
     portfolio_weight: float | None = None
+    market_risk: MarketRiskSnapshot | None = None
+    model_sources: ModelSourceDetails | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:
@@ -42,6 +130,8 @@ class StrategySignal:
             raise ValueError("Signal confidence must be within [0, 1]")
         if self.uncertainty is not None and not 0.0 <= self.uncertainty <= 1.0:
             raise ValueError("Signal uncertainty must be within [0, 1]")
+        if self.regime is not None and self.regime not in {1, 2, 3, 4}:
+            raise ValueError("regime must be one of 1, 2, 3, or 4")
         if self.session_hour_utc is not None and not 0 <= self.session_hour_utc <= 23:
             raise ValueError("session_hour_utc must be within [0, 23]")
         if self.momentum_bias is not None and not -1.0 <= self.momentum_bias <= 1.0:

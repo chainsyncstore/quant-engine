@@ -37,12 +37,16 @@ def reconcile_target_exposures(
             continue
 
         side = "BUY" if delta_qty > 0 else "SELL"
+        current_abs = abs(current_qty)
+        target_abs = abs(target_qty)
+        same_side_or_flat = abs(target_qty) <= 1e-12 or current_qty * target_qty > 0.0
+        reduce_only = current_abs > 1e-12 and target_abs < current_abs and same_side_or_flat
         plans.append(
             OrderPlan(
                 symbol=symbol,
                 side=side,
                 quantity=abs(delta_qty),
-                reduce_only=False,
+                reduce_only=reduce_only,
             )
         )
 

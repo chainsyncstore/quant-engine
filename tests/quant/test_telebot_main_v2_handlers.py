@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from quant.telebot import main as telebot_main
 from quant_v2.execution.service import ExecutionDiagnostics
+from quant_v2.model_registry import ModelRegistry
 from quant_v2.monitoring.kill_switch import KillSwitchEvaluation
 
 
@@ -574,6 +575,48 @@ def test_help_command_admin_lists_prepare_update(monkeypatch) -> None:
     msg = update.message.replies[-1]
     assert "/prepare_update - Save user snapshots and send pre-update notice" in msg
     assert "/update_complete - Notify users deploy is done and share recovery steps" in msg
+    assert "/model_candidates - List retrain candidates" in msg
+    assert "/model_promote <version_id> - Manually activate a candidate" in msg
+
+
+def test_model_promote_admin_updates_active_pointer(tmp_path, monkeypatch) -> None:
+    registry = ModelRegistry(tmp_path / "registry")
+    artifact = tmp_path / "candidate"
+    artifact.mkdir(parents=True)
+    (artifact / "model_4m.pkl").write_text("placeholder", encoding="utf-8")
+    registry.register_version(
+        "candidate_a",
+        artifact,
+        metrics={"promotion_eligible": True},
+    )
+
+    update = _FakeUpdate(8092)
+    context = _FakeContext()
+    context.args = ["candidate_a"]
+
+    class _Source:
+        model_dir = artifact
+
+        def get_active_count(self) -> int:
+            return 0
+
+    class _Bridge:
+        def get_active_count(self) -> int:
+            return 0
+
+    monkeypatch.setattr(telebot_main, "MODEL_REGISTRY", registry)
+    monkeypatch.setattr(telebot_main, "_is_admin_user", lambda user_id: True)
+    monkeypatch.setattr(telebot_main, "_get_v2_bridge", lambda: _Bridge())
+    monkeypatch.setattr(telebot_main, "_get_signal_source_manager", lambda **kwargs: _Source())
+
+    asyncio.run(telebot_main.model_promote(update, context))
+
+    active = registry.get_active_version()
+    assert active is not None
+    assert active.version_id == "candidate_a"
+    assert active.promoted_by == "telegram:8092"
+    assert update.message.replies
+    assert "Model Promotion Applied" in update.message.replies[-1]
 
 
 def test_lifetime_stats_renders_summary(monkeypatch) -> None:

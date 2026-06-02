@@ -8,6 +8,18 @@ import pandas as pd
 from quant_v2.models.trainer import TrainedModel
 
 
+def _primary_estimator(model: TrainedModel):
+    primary = getattr(model, "primary_model", None)
+    if primary is not None:
+        return primary
+
+    legacy = getattr(model, "model", None)
+    if legacy is not None:
+        return legacy
+
+    raise AttributeError("model has neither primary_model nor legacy model estimator")
+
+
 def predict_proba(model: TrainedModel, X: pd.DataFrame) -> np.ndarray:
     """Return class-1 probabilities from v2 primary/meta/calibrated ensemble."""
 
@@ -16,18 +28,20 @@ def predict_proba(model: TrainedModel, X: pd.DataFrame) -> np.ndarray:
         raise ValueError(f"Missing feature columns: {sorted(missing)}")
 
     X_ordered = X[model.feature_names]
-    primary = model.primary_model.predict_proba(X_ordered)[:, 1]
+    primary = _primary_estimator(model).predict_proba(X_ordered)[:, 1]
 
     calibrated = primary
-    if model.calibrated_model is not None:
-        calibrated = model.calibrated_model.predict_proba(X_ordered)[:, 1]
+    calibrated_model = getattr(model, "calibrated_model", None)
+    if calibrated_model is not None:
+        calibrated = calibrated_model.predict_proba(X_ordered)[:, 1]
 
     refined = calibrated
-    if model.meta_model is not None:
+    meta_model = getattr(model, "meta_model", None)
+    if meta_model is not None:
         meta_input = primary.reshape(-1, 1)
-        refined = model.meta_model.predict_proba(meta_input)[:, 1]
+        refined = meta_model.predict_proba(meta_input)[:, 1]
 
-    if model.calibrated_model is not None and model.meta_model is not None:
+    if calibrated_model is not None and meta_model is not None:
         combined = 0.5 * calibrated + 0.5 * refined
     else:
         combined = refined

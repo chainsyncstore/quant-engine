@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
-from quant_v2.contracts import StrategySignal
+from quant_v2.contracts import ModelSourceDetails, StrategySignal
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
 from quant_v2.telebot.signal_manager import V2SignalManager
 
@@ -44,6 +45,14 @@ def _sample_bars(*, trend_up: bool = True) -> pd.DataFrame:
     df["low"] = df["close"] * 0.98
     df["volume"] = 1000.0
     return df
+
+
+def _close_history_with_return(total_return: float, *, periods: int = 40) -> pd.Series:
+    end = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    index = pd.date_range(end=end, periods=periods, freq="h", tz="UTC")
+    start = 100.0
+    finish = start * (1.0 + total_return)
+    return pd.Series([start + (finish - start) * i / (periods - 1) for i in range(periods)], index=index)
 
 
 def test_v2_signal_manager_emits_signal_and_tracks_lifecycle(tmp_path: Path) -> None:
@@ -153,6 +162,263 @@ def test_v2_signal_manager_get_realtime_prices_prefers_orderbook_midpoint(tmp_pa
     refreshed = asyncio.run(scenario())
     assert refreshed.get("BTCUSDT") == pytest.approx(101.0)
     assert refreshed.get("ETHUSDT", 0.0) > 0.0
+
+
+def test_market_short_guard_snapshot_inactive_for_mixed_market(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT"))
+
+    snapshot = manager._compute_market_risk_snapshot(
+        {
+            "BTCUSDT": _close_history_with_return(0.01),
+            "ETHUSDT": _close_history_with_return(-0.01),
+            "SOLUSDT": _close_history_with_return(0.02),
+        }
+    )
+
+    assert snapshot is not None
+    assert snapshot.broad_selloff is False
+    assert snapshot.down_ratio == pytest.approx(1 / 3)
+
+
+def test_market_short_guard_snapshot_active_when_universe_sells_off(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT"))
+
+    snapshot = manager._compute_market_risk_snapshot(
+        {
+            "BTCUSDT": _close_history_with_return(-0.03),
+            "ETHUSDT": _close_history_with_return(-0.02),
+            "SOLUSDT": _close_history_with_return(-0.01),
+        }
+    )
+
+    assert snapshot is not None
+    assert snapshot.broad_selloff is True
+    assert snapshot.down_ratio == pytest.approx(1.0)
+    assert snapshot.median_return <= -0.015
+    assert snapshot.btc_return is not None
+    assert snapshot.btc_return <= -0.02
+
+
+def test_market_short_guard_env_thresholds_override_defaults(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_MARKET_SHORT_GUARD_LOOKBACK_HOURS", "24")
+    monkeypatch.setenv("BOT_V2_MARKET_SHORT_GUARD_DOWN_RATIO", "0.50")
+    monkeypatch.setenv("BOT_V2_MARKET_SHORT_GUARD_MEDIAN_RETURN", "-0.005")
+    monkeypatch.setenv("BOT_V2_MARKET_SHORT_GUARD_BTC_RETURN", "-0.010")
+    monkeypatch.setenv("BOT_V2_MARKET_SHORT_GUARD_STRONG_CONFIDENCE", "0.80")
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT", "ETHUSDT"))
+
+    snapshot = manager._compute_market_risk_snapshot(
+        {
+            "BTCUSDT": _close_history_with_return(-0.011, periods=30),
+            "ETHUSDT": _close_history_with_return(-0.02, periods=30),
+        }
+    )
+
+    assert manager.market_short_guard_lookback_hours == 24
+    assert manager.market_short_guard_strong_confidence == pytest.approx(0.80)
+    assert snapshot is not None
+    assert snapshot.broad_selloff is True
+    assert snapshot.down_ratio_threshold == pytest.approx(0.50)
+
+
+def test_regime_thresholds_keep_regime1_normal_and_regime2_stricter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("BOT_V2_REGIME2_BUY_THRESHOLD", raising=False)
+    monkeypatch.delenv("BOT_V2_REGIME2_SELL_THRESHOLD", raising=False)
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+
+    buy1, sell1, note1 = manager._resolve_regime_thresholds(regime=1, regime_risk=0.0)
+    buy2, sell2, note2 = manager._resolve_regime_thresholds(regime=2, regime_risk=0.35)
+
+    assert buy1 == pytest.approx(0.55)
+    assert sell1 == pytest.approx(0.45)
+    assert note1 == ""
+    assert buy2 > buy1
+    assert sell2 == pytest.approx(0.35)
+    assert "regime2_conservative" in note2
+
+
+def test_regime_thresholds_keep_regime3_and_4_existing_shape(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+
+    buy3, sell3, note3 = manager._resolve_regime_thresholds(regime=3, regime_risk=0.5)
+    buy4, sell4, note4 = manager._resolve_regime_thresholds(regime=4, regime_risk=1.0)
+
+    assert buy3 == pytest.approx(0.59)
+    assert sell3 == pytest.approx(0.41)
+    assert note3 == ""
+    assert buy4 == pytest.approx(0.63)
+    assert sell4 == pytest.approx(0.37)
+    assert note4 == ""
+
+
+def test_regime2_threshold_env_overrides_defaults(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BOT_V2_REGIME2_BUY_THRESHOLD", "0.65")
+    monkeypatch.setenv("BOT_V2_REGIME2_SELL_THRESHOLD", "0.30")
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+
+    buy2, sell2, note2 = manager._resolve_regime_thresholds(regime=2, regime_risk=0.35)
+
+    assert buy2 == pytest.approx(0.65)
+    assert sell2 == pytest.approx(0.30)
+    assert "buy=0.65" in note2
+    assert "sell=0.30" in note2
+
+
+def test_native_v2_signal_preserves_regime_metadata(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": "ETHUSDT",
+        "close_price": 100.0,
+        "signal": "SELL",
+        "probability": 0.30,
+        "regime": 2,
+        "reason": "regime2_conservative",
+    }
+
+    enriched = manager._attach_native_v2_fields(payload)
+
+    assert enriched["v2_signal"].regime == 2
+    assert enriched["v2_signal"].signal == "SELL"
+
+
+def test_native_v2_signal_preserves_model_source_metadata(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    details = ModelSourceDetails(
+        lgbm_probability=0.28,
+        chronos_probability=0.62,
+        final_probability=0.399,
+        lgbm_direction="SELL",
+        chronos_direction="BUY",
+        agreement=False,
+        chronos_enabled=True,
+    )
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": "ETHUSDT",
+        "close_price": 100.0,
+        "signal": "SELL",
+        "probability": 0.399,
+        "reason": "source disagreement",
+        "_model_sources": details,
+    }
+
+    enriched = manager._attach_native_v2_fields(payload)
+
+    assert enriched["v2_signal"].model_sources is details
+    assert enriched["v2_signal"].model_sources.agreement is False
+
+
+def test_predict_with_uncertainty_caches_full_ensemble_source_details(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    details = ModelSourceDetails(
+        lgbm_probability=0.70,
+        chronos_probability=0.30,
+        final_probability=0.56,
+        lgbm_direction="BUY",
+        chronos_direction="SELL",
+        agreement=False,
+        chronos_enabled=True,
+    )
+
+    class FakeFullEnsemble:
+        def predict_with_details(self, feature_row, close_series, prediction_length):  # noqa: ANN001
+            _ = (feature_row, close_series, prediction_length)
+            return 0.56, 0.20, 0.0, details
+
+    manager.full_ensemble = FakeFullEnsemble()  # type: ignore[assignment]
+    feature_row = pd.DataFrame({"feature": [1.0]})
+    close = _close_history_with_return(0.01)
+
+    proba, uncertainty = manager._predict_with_uncertainty(feature_row, close)
+
+    assert proba == pytest.approx(0.56)
+    assert uncertainty == pytest.approx(0.20)
+    assert manager._last_model_agreement == pytest.approx(0.0)
+    assert manager._last_model_sources is details
+
+
+def test_format_model_source_details_contains_probabilities(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    details = ModelSourceDetails(
+        lgbm_probability=0.28,
+        chronos_probability=0.62,
+        final_probability=0.399,
+        lgbm_direction="SELL",
+        chronos_direction="BUY",
+        agreement=False,
+        chronos_enabled=True,
+    )
+
+    text = manager._format_model_source_details(details)
+
+    assert "lgbm=0.280" in text
+    assert "chronos=0.620" in text
+    assert "final=0.399" in text
+    assert "agreement=disagree" in text
+
+
+def test_market_short_guard_blocks_weak_sell_payload(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    snapshot = manager._compute_market_risk_snapshot(
+        {
+            "BTCUSDT": _close_history_with_return(-0.03),
+            "ETHUSDT": _close_history_with_return(-0.02),
+            "SOLUSDT": _close_history_with_return(-0.02),
+        }
+    )
+    assert snapshot is not None and snapshot.broad_selloff
+    session = SimpleNamespace(last_known_positions={})
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": "ETHUSDT",
+        "close_price": 100.0,
+        "signal": "SELL",
+        "probability": 0.32,
+        "reason": "weak sell",
+        "risk_status": {"can_trade": True},
+    }
+
+    manager._apply_market_short_guard(session, payload, snapshot)
+
+    assert payload["signal"] == "HOLD"
+    assert payload["market_short_guard"] == "blocked_weak_sell"
+    assert payload["market_risk"]["broad_selloff"] is True
+    assert isinstance(payload["v2_signal"], StrategySignal)
+    assert payload["v2_signal"].signal == "HOLD"
+    assert payload["v2_signal"].market_risk is snapshot
+
+
+def test_market_short_guard_allows_strong_sell_payload(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    snapshot = manager._compute_market_risk_snapshot(
+        {
+            "BTCUSDT": _close_history_with_return(-0.03),
+            "ETHUSDT": _close_history_with_return(-0.02),
+            "SOLUSDT": _close_history_with_return(-0.02),
+        }
+    )
+    assert snapshot is not None and snapshot.broad_selloff
+    session = SimpleNamespace(last_known_positions={})
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "symbol": "ETHUSDT",
+        "close_price": 100.0,
+        "signal": "SELL",
+        "probability": 0.20,
+        "reason": "strong sell",
+        "risk_status": {"can_trade": True},
+    }
+
+    manager._apply_market_short_guard(session, payload, snapshot)
+
+    assert payload["signal"] == "SELL"
+    assert payload["market_short_guard"] == "strong_sell_allowed"
+    assert payload["v2_signal"].signal == "SELL"
+    assert payload["v2_signal"].confidence == pytest.approx(0.80)
 
 
 def test_v2_signal_manager_resolves_joblib_active_model_path(tmp_path: Path) -> None:

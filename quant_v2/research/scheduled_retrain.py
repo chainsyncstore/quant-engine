@@ -1,7 +1,7 @@
-"""Scheduled weekly retrain: trains multi-horizon v2 models, validates, registers, and promotes.
+"""Scheduled weekly retrain: trains multi-horizon v2 models and registers candidates.
 
 Designed to run inside the Docker container on a schedule (cron or asyncio timer).
-The signal manager hot-swaps to the new model on its next cycle.
+The signal manager only hot-swaps after explicit manual promotion.
 
 Usage (standalone):
     python -m quant_v2.research.scheduled_retrain
@@ -13,6 +13,10 @@ Environment:
     RETRAIN_TRAIN_MONTHS   – months of training data (default: 12)
     RETRAIN_MIN_ACCURACY   – minimum accuracy to promote a model (default: 0.525)
     RETRAIN_TRAIN_SYMBOLS  – comma-separated extra symbols to include in training (default: full universe from default_universe_symbols() minus BTCUSDT)
+    RETRAIN_REQUIRE_ALL_SYMBOLS - require every requested symbol before promotion (default: true)
+    RETRAIN_MIN_TRAIN_ROWS - minimum featured rows required before promotion (default: 80% of expected hourly rows)
+    RETRAIN_REQUIRE_ALL_HORIZONS - require every horizon before promotion (default: true)
+    BOT_RETRAIN_AUTO_PROMOTE - emergency legacy auto-promotion override (default: 0)
 """
 
 from __future__ import annotations
@@ -39,6 +43,24 @@ logger = logging.getLogger(__name__)
 
 HORIZONS = (2, 4, 8)
 _SENTINEL_FILE = "/tmp/.retrain_last_run"
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
 
 
 def _build_labels(
@@ -130,8 +152,12 @@ def _compute_sample_weights(timestamps: pd.DatetimeIndex, half_life_days: float 
     if len(timestamps) == 0:
         return np.ones(len(timestamps))
 
-    now = timestamps[-1]  # most recent
-    days_ago = (now - timestamps).total_seconds() / 86400.0
+    now = timestamps.iloc[-1] if hasattr(timestamps, "iloc") else timestamps[-1]  # most recent
+    delta = now - timestamps
+    if hasattr(delta, "dt"):
+        days_ago = delta.dt.total_seconds() / 86400.0
+    else:
+        days_ago = delta.total_seconds() / 86400.0
     decay_rate = np.log(2) / half_life_days
     weights = np.exp(-decay_rate * days_ago)
     return weights / weights.mean()  # normalize to mean=1
@@ -159,10 +185,12 @@ def retrain_and_promote(
 
     # Fetch primary symbol (BTCUSDT) plus optional extra symbols for richer training
     primary_symbol = "BTCUSDT"
-    symbols_to_fetch = [primary_symbol] + (extra_symbols or [])
+    symbols_to_fetch = list(dict.fromkeys([primary_symbol] + (extra_symbols or [])))
     logger.info("Retrain: fetching %d months of data for symbols=%s...", train_months, symbols_to_fetch)
 
     all_featured_frames: list[pd.DataFrame] = []
+    fetched_symbols: list[str] = []
+    failed_symbols: dict[str, str] = {}
     btc_returns: pd.Series | None = None  # cached for cross-pair feature injection
 
     for symbol in symbols_to_fetch:
@@ -188,12 +216,43 @@ def retrain_and_promote(
             sym_featured = build_features(raw)
             if not sym_featured.empty:
                 all_featured_frames.append(sym_featured)
+                fetched_symbols.append(symbol)
                 logger.info("Retrain: %s -> %d feature rows", symbol, len(sym_featured))
+            else:
+                failed_symbols[symbol] = "no feature rows"
+                logger.warning("Retrain: %s produced no feature rows", symbol)
         except Exception as e:
+            failed_symbols[symbol] = str(e)
             logger.warning("Retrain: data fetch failed for %s: %s", symbol, e)
 
     if not all_featured_frames:
         logger.error("Retrain: no data fetched for any symbol. Aborting.")
+        _cleanup_artifact_dir(artifact_dir)
+        return None
+
+    require_all_symbols = _env_flag("RETRAIN_REQUIRE_ALL_SYMBOLS", True)
+    required_symbols = set(symbols_to_fetch)
+    fetched_symbol_set = set(fetched_symbols)
+    missing_symbols = sorted(required_symbols - fetched_symbol_set)
+    default_min_symbols = len(symbols_to_fetch) if require_all_symbols else 1
+    min_symbols = _env_int("RETRAIN_MIN_SYMBOLS", default_min_symbols)
+    if require_all_symbols and missing_symbols:
+        logger.error(
+            "Retrain: missing required symbols %s; fetched=%s failed=%s. Aborting promotion.",
+            missing_symbols,
+            fetched_symbols,
+            failed_symbols,
+        )
+        _cleanup_artifact_dir(artifact_dir)
+        return None
+    if len(fetched_symbols) < min_symbols:
+        logger.error(
+            "Retrain: fetched %d symbols, below required minimum %d. fetched=%s failed=%s. Aborting promotion.",
+            len(fetched_symbols),
+            min_symbols,
+            fetched_symbols,
+            failed_symbols,
+        )
         _cleanup_artifact_dir(artifact_dir)
         return None
 
@@ -209,8 +268,19 @@ def retrain_and_promote(
         logger.warning("Retrain: filling %d NaN values in feature columns", nan_count)
         featured[feature_cols] = featured[feature_cols].fillna(0.0)
 
-    if len(featured) < 1000:
-        logger.error("Retrain: insufficient data after feature engineering (%d rows)", len(featured))
+    expected_hourly_rows = len(symbols_to_fetch) * train_months * 30 * 24
+    default_min_train_rows = max(1000, int(expected_hourly_rows * 0.8))
+    min_train_rows = _env_int("RETRAIN_MIN_TRAIN_ROWS", default_min_train_rows)
+    if len(featured) < min_train_rows:
+        logger.error(
+            "Retrain: insufficient data after feature engineering (%d rows < %d required). "
+            "fetched=%s failed=%s",
+            len(featured),
+            min_train_rows,
+            fetched_symbols,
+            failed_symbols,
+        )
+        _cleanup_artifact_dir(artifact_dir)
         return None
 
     cfg = get_research_config()
@@ -282,18 +352,48 @@ def retrain_and_promote(
         _cleanup_artifact_dir(artifact_dir)
         return None
 
-    if not all_passed:
-        logger.warning("Retrain: some horizons failed but %d passed. Promoting partial ensemble.", len(model_paths))
+    require_all_horizons = _env_flag("RETRAIN_REQUIRE_ALL_HORIZONS", True)
+    missing_horizons = sorted(set(HORIZONS) - set(model_paths))
+    if require_all_horizons and (not all_passed or missing_horizons):
+        logger.error(
+            "Retrain: refusing to promote partial horizon set. trained=%s missing=%s all_passed=%s",
+            sorted(model_paths),
+            missing_horizons,
+            all_passed,
+        )
+        _cleanup_artifact_dir(artifact_dir)
+        return None
 
-    # Register and promote
+    if not all_passed:
+        logger.warning("Retrain: some horizons failed but %d passed. Registering partial candidate.", len(model_paths))
+
+    # Register as paper-quarantine by default. Activation is manual after
+    # forward paper/shadow evaluation, unless the emergency override is set.
     registry = ModelRegistry(registry_root)
+    auto_promote = _env_flag("BOT_RETRAIN_AUTO_PROMOTE", False)
+    registered_status = "candidate" if auto_promote else "paper_quarantine"
 
     metrics = {
         "validation_scores": {str(h): round(s, 4) for h, s in validation_scores.items()},
         "train_months": train_months,
         "train_rows": len(featured),
         "horizons_trained": list(model_paths.keys()),
+        "symbols_requested": symbols_to_fetch,
+        "symbols_fetched": fetched_symbols,
+        "symbols_failed": failed_symbols,
+        "min_train_rows": min_train_rows,
         "trained_at": timestamp,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "promotion_eligible": bool(model_paths) and (all_passed or not require_all_horizons),
+        "promotion_eligibility_notes": (
+            "passed validation checks"
+            if bool(model_paths) and (all_passed or not require_all_horizons)
+            else "failed validation checks"
+        ),
+        "min_accuracy": min_accuracy,
+        "require_all_symbols": require_all_symbols,
+        "require_all_horizons": require_all_horizons,
+        "paper_quarantine_required": not auto_promote,
     }
 
     try:
@@ -301,13 +401,31 @@ def retrain_and_promote(
             version_id=version_id,
             artifact_dir=artifact_dir,
             metrics=metrics,
-            tags={"source": "scheduled_retrain", "horizons": str(list(model_paths.keys()))},
+            tags={
+                "source": "scheduled_retrain",
+                "horizons": str(list(model_paths.keys())),
+                "status": registered_status,
+                "promotion_eligible": "true" if metrics["promotion_eligible"] else "false",
+            },
             description=f"Scheduled retrain {timestamp}: {len(model_paths)} horizons, accuracies={validation_scores}",
+            status=registered_status,
         )
-        registry.set_active_version(version_id)
-        logger.info("Retrain: promoted %s as active model (%d horizons)", version_id, len(model_paths))
+        logger.info(
+            "Retrain: registered %s %s (%d horizons). Auto-promote=%s",
+            registered_status,
+            version_id,
+            len(model_paths),
+            auto_promote,
+        )
+        if auto_promote:
+            registry.promote_version(
+                version_id,
+                promoted_by="scheduled_retrain:auto_promote",
+                notes="BOT_RETRAIN_AUTO_PROMOTE enabled",
+            )
+            logger.warning("Retrain: auto-promoted %s as active model", version_id)
     except Exception as e:
-        logger.error("Retrain: registry promotion failed: %s", e)
+        logger.error("Retrain: registry candidate registration failed: %s", e)
         return None
 
     return version_id
@@ -365,10 +483,10 @@ def run_scheduler_loop() -> None:
                     extra_symbols=extra_symbols,
                 )
                 if result:
-                    logger.info("Retrain cycle complete: promoted %s", result)
+                    logger.info("Retrain cycle complete: registered candidate %s", result)
                     break
                 else:
-                    logger.warning("Retrain attempt %d/3: no model promoted", attempt + 1)
+                    logger.warning("Retrain attempt %d/3: no candidate registered", attempt + 1)
                     if attempt < 2:
                         logger.info("Retrying in 300s...")
                         time.sleep(300)

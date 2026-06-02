@@ -61,6 +61,7 @@ def build_execution_intents(
         max_symbol_exposure_frac=config.max_symbol_exposure_frac,
         min_confidence=config.min_confidence,
         equity_usd=config.equity_usd,
+        current_positions=current_positions,
     )
 
     # --- Risk-parity optimization pass ---

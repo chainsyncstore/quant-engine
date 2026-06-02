@@ -31,6 +31,11 @@ class UserContext(Base):
     maintenance_resume_payload = Column(Text)
     maintenance_resume_pending = Column(Boolean, default=False)
     maintenance_post_notified = Column(Boolean, default=False)
+    hard_risk_paused = Column(Boolean, default=False)
+    hard_risk_pause_reason = Column(Text)
+    hard_risk_pause_triggered_at = Column(DateTime)
+    hard_risk_pause_breach_type = Column(String)
+    hard_risk_pause_details = Column(Text)
     lifetime_demo_pnl_usd = Column(Float, default=0.0)
     lifetime_live_pnl_usd = Column(Float, default=0.0)
     current_demo_equity_usd = Column(Float, default=0.0)
@@ -45,3 +50,29 @@ class UserContext(Base):
     paper_state_json = Column(Text)
 
     user = relationship("User", back_populates="context")
+
+
+class ExecutionRouteEvent(Base):
+    __tablename__ = "execution_route_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(Integer, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    pause_state = Column(String)
+    is_active = Column(Boolean)
+    live_mode = Column(Boolean, default=False)
+    symbol = Column(String, index=True)
+    side = Column(String)
+    quantity = Column(Float, default=0.0)
+    before_position = Column(Float)
+    after_position = Column(Float)
+    action_class = Column(String, index=True)
+    reason = Column(String, index=True)
+    accepted = Column(Boolean)
+    status = Column(String)
+    order_id = Column(String)
+    idempotency_key = Column(String, index=True)
+    mark_price = Column(Float, default=0.0)
+    future_mark_price = Column(Float)
+    future_return_bps = Column(Float)
+    shadow_evaluated_at = Column(DateTime)
