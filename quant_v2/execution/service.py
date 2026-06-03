@@ -201,6 +201,7 @@ class _SessionState:
     previous_signals: dict[str, StrategySignal] = field(default_factory=dict)
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
     paper_entry_price: dict[str, float] = field(default_factory=dict)
+    accounted_order_keys: set[str] = field(default_factory=set)
     position_opened_at: dict[str, datetime] = field(default_factory=dict)
     position_entry_atr_pct: dict[str, float] = field(default_factory=dict)
     position_peak_pnl_pct: dict[str, float] = field(default_factory=dict)
@@ -381,6 +382,7 @@ class RoutedExecutionService:
         route_audit_callback: Callable[[RouteAuditEvent], None] | None = None,
     ) -> None:
         self._sessions: dict[int, _SessionState] = {}
+        self._route_locks: dict[int, asyncio.Lock] = {}
         self._paper_adapter_factory = paper_adapter_factory or self._default_paper_adapter_factory
         self._live_adapter_factory = live_adapter_factory or self._default_live_adapter_factory
         self._initial_equity_usd = float(initial_equity_usd)
@@ -491,6 +493,7 @@ class RoutedExecutionService:
     async def stop_session(self, user_id: int) -> bool:
         existed = user_id in self._sessions
         self._sessions.pop(user_id, None)
+        self._route_locks.pop(user_id, None)
         return existed
 
     def reset_session_state(self, user_id: int) -> bool:
@@ -563,6 +566,7 @@ class RoutedExecutionService:
             return
 
         state.equity_baseline_usd = max(1.0, float(equity_baseline_usd))
+        state.accounted_order_keys.clear()
 
         if open_positions:
             await self.sync_positions(
@@ -680,6 +684,33 @@ class RoutedExecutionService:
         return True
 
     async def route_signals(
+        self,
+        user_id: int,
+        *,
+        signals: Iterable[StrategySignal],
+        prices: dict[str, float],
+        monitoring_snapshot: MonitoringSnapshot | None = None,
+        bucket_map: dict[str, str] | None = None,
+        min_qty: float = 0.0,
+        planner_config: PlannerConfig | None = None,
+        risk_policy: PortfolioRiskPolicy | None = None,
+        equity_usd: float | None = None,
+    ) -> tuple[ExecutionResult, ...]:
+        lock = self._route_locks.setdefault(int(user_id), asyncio.Lock())
+        async with lock:
+            return await self._route_signals_locked(
+                user_id,
+                signals=signals,
+                prices=prices,
+                monitoring_snapshot=monitoring_snapshot,
+                bucket_map=bucket_map,
+                min_qty=min_qty,
+                planner_config=planner_config,
+                risk_policy=risk_policy,
+                equity_usd=equity_usd,
+            )
+
+    async def _route_signals_locked(
         self,
         user_id: int,
         *,
@@ -1012,6 +1043,39 @@ class RoutedExecutionService:
             )
             mark_price = float(planning_prices.get(plan.symbol, 0.0) or 0.0)
             current_qty = float(current_positions.get(plan.symbol, 0.0))
+            if idempotency_key in state.accounted_order_keys:
+                results.append(
+                    self._build_skipped_result(
+                        idempotency_key=idempotency_key,
+                        plan=plan,
+                        mark_price=mark_price,
+                        reason="skipped_by_idempotency:already_accounted",
+                    )
+                )
+                audit_after = self._project_after_position(
+                    current_qty=current_qty,
+                    side=plan.side,
+                    quantity=float(plan.quantity),
+                )
+                audit_action = self._audit_action_class(
+                    current_qty=current_qty,
+                    side=plan.side,
+                    quantity=float(plan.quantity),
+                )
+                self._log_route_audit(
+                    user_id=user_id,
+                    pause_state="internal_hard_risk" if internal_risk_only else "none",
+                    is_active=None,
+                    live_mode=(state.mode == "live"),
+                    symbol=plan.symbol,
+                    side=plan.side,
+                    qty=float(plan.quantity),
+                    before_position=current_qty,
+                    after_position=audit_after,
+                    action_class="blocked",
+                    reason=f"skipped_by_idempotency:already_accounted:{audit_action}",
+                )
+                continue
             activity = self._classify_order_activity(
                 current_qty=current_qty,
                 side=plan.side,
@@ -2615,6 +2679,15 @@ class RoutedExecutionService:
         for result in results:
             if not result.accepted or result.filled_qty <= 0.0:
                 continue
+            idempotency_key = str(result.idempotency_key or "")
+            if idempotency_key and idempotency_key in state.accounted_order_keys:
+                logger.warning(
+                    "Skipping duplicate paper accounting for user=%s key=%s symbol=%s",
+                    getattr(state.request, "user_id", "unknown"),
+                    idempotency_key,
+                    result.symbol,
+                )
+                continue
 
             symbol = result.symbol
             current_qty = float(running_positions.get(symbol, 0.0))
@@ -2636,6 +2709,8 @@ class RoutedExecutionService:
             )
             if realized_pnl != 0.0:
                 state.equity_baseline_usd = max(1.0, float(state.equity_baseline_usd + realized_pnl))
+            if idempotency_key:
+                state.accounted_order_keys.add(idempotency_key)
 
             if abs(next_qty) <= 1e-12:
                 state.paper_entry_price.pop(symbol, None)

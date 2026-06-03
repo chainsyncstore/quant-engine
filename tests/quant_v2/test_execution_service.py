@@ -251,6 +251,43 @@ def test_routed_execution_service_route_signals_executes_orders_and_updates_snap
     assert second == ()
 
 
+def test_duplicate_idempotency_key_does_not_reapply_paper_realized_pnl() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4010, live=False))) is True
+    state = service._sessions[4010]
+    state.equity_baseline_usd = 10_000.0
+    state.paper_entry_price["BTCUSDT"] = 100.0
+
+    result = ExecutionResult(
+        accepted=True,
+        order_id="paper-1",
+        idempotency_key="duplicate-close",
+        symbol="BTCUSDT",
+        side="SELL",
+        requested_qty=1.0,
+        filled_qty=1.0,
+        avg_price=110.0,
+        status="filled",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    service._update_paper_entry_price(
+        state,
+        results=(result,),
+        prices={"BTCUSDT": 110.0},
+        starting_positions={"BTCUSDT": 1.0},
+    )
+    assert state.equity_baseline_usd == pytest.approx(10_010.0)
+
+    service._update_paper_entry_price(
+        state,
+        results=(result,),
+        prices={"BTCUSDT": 110.0},
+        starting_positions={"BTCUSDT": 1.0},
+    )
+    assert state.equity_baseline_usd == pytest.approx(10_010.0)
+
+
 def test_routed_execution_service_emits_route_audit_events() -> None:
     events: list[RouteAuditEvent] = []
     service = RoutedExecutionService(route_audit_callback=events.append)
