@@ -1,94 +1,240 @@
-# Hypothesis Research Engine (Current Runtime)
+# Quant Engine Operational README
 
-This repository now runs a **multi-user Telegram trading platform** with modern v2 execution controls, safety checks, and deployment-ready operations.
+This repository is the canonical source for the current 4arm-hosted trading
+system.
 
-The project still includes research/evaluation tooling, but the active production workflow is centered on the Telegram bot + v2 execution stack.
+Canonical Git remote:
 
-## What the system does today
+```text
+https://github.com/chainsyncstore/quant-engine.git
+```
 
-- Supports **paper** and **live** sessions per user.
-- **Machine Learning Ensemble:** Blends classical structural features (LightGBM) with purely temporal analysis (Amazon Chronos) into a `FullEnsemble` consensus. 
-- **The Event Gate:** Semantic news pipeline (CryptoCompare + Fear/Greed) acts as a dynamic veto against ML predictions during extreme global shocks.
-- **Resilient Redis Architecture:** Uses an asynchronous Zero-Trust message bus (Redis Streams) and a robust Write-Ahead Log (WAL) to survive and seamlessly recover from aggressive EC2 out-of-memory container crashes.
-- **Advanced Execution Logistics:** Includes background ledger reconciliation to catch ghost/phantom positions against the live exchange, alongside a 120s "Tick Starvation" dead-man's switch to flatten positions during market data blackouts.
-- **Dynamic Risk Filters:** Automatic Minimum Notional allocation limits based on real-time equity ratios mapped heavily against inverse-volatility parity weighting.
+Production host:
 
-## Non-technical lifecycle controls (for end users)
+```text
+ssh 4arm-ubuntu
+/home/admin-4arm/hypothesis-research-engine
+```
 
-Users can configure auto-close safety rules without trading jargon:
+The previous Ubuntu remote is retained on 4arm only as `legacy-hypothesis`:
 
-- **Time limit**: close open trades automatically after N hours.
-  - Example: `/set_horizon 4`
-- **Loss limit**: close a trade when loss reaches your chosen percentage.
-  - Example: `/set_stoploss 2` (means 2%)
-- **View current settings**:
-  - `/lifecycle`
+```text
+https://github.com/chainsyncstore/hypothesis-research-engine.git
+```
 
-## Core Telegram commands
+## Current Operating State
 
-- `/start` - account check
-- `/start_demo` - start paper trading
-- `/start_live` - start live trading
-- `/stop` - stop trading
-- `/status` - current engine state
-- `/stats` - portfolio and risk stats
-- `/reset_demo` - reset paper session
-- `/prepare_update` - admin pre-deploy snapshot + safe stop
-- `/continue_demo` / `/continue_live` - restore after maintenance
+As of 2026-06-26, the system is intentionally running in a guarded
+no-active-model/no-trade recovery posture while model quality is rebuilt.
 
-## Local development
+Current behavior:
 
-### Install
+- Telegram, evaluator, retrain, and Redis services are running on 4arm.
+- Runtime source is bind-mounted from the 4arm repo into Docker containers.
+- The retrain service runs from `quant_v2.research.scheduled_retrain`.
+- Retrain does not directly activate a fresh model.
+- Passing retrain output is registered for paper quarantine/review first.
+- Trading should not resume until a candidate passes validation, benchmark
+  replay, and forward paper-soak gates.
+
+Important current environment policy:
+
+```text
+BOT_RETRAIN_AUTO_PROMOTE=0
+RETRAIN_MIN_ACCURACY=0.60
+RETRAIN_REQUIRE_ALL_HORIZONS=1
+RETRAIN_REQUIRE_ALL_SYMBOLS=1
+RETRAIN_STARTUP_DELAY_SECONDS=3600
+RETRAIN_INTERVAL_HOURS=168
+RETRAIN_TRAIN_MONTHS=6
+```
+
+This means:
+
+- If retrain fails validation, the system remains no-trade.
+- If retrain passes validation, the candidate is still not active by default.
+- Paper trading does not automatically resume just because retrain completed.
+- Manual/governed promotion is required after evidence review.
+
+## Active Runtime Services
+
+The 4arm deployment currently runs these containers:
+
+```text
+quant_telegram
+quant_model_eval
+quant_retrain
+quant_redis
+```
+
+The live containers bind-mount these source/data paths:
+
+```text
+/home/admin-4arm/hypothesis-research-engine/quant    -> /app/quant
+/home/admin-4arm/hypothesis-research-engine/quant_v2 -> /app/quant_v2
+/home/admin-4arm/hypothesis-research-engine/models   -> /app/models
+/home/admin-4arm/hypothesis-research-engine/state    -> /state
+```
+
+`scripts/` is not mounted into the long-running containers. Operator scripts
+can be run on the host or in a disposable `quant_bot:latest` container with the
+repo mounted.
+
+## Model Quality Recovery Flow
+
+The current model recovery path is documented in:
+
+- `MODEL_QUALITY_RECOVERY_SPEC.md`
+- `docs/model_quality/README.md`
+- `docs/model_quality/validation_policy_v1.md`
+- `scripts/model_quality_recovery.py`
+
+The recovery tool produces:
+
+- failed retrain diagnostics
+- label/dead-zone audit
+- transparent benchmark replay
+- candidate selection report
+- validation policy evidence
+
+Run locally or on 4arm with an existing dataset snapshot:
+
+```bash
+python scripts/model_quality_recovery.py \
+  --model-root models/production \
+  --registry-root models/production/registry \
+  --snapshot-path datasets/v2/snapshots/<snapshot>.parquet \
+  --output-dir docs/model_quality
+```
+
+When running inside the production image:
+
+```bash
+docker run --rm --user 0 -e PYTHONDONTWRITEBYTECODE=1 \
+  -v /home/admin-4arm/hypothesis-research-engine:/app:ro \
+  -w /app quant_bot:latest \
+  python scripts/model_quality_recovery.py --help
+```
+
+## Telegram Usage
+
+User-facing commands include:
+
+```text
+/start
+/start_demo
+/start_live
+/stop
+/status
+/stats
+/reset_demo
+/continue_demo
+/continue_live
+```
+
+Admin/operator commands include model registry and promotion controls:
+
+```text
+/model_versions
+/model_candidates
+/model_eval_status
+/model_eval_detail <version_id>
+/model_auto_promote on|off
+/model_approve <version_id> <evidence_digest>
+/model_promote <version_id> [evidence_digest] [reason]
+/model_quarantine <version_id>
+/model_rollback
+/prepare_update
+/update_complete
+```
+
+Operational rule: do not use these commands to force production trading while
+the system is in recovery/no-active-model mode. Promotion should follow the
+current validation policy and paper-soak gates.
+
+## Deployment To 4arm
+
+Typical source deployment path:
+
+```bash
+ssh 4arm-ubuntu
+cd /home/admin-4arm/hypothesis-research-engine
+git fetch origin main
+git status --short
+```
+
+For documentation or source-only changes, verify the target files and avoid
+touching runtime state:
+
+```bash
+git diff --stat HEAD..origin/main
+```
+
+For runtime code changes, validate in the production image before restarting
+affected services. Example:
+
+```bash
+docker run --rm --user 0 -e PYTHONDONTWRITEBYTECODE=1 \
+  -v /home/admin-4arm/hypothesis-research-engine:/app:ro \
+  -w /app quant_bot:latest \
+  python -m compileall -q quant quant_v2 scripts
+```
+
+Restart only the affected service. For retrain-only changes:
+
+```bash
+docker restart quant_retrain
+```
+
+Avoid restarting `quant_telegram` unless the bot/runtime session layer changed
+or a controlled maintenance window is intended.
+
+## Local Development
+
+Install:
 
 ```bash
 pip install -e .
 pip install -e ".[dev]"
 ```
 
-### Run tests
+Run focused validation:
 
 ```bash
-pytest tests/ -v
+pytest tests/quant_v2/test_model_quality_recovery.py -q
 ```
 
-### Run bot locally (env required)
-
-Set these environment variables:
-
-- `TELEGRAM_TOKEN`
-- `ADMIN_ID`
-- `BOT_MASTER_KEY`
-
-Then start:
+Run broader tests when touching runtime logic:
 
 ```bash
-python -m quant.telebot.main
+pytest tests/ -q
 ```
 
-## Docker run
+Required local environment for running the Telegram bot:
 
-```bash
-docker-compose up -d --build
-docker-compose logs -f
+```text
+TELEGRAM_TOKEN
+ADMIN_ID
+BOT_MASTER_KEY
 ```
 
-## AWS deployment (EC2)
+Do not commit `.env`, database files, model artifacts, keys, state files, or
+production backups.
 
-Use `AWS_DEPLOY.md` for full setup details. Typical restart/update flow on server:
+## Safety Posture
 
-```bash
-git pull
-docker-compose down
-docker-compose up -d --build
-docker-compose logs -f --tail=200
-```
+Live trading remains blocked unless all production-resume gates are satisfied:
 
-## Important docs
+- fresh candidate artifact is complete and manifest-valid
+- candidate passes the current validation policy
+- candidate beats flat and transparent benchmark replay after costs
+- candidate completes forward paper soak with positive expectancy
+- paper books reconcile flat before live canary
+- no active hard-risk pause exists
+- source SHA, image, env policy, and model manifest match
 
-- `AWS_DEPLOY.md` - EC2 setup + deployment
-- `DEPLOY.md` - generic VPS deployment
-- `quant/telebot/main.py` - bot command handlers
-- `quant_v2/execution/service.py` - v2 execution + safety core
+The immediate objective is not to make the bot trade. It is to make the next
+trade defensible.
 
 ## License
 
