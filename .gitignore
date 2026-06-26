@@ -39,8 +39,14 @@ Thumbs.db
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
 
 # Deploy artifacts
 deploy.tar.gz
@@ -62,5 +68,8 @@ trade_analyzer_local.py
 scratch/
 ubuntu_audit_*/
 deploy_backups/
+backup_*/
 state/
 signal_log*.json
+.docker_write_probe
+.tmp_write_test
