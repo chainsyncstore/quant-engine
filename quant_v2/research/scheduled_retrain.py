@@ -22,8 +22,9 @@ Environment:
 from __future__ import annotations
 
 import logging
+import json
 import os
-import sys
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,14 +36,33 @@ from quant.config import get_research_config
 from quant.data.binance_client import BinanceClient
 from quant.features.pipeline import build_features, get_feature_columns
 from quant_v2.config import default_universe_symbols
-from quant_v2.data.multi_symbol_dataset import fetch_symbol_dataset
+from quant_v2.data.multi_symbol_dataset import fetch_universe_dataset
+from quant_v2.data.storage import build_dataset_manifest, validate_multi_symbol_ohlcv
 from quant_v2.model_registry import ModelRegistry
-from quant_v2.models.trainer import TrainedModel, train, save_model, load_model
+from quant_v2.research.model_quality_recovery import (
+    QUALITY_RECOVERY_POLICY_VERSION,
+    VALIDATION_POLICY_VERSION,
+)
+from quant_v2.models.trainer import (
+    TrainedModel,
+    load_model,
+    save_model_bundle as save_model,
+    train,
+)
+from quant_v2.validation.temporal_validation import (
+    build_temporal_validation_plan,
+    compute_recency_weights,
+    effective_sample_size,
+)
 
 logger = logging.getLogger(__name__)
 
 HORIZONS = (2, 4, 8)
 _SENTINEL_FILE = "/tmp/.retrain_last_run"
+_LAST_TEMPORAL_VALIDATION_SUMMARY: dict[str, object] | None = None
+_BUILDING_DIRNAME = ".building"
+_FAILED_DIRNAME = ".failed"
+_ARCHIVE_DIRNAME = "archive"
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -74,10 +94,23 @@ def _build_labels(
 
     Returns NaN for ambiguous bars, which should be filtered out before fitting.
     """
-    close = pd.to_numeric(df["close"], errors="coerce")
-    future_return = close.shift(-horizon) / close - 1.0
+    if isinstance(df.index, pd.MultiIndex) and "symbol" in df.index.names:
+        pieces: list[pd.Series] = []
+        grouped = df.groupby(level="symbol", sort=False)
+        for _, sym_df in grouped:
+            close = pd.to_numeric(sym_df["close"], errors="coerce")
+            future_return = close.shift(-horizon) / close - 1.0
+            sym_labels = pd.Series(np.nan, index=sym_df.index)
+            sym_labels[future_return > dead_zone] = 1
+            sym_labels[future_return < -dead_zone] = 0
+            pieces.append(sym_labels)
+        if not pieces:
+            return pd.Series(np.nan, index=df.index)
+        return pd.concat(pieces).sort_index()
 
     labels = pd.Series(np.nan, index=df.index)
+    close = pd.to_numeric(df["close"], errors="coerce")
+    future_return = close.shift(-horizon) / close - 1.0
     labels[future_return > dead_zone] = 1    # profitable up move
     labels[future_return < -dead_zone] = 0   # profitable down move
     # values in [-dead_zone, dead_zone] remain NaN → filtered out
@@ -95,6 +128,102 @@ def _validate_model_single(model: TrainedModel, X_test: pd.DataFrame, y_test: pd
     return accuracy
 
 
+def _inject_reference_returns(frame: pd.DataFrame, btc_returns: pd.Series | None) -> pd.DataFrame:
+    """Inject BTC reference returns for cross-pair features on one symbol frame."""
+
+    if btc_returns is None or btc_returns.empty:
+        return frame
+
+    out = frame.copy()
+    if "_btc_returns" not in out.columns:
+        out["_btc_returns"] = btc_returns.reindex(out.index, method="ffill").fillna(0.0)
+    return out
+
+
+def _consume_temporal_validation_summary() -> dict[str, object] | None:
+    global _LAST_TEMPORAL_VALIDATION_SUMMARY
+    summary = _LAST_TEMPORAL_VALIDATION_SUMMARY
+    _LAST_TEMPORAL_VALIDATION_SUMMARY = None
+    return summary
+
+
+def _select_threshold_from_oof_predictions(
+    predictions: np.ndarray,
+    labels: np.ndarray,
+) -> dict[str, object]:
+    """Select a probability threshold from out-of-fold development evidence."""
+
+    cfg = get_research_config()
+    threshold_min = float(cfg.threshold_min)
+    threshold_max = float(cfg.threshold_max)
+    threshold_step = float(cfg.threshold_step)
+    thresholds = np.round(np.arange(threshold_min, threshold_max + threshold_step / 2, threshold_step), 2)
+
+    probs = np.asarray(predictions, dtype=float)
+    truth = np.asarray(labels, dtype=int)
+    if probs.size == 0 or truth.size == 0:
+        return {
+            "source": "insufficient_oof_predictions",
+            "selected_threshold": 0.5,
+            "selected_accuracy": 0.0,
+            "threshold_min": threshold_min,
+            "threshold_max": threshold_max,
+            "threshold_step": threshold_step,
+            "samples": int(len(truth)),
+        }
+
+    if len(np.unique(truth)) < 2:
+        return {
+            "source": "class_collapse",
+            "selected_threshold": 0.5,
+            "selected_accuracy": float((truth == truth[0]).mean()) if truth.size else 0.0,
+            "threshold_min": threshold_min,
+            "threshold_max": threshold_max,
+            "threshold_step": threshold_step,
+            "samples": int(len(truth)),
+        }
+
+    best_threshold = 0.5
+    best_accuracy = -1.0
+    for threshold in thresholds:
+        predicted = (probs >= float(threshold)).astype(int)
+        accuracy = float((predicted == truth).mean())
+        if accuracy > best_accuracy or (accuracy == best_accuracy and float(threshold) < best_threshold):
+            best_accuracy = accuracy
+            best_threshold = float(threshold)
+
+    return {
+        "source": "oof_dev_predictions",
+        "selected_threshold": float(best_threshold),
+        "selected_accuracy": float(best_accuracy),
+        "threshold_min": threshold_min,
+        "threshold_max": threshold_max,
+        "threshold_step": threshold_step,
+        "samples": int(len(truth)),
+    }
+
+
+def _summarize_selection_risk(ledger: dict[str, object]) -> dict[str, float]:
+    attempts = [a for a in ledger.get("attempts", []) if isinstance(a, dict)]
+    scored = [
+        float(attempt.get("holdout_accuracy", attempt.get("mean_accuracy", 0.0)))
+        for attempt in attempts
+        if float(attempt.get("fold_count", 0)) > 0
+    ]
+    if not scored:
+        return {"pbo_equivalent": 0.0, "selected_holdout_rank_percentile": 1.0}
+
+    selected = ledger.get("selected") or {}
+    selected_score = float(selected.get("holdout_accuracy", selected.get("mean_accuracy", 0.0)))
+    sorted_scores = sorted(scored)
+    rank = sum(score <= selected_score for score in sorted_scores)
+    percentile = rank / max(len(sorted_scores), 1)
+    return {
+        "pbo_equivalent": float(max(0.0, 1.0 - percentile)),
+        "selected_holdout_rank_percentile": float(min(max(percentile, 0.0), 1.0)),
+    }
+
+
 def _walk_forward_cv(
     X: pd.DataFrame,
     y: pd.Series,
@@ -102,65 +231,209 @@ def _walk_forward_cv(
     n_splits: int = 5,
     embargo_bars: int = 100,
     cal_frac: float = 0.20,
+    timestamps: pd.Index | pd.Series | pd.DatetimeIndex | None = None,
 ) -> float:
-    """Purged walk-forward cross-validation with embargo gaps.
+    """Temporal validation with explicit timestamp folds and a frozen holdout."""
 
-    Returns mean accuracy across all folds. Prevents leakage between train/test.
-    """
-    from sklearn.model_selection import TimeSeriesSplit
-
+    _ = (n_splits, cal_frac)
     total_len = len(X)
     if total_len < 1000:
         return 0.0
+    if timestamps is None:
+        return 0.0
 
-    # Use TimeSeriesSplit for expanding windows
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    accuracies: list[float] = []
+    ts_index = pd.DatetimeIndex(timestamps)
+    if len(ts_index) != total_len:
+        raise ValueError("timestamps length must match X/y length")
 
-    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
-        # Apply embargo: remove last `embargo_bars` from train
-        # to prevent leakage from train into test
-        if len(train_idx) > embargo_bars:
-            train_idx = train_idx[:-embargo_bars]
+    period_count = len(pd.PeriodIndex(ts_index, freq="M").unique())
+    holdout_months = 3 if period_count >= 6 else max(1, period_count // 4)
 
+    plan = build_temporal_validation_plan(
+        X,
+        training_windows_months=(3, 6, 9, 12),
+        expanding_included=True,
+        test_window_months=1,
+        holdout_months=holdout_months,
+        purge_bars=max(int(embargo_bars), int(horizon)),
+        min_train_rows=500,
+    )
+
+    def _fit_and_score(
+        train_idx: np.ndarray,
+        test_idx: np.ndarray,
+        *,
+        half_life_days: float,
+    ) -> tuple[float, float, np.ndarray, np.ndarray]:
         X_train_fold = X.iloc[train_idx]
         y_train_fold = y.iloc[train_idx]
         X_test_fold = X.iloc[test_idx]
         y_test_fold = y.iloc[test_idx]
-
         if len(X_train_fold) < 500 or len(X_test_fold) < 100:
-            continue
+            return 0.0, 0.0, np.asarray([], dtype=float), np.asarray([], dtype=int)
+        weights = compute_recency_weights(ts_index[train_idx], half_life_days=half_life_days)
+        ess = effective_sample_size(weights)
+        model = train(X_train_fold, y_train_fold, horizon=horizon, sample_weight=weights)
+        acc = _validate_model_single(model, X_test_fold, y_test_fold)
+        from quant_v2.models.predictor import predict_proba
+        fold_probs = predict_proba(model, X_test_fold)
+        return acc, ess, np.asarray(fold_probs, dtype=float), np.asarray(y_test_fold.to_numpy(), dtype=int)
 
-        try:
-            model = train(X_train_fold, y_train_fold, horizon=horizon)
-            acc = _validate_model_single(model, X_test_fold, y_test_fold)
-            accuracies.append(acc)
-        except Exception as e:
-            logger.warning("CV fold %d failed for horizon=%dh: %s", fold_idx, horizon, e)
-            continue
+    half_life_candidates = (30.0, 60.0, 90.0)
+    attempts: list[dict[str, object]] = []
+    best_attempt: dict[str, object] | None = None
 
-    if not accuracies:
+    for half_life_days in half_life_candidates:
+        fold_scores: list[float] = []
+        ess_values: list[float] = []
+        oof_predictions: list[float] = []
+        oof_truths: list[int] = []
+        for fold in plan.folds:
+            if fold.holdout:
+                continue
+            if fold.n_train < 500 or fold.n_test < 100:
+                continue
+            try:
+                acc, ess, fold_probs, fold_truths = _fit_and_score(
+                    fold.train_indices,
+                    fold.test_indices,
+                    half_life_days=half_life_days,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Temporal CV fold %s failed for horizon=%dh half_life=%.0f: %s",
+                    fold.fold_id,
+                    horizon,
+                    half_life_days,
+                    exc,
+                )
+                continue
+            if acc <= 0.0:
+                continue
+            fold_scores.append(acc)
+            ess_values.append(ess)
+            oof_predictions.extend(float(v) for v in fold_probs)
+            oof_truths.extend(int(v) for v in fold_truths)
+
+        mean_accuracy = float(np.mean(fold_scores)) if fold_scores else 0.0
+        attempt = {
+            "half_life_days": float(half_life_days),
+            "fold_count": int(len(fold_scores)),
+            "mean_accuracy": mean_accuracy,
+            "effective_sample_size_mean": float(np.mean(ess_values)) if ess_values else 0.0,
+            "training_windows_months": list(plan.training_windows_months),
+            "expanding_included": bool(plan.expanding_included),
+            "test_window_months": int(plan.test_window_months),
+            "holdout_months": int(plan.holdout_months),
+            "trial_count": int(len(plan.folds)),
+            "threshold_policy": _select_threshold_from_oof_predictions(
+                np.asarray(oof_predictions, dtype=float),
+                np.asarray(oof_truths, dtype=int),
+            ),
+        }
+        attempts.append(attempt)
+        if best_attempt is None or mean_accuracy > float(best_attempt["mean_accuracy"]):
+            best_attempt = attempt
+
+    if best_attempt is None:
         return 0.0
-    return float(np.mean(accuracies))
+
+    holdout_rows = int(len(plan.holdout_indices))
+    if holdout_rows >= 100:
+        dev_mask = np.ones(total_len, dtype=bool)
+        dev_mask[plan.holdout_indices] = False
+        dev_idx = np.flatnonzero(dev_mask)
+        holdout_weights = compute_recency_weights(ts_index[dev_idx], half_life_days=float(best_attempt["half_life_days"]))
+        holdout_ess = effective_sample_size(holdout_weights)
+        holdout_model = train(X.iloc[dev_idx], y.iloc[dev_idx], horizon=horizon, sample_weight=holdout_weights)
+        best_attempt["holdout_accuracy"] = float(
+            _validate_model_single(
+                holdout_model,
+                X.iloc[plan.holdout_indices],
+                y.iloc[plan.holdout_indices],
+            )
+        )
+        best_attempt["holdout_effective_sample_size"] = float(holdout_ess)
+        best_attempt["holdout_rows"] = holdout_rows
+
+    global _LAST_TEMPORAL_VALIDATION_SUMMARY
+    _LAST_TEMPORAL_VALIDATION_SUMMARY = {
+        "horizon": int(horizon),
+        "attempts": attempts,
+        "selected": best_attempt,
+        "actual_trial_count": int(len(attempts)),
+        "holdout_start": str(plan.holdout_start) if plan.holdout_start is not None else None,
+        "holdout_end": str(plan.holdout_end) if plan.holdout_end is not None else None,
+        "fold_count": int(len(plan.folds)),
+        "purge_bars": int(plan.purge_bars),
+        "holdout_months": int(plan.holdout_months),
+        "holdout_rows": int(holdout_rows),
+    }
+    return float(best_attempt["mean_accuracy"])
 
 
 def _compute_sample_weights(timestamps: pd.DatetimeIndex, half_life_days: float = 60) -> np.ndarray:
-    """Exponential decay weights: recent data gets more weight.
+    """Backward-compatible wrapper around the temporal validation weight helper."""
 
-    half_life_days: number of days for weight to decay to 50%
-    """
-    if len(timestamps) == 0:
-        return np.ones(len(timestamps))
+    return compute_recency_weights(pd.DatetimeIndex(timestamps), half_life_days=half_life_days)
 
-    now = timestamps.iloc[-1] if hasattr(timestamps, "iloc") else timestamps[-1]  # most recent
-    delta = now - timestamps
-    if hasattr(delta, "dt"):
-        days_ago = delta.dt.total_seconds() / 86400.0
-    else:
-        days_ago = delta.total_seconds() / 86400.0
-    decay_rate = np.log(2) / half_life_days
-    weights = np.exp(-decay_rate * days_ago)
-    return weights / weights.mean()  # normalize to mean=1
+
+def _staging_artifact_dir(model_root: Path, version_id: str) -> Path:
+    return Path(model_root).expanduser() / _BUILDING_DIRNAME / version_id
+
+
+def _failed_artifact_record_path(model_root: Path, version_id: str) -> Path:
+    return Path(model_root).expanduser() / _FAILED_DIRNAME / f"{version_id}.json"
+
+
+def _archive_artifact_dir(model_root: Path, version_id: str) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return Path(model_root).expanduser() / _ARCHIVE_DIRNAME / f"failed_retrain_{timestamp}" / version_id
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _cleanup_tree(path: Path) -> None:
+    try:
+        if path.exists():
+            shutil.rmtree(path)
+    except Exception:
+        logger.exception("Failed to clean up staging path: %s", path)
+
+
+def _write_failure_record(
+    model_root: Path,
+    version_id: str,
+    *,
+    reason: str,
+    details: dict[str, object] | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "version_id": version_id,
+        "failed_at": datetime.now(timezone.utc).isoformat(),
+        "reason": reason,
+    }
+    if details:
+        payload["details"] = details
+    _write_json_atomic(_failed_artifact_record_path(model_root, version_id), payload)
+
+
+def _persist_staged_model_bundle(
+    trained: TrainedModel,
+    *,
+    staging_path: Path,
+    metadata: dict[str, object],
+) -> None:
+    save_model(trained, staging_path, metadata=metadata)
+
+
+def _validate_artifact_bundle(path: Path) -> None:
+    load_model(path)
 
 
 def retrain_and_promote(
@@ -174,63 +447,127 @@ def retrain_and_promote(
 
     Returns the new version_id if promoted, or None if validation failed.
     """
+    model_root = Path(model_root).expanduser()
+    registry_root = Path(registry_root).expanduser()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     version_id = f"model_{timestamp}"
-    artifact_dir = model_root / version_id
-    artifact_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = _staging_artifact_dir(model_root, version_id)
+    final_dir = model_root / version_id
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    if final_dir.exists():
+        logger.error("Retrain: target artifact directory already exists: %s", final_dir)
+        _write_failure_record(
+            model_root,
+            version_id,
+            reason="target_artifact_already_exists",
+            details={"final_dir": str(final_dir)},
+        )
+        _cleanup_tree(staging_dir)
+        return None
+
+    def _abort(reason: str, *, details: dict[str, object] | None = None, archive_source: Path | None = None) -> None:
+        payload = {
+            "model_root": str(model_root),
+            "registry_root": str(registry_root),
+            "version_id": version_id,
+            "staging_dir": str(staging_dir),
+            "final_dir": str(final_dir),
+            "train_months": int(train_months),
+            "min_accuracy": float(min_accuracy),
+            "extra_symbols": list(extra_symbols or []),
+        }
+        if details:
+            payload.update(details)
+        _write_failure_record(model_root, version_id, reason=reason, details=payload)
+        if archive_source is not None and archive_source.exists():
+            archive_dir = _archive_artifact_dir(model_root, version_id)
+            archive_dir.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                if archive_dir.exists():
+                    shutil.rmtree(archive_dir)
+                archive_source.replace(archive_dir)
+                logger.warning("Retrain: archived failed artifact to %s", archive_dir)
+            except Exception as exc:
+                logger.exception("Retrain: failed to archive artifact %s: %s", archive_source, exc)
+        _cleanup_tree(staging_dir)
 
     client = BinanceClient()
     date_to = datetime.now(timezone.utc)
     date_from = date_to - timedelta(days=train_months * 30)
 
-    # Fetch primary symbol (BTCUSDT) plus optional extra symbols for richer training
     primary_symbol = "BTCUSDT"
     symbols_to_fetch = list(dict.fromkeys([primary_symbol] + (extra_symbols or [])))
     logger.info("Retrain: fetching %d months of data for symbols=%s...", train_months, symbols_to_fetch)
+    raw_universe = fetch_universe_dataset(
+        symbols_to_fetch,
+        date_from=date_from,
+        date_to=date_to,
+        interval="1h",
+        include_funding=True,
+        include_open_interest=True,
+        fail_fast=False,
+        client=client,
+    )
+    if raw_universe.empty:
+        logger.error("Retrain: no data fetched for any symbol. Aborting.")
+        _abort("no_data_fetched", details={"requested_symbols": symbols_to_fetch})
+        return None
+
+    try:
+        validate_multi_symbol_ohlcv(raw_universe)
+    except Exception as exc:
+        logger.error("Retrain: dataset validation failed: %s", exc)
+        _abort(
+            "dataset_validation_failed",
+            details={"requested_symbols": symbols_to_fetch, "error": str(exc)},
+        )
+        return None
+
+    fetched_symbols = sorted(str(symbol) for symbol in raw_universe.index.get_level_values("symbol").unique())
+    failed_symbols = {symbol: "missing from fetched universe" for symbol in symbols_to_fetch if symbol not in fetched_symbols}
+    raw_manifest = build_dataset_manifest(
+        raw_universe,
+        dataset_name=f"scheduled_retrain_{timestamp}",
+        metadata={
+            "requested_symbols": symbols_to_fetch,
+            "fetched_symbols": fetched_symbols,
+            "failed_symbols": failed_symbols,
+            "requested_time_range_start": date_from.isoformat(),
+            "requested_time_range_end": date_to.isoformat(),
+            "source_retrieved_at": date_to.isoformat(),
+        },
+    )
 
     all_featured_frames: list[pd.DataFrame] = []
-    fetched_symbols: list[str] = []
-    failed_symbols: dict[str, str] = {}
-    btc_returns: pd.Series | None = None  # cached for cross-pair feature injection
+    btc_returns: pd.Series | None = None
 
-    for symbol in symbols_to_fetch:
-        try:
-            raw = fetch_symbol_dataset(
-                symbol,
-                date_from=date_from,
-                date_to=date_to,
-                client=client,
-                include_funding=True,
-                include_open_interest=True,
-            )
+    if primary_symbol in raw_universe.index.get_level_values("symbol"):
+        btc_frame = raw_universe.xs(primary_symbol, level="symbol").copy()
+        btc_close = pd.to_numeric(btc_frame["close"], errors="coerce").dropna()
+        btc_returns = btc_close.pct_change()
 
-            # Compute & cache BTC returns from the primary symbol
-            if symbol == primary_symbol and btc_returns is None:
-                btc_close = pd.to_numeric(raw["close"], errors="coerce").dropna()
-                btc_returns = btc_close.pct_change()
-
-            # Inject BTC returns so cross-pair features match inference
-            if btc_returns is not None and "_btc_returns" not in raw.columns:
-                raw["_btc_returns"] = btc_returns.reindex(raw.index, method="ffill").fillna(0.0)
-
-            sym_featured = build_features(raw)
-            if not sym_featured.empty:
-                all_featured_frames.append(sym_featured)
-                fetched_symbols.append(symbol)
-                logger.info("Retrain: %s -> %d feature rows", symbol, len(sym_featured))
-            else:
-                failed_symbols[symbol] = "no feature rows"
-                logger.warning("Retrain: %s produced no feature rows", symbol)
-        except Exception as e:
-            failed_symbols[symbol] = str(e)
-            logger.warning("Retrain: data fetch failed for %s: %s", symbol, e)
+    for symbol, sym_raw in raw_universe.groupby(level="symbol", sort=False):
+        per_symbol = sym_raw.droplevel("symbol").copy()
+        per_symbol = _inject_reference_returns(per_symbol, btc_returns if str(symbol) != primary_symbol else None)
+        sym_featured = build_features(per_symbol)
+        if sym_featured.empty:
+            failed_symbols[str(symbol)] = "no feature rows"
+            logger.warning("Retrain: %s produced no feature rows", symbol)
+            continue
+        sym_featured = sym_featured.copy()
+        sym_featured["symbol"] = str(symbol)
+        sym_featured = sym_featured.reset_index().set_index(["timestamp", "symbol"]).sort_index()
+        all_featured_frames.append(sym_featured)
+        logger.info("Retrain: %s -> %d feature rows", symbol, len(sym_featured))
 
     if not all_featured_frames:
-        logger.error("Retrain: no data fetched for any symbol. Aborting.")
-        _cleanup_artifact_dir(artifact_dir)
+        logger.error("Retrain: no feature rows produced for any symbol. Aborting.")
+        _abort("no_feature_rows", details={"symbols_requested": symbols_to_fetch, "symbols_fetched": fetched_symbols})
         return None
 
     require_all_symbols = _env_flag("RETRAIN_REQUIRE_ALL_SYMBOLS", True)
+    require_all_horizons = _env_flag("RETRAIN_REQUIRE_ALL_HORIZONS", True)
+    auto_promote = _env_flag("BOT_RETRAIN_AUTO_PROMOTE", False)
     required_symbols = set(symbols_to_fetch)
     fetched_symbol_set = set(fetched_symbols)
     missing_symbols = sorted(required_symbols - fetched_symbol_set)
@@ -243,7 +580,14 @@ def retrain_and_promote(
             fetched_symbols,
             failed_symbols,
         )
-        _cleanup_artifact_dir(artifact_dir)
+        _abort(
+            "missing_required_symbols",
+            details={
+                "missing_symbols": missing_symbols,
+                "fetched_symbols": fetched_symbols,
+                "failed_symbols": failed_symbols,
+            },
+        )
         return None
     if len(fetched_symbols) < min_symbols:
         logger.error(
@@ -253,20 +597,23 @@ def retrain_and_promote(
             fetched_symbols,
             failed_symbols,
         )
-        _cleanup_artifact_dir(artifact_dir)
+        _abort(
+            "insufficient_symbol_coverage",
+            details={
+                "minimum_symbols": int(min_symbols),
+                "fetched_symbols": fetched_symbols,
+                "failed_symbols": failed_symbols,
+            },
+        )
         return None
 
-    featured = pd.concat(all_featured_frames, ignore_index=True)
-    featured = featured.sort_values("timestamp") if "timestamp" in featured.columns else featured
+    featured = pd.concat(all_featured_frames, axis=0).sort_index()
+    if isinstance(featured.index, pd.MultiIndex):
+        featured.index = featured.index.set_names(["timestamp", "symbol"])
+    featured.attrs.update(dict(all_featured_frames[0].attrs))
     logger.info("Retrain: combined dataset = %d rows across %d symbols", len(featured), len(all_featured_frames))
     feature_cols = get_feature_columns(featured)
     logger.info("Retrain: featured dataset = %d rows, %d features", len(featured), len(feature_cols))
-
-    # Defensive: fill any remaining NaN (shouldn't happen after pipeline fix, but safety first)
-    nan_count = featured[feature_cols].isna().sum().sum()
-    if nan_count > 0:
-        logger.warning("Retrain: filling %d NaN values in feature columns", nan_count)
-        featured[feature_cols] = featured[feature_cols].fillna(0.0)
 
     expected_hourly_rows = len(symbols_to_fetch) * train_months * 30 * 24
     default_min_train_rows = max(1000, int(expected_hourly_rows * 0.8))
@@ -280,13 +627,22 @@ def retrain_and_promote(
             fetched_symbols,
             failed_symbols,
         )
-        _cleanup_artifact_dir(artifact_dir)
+        _abort(
+            "insufficient_feature_rows",
+            details={
+                "min_train_rows": int(min_train_rows),
+                "featured_rows": int(len(featured)),
+                "fetched_symbols": fetched_symbols,
+                "failed_symbols": failed_symbols,
+            },
+        )
         return None
 
     cfg = get_research_config()
 
     model_paths: dict[int, Path] = {}
     validation_scores: dict[int, float] = {}
+    temporal_validation_ledger: dict[str, object] = {}
     all_passed = True
 
     for horizon in HORIZONS:
@@ -294,65 +650,185 @@ def retrain_and_promote(
         mask = labels.notna()
         X_all = featured.loc[mask, feature_cols]
         y_all = labels.loc[mask]
+        timestamps = pd.DatetimeIndex(X_all.index.get_level_values("timestamp")) if isinstance(X_all.index, pd.MultiIndex) else pd.DatetimeIndex([])
 
         if len(X_all) < 500:
             logger.warning("Retrain: insufficient data for horizon=%dh (%d rows), skipping", horizon, len(X_all))
             continue
 
-        # Split on the FILTERED data, not the raw featured frame
-        split_idx = int(len(X_all) * 0.8)
-        X_train = X_all.iloc[:split_idx]
-        y_train = y_all.iloc[:split_idx]
-        X_test = X_all.iloc[split_idx:]
-        y_test = y_all.iloc[split_idx:]
+        logger.info("Retrain horizon=%dh: evaluating explicit temporal folds", horizon)
 
-        logger.info("Retrain horizon=%dh: train=%d test=%d", horizon, len(X_train), len(X_test))
-
-        # Compute sample weights for recency bias (Phase 4)
-        if "timestamp" in featured.columns:
-            timestamps = pd.to_datetime(featured.loc[mask, "timestamp"])
-            sample_weights = _compute_sample_weights(timestamps, half_life_days=60)
-        else:
-            sample_weights = None
-
-        try:
-            sw_train = sample_weights[:split_idx] if sample_weights is not None else None
-            model = train(X_train, y_train, horizon=horizon, sample_weight=sw_train)
-        except Exception as e:
-            logger.error("Retrain horizon=%dh training failed: %s", horizon, e)
-            all_passed = False
-            continue
-
-        # Phase 2: Walk-forward CV validation (more robust than single split)
         cv_accuracy = _walk_forward_cv(
-            X_all, y_all, horizon=horizon,
-            n_splits=5, embargo_bars=100, cal_frac=cfg.wf_calibration_frac
+            X_all,
+            y_all,
+            horizon=horizon,
+            n_splits=5,
+            embargo_bars=100,
+            cal_frac=cfg.wf_calibration_frac,
+            timestamps=timestamps,
         )
-        # Also get single-split accuracy for comparison
-        single_accuracy = _validate_model_single(model, X_test, y_test)
+        temporal_summary = _consume_temporal_validation_summary()
+        if temporal_summary is not None:
+            temporal_validation_ledger[str(horizon)] = temporal_summary
 
-        # Use CV accuracy for promotion gate, log both
-        accuracy = cv_accuracy if cv_accuracy > 0 else single_accuracy
-        validation_scores[horizon] = accuracy
-        logger.info("Retrain horizon=%dh: CV accuracy=%.4f, single-split=%.4f (threshold=%.4f)",
-                    horizon, cv_accuracy, single_accuracy, min_accuracy)
+        dev_accuracy = float(cv_accuracy)
+        logger.info(
+            "Retrain horizon=%dh: dev_accuracy=%.4f (threshold=%.4f)",
+            horizon,
+            dev_accuracy,
+            min_accuracy,
+        )
 
-        if accuracy < min_accuracy:
-            logger.warning("Retrain horizon=%dh: FAILED validation (%.4f < %.4f)", horizon, accuracy, min_accuracy)
+        if dev_accuracy <= 0.0:
+            logger.warning("Retrain horizon=%dh: failed to produce usable development evidence", horizon)
             all_passed = False
             continue
 
-        path = artifact_dir / f"model_{horizon}m.pkl"
-        save_model(model, path)
+        if dev_accuracy < min_accuracy:
+            logger.warning("Retrain horizon=%dh: FAILED development validation (%.4f < %.4f)", horizon, dev_accuracy, min_accuracy)
+            all_passed = False
+            continue
+
+        # Refit on the approved development window using the best dev half-life.
+        best_half_life = 60.0
+        if temporal_summary is not None:
+            selected = temporal_summary.get("selected") or {}
+            best_half_life = float(selected.get("half_life_days", 60.0))
+        holdout_rows = int((temporal_summary or {}).get("holdout_rows") or 0)
+        if holdout_rows <= 0 or holdout_rows >= len(X_all):
+            logger.warning(
+                "Retrain horizon=%dh: invalid untouched holdout window (%d rows); refusing promotion",
+                horizon,
+                holdout_rows,
+            )
+            all_passed = False
+            continue
+        dev_mask = np.ones(len(X_all), dtype=bool)
+        if holdout_rows > 0:
+            dev_mask[-holdout_rows:] = False
+        X_train = X_all.iloc[np.flatnonzero(dev_mask)]
+        y_train = y_all.iloc[np.flatnonzero(dev_mask)]
+        X_holdout = X_all.iloc[-holdout_rows:]
+        y_holdout = y_all.iloc[-holdout_rows:]
+        sample_weights = _compute_sample_weights(pd.DatetimeIndex(X_train.index.get_level_values("timestamp")), half_life_days=best_half_life)
+        logger.info(
+            "Retrain horizon=%dh: refit on %d dev rows with half_life=%.0f ess=%.1f",
+            horizon,
+            len(X_train),
+            best_half_life,
+            effective_sample_size(sample_weights),
+        )
+        try:
+            model = train(X_train, y_train, horizon=horizon, sample_weight=sample_weights)
+        except Exception as e:
+            logger.error("Retrain horizon=%dh refit failed: %s", horizon, e)
+            all_passed = False
+            continue
+
+        holdout_accuracy = float(_validate_model_single(model, X_holdout, y_holdout))
+        validation_scores[horizon] = holdout_accuracy
+        logger.info(
+            "Retrain horizon=%dh: final_holdout_accuracy=%.4f (threshold=%.4f)",
+            horizon,
+            holdout_accuracy,
+            min_accuracy,
+        )
+        if holdout_accuracy < min_accuracy:
+            logger.warning(
+                "Retrain horizon=%dh: FAILED untouched holdout validation (%.4f < %.4f)",
+                horizon,
+                holdout_accuracy,
+                min_accuracy,
+            )
+            all_passed = False
+            continue
+
+        path = staging_dir / f"model_{horizon}m.pkl"
+        artifact_metadata = {
+            "dataset_manifest": raw_manifest.to_dict(),
+            "validation_summary": temporal_summary,
+            "validation_score": float(holdout_accuracy),
+            "freeze_summary": {
+                "configuration_frozen": True,
+                "development_accuracy": float(dev_accuracy),
+                "holdout_accuracy": float(holdout_accuracy),
+                "selected_half_life_days": float(best_half_life),
+                "holdout_rows": int(holdout_rows),
+                "holdout_start": str((temporal_summary or {}).get("holdout_start") or ""),
+                "holdout_end": str((temporal_summary or {}).get("holdout_end") or ""),
+            },
+            "fit_window": {
+                "rows": int(len(X_train)),
+                "start": str(pd.DatetimeIndex(X_train.index.get_level_values("timestamp")).min()),
+                "end": str(pd.DatetimeIndex(X_train.index.get_level_values("timestamp")).max()),
+            },
+            "holdout_window": {
+                "rows": int(len(X_holdout)),
+                "start": str(pd.DatetimeIndex(X_holdout.index.get_level_values("timestamp")).min()),
+                "end": str(pd.DatetimeIndex(X_holdout.index.get_level_values("timestamp")).max()),
+            },
+            "selected_half_life_days": float(best_half_life),
+            "sample_weight_policy": {
+                "half_life_days": float(best_half_life),
+                "effective_sample_size": float(effective_sample_size(sample_weights)),
+            },
+            "validation_policy": {
+                "validation_policy_version": VALIDATION_POLICY_VERSION,
+                "quality_recovery_policy_version": QUALITY_RECOVERY_POLICY_VERSION,
+                "training_windows_months": list((temporal_summary or {}).get("training_windows_months", [])),
+                "holdout_months": int((temporal_summary or {}).get("holdout_months", 0) or 0),
+                "purge_bars": int((temporal_summary or {}).get("purge_bars", 0) or 0),
+                "trial_count": int((temporal_summary or {}).get("actual_trial_count", 0) or 0),
+            },
+            "calibration_policy": {
+                "strategy": "fold_local_sigmoid_calibration",
+                "sample_fraction": float(get_research_config().wf_calibration_frac),
+                "selection_source": str(
+                    ((temporal_summary or {}).get("selected") or {}).get("threshold_policy", {}).get("source", "default")
+                ),
+            },
+            "runtime_policy": {
+                "min_accuracy": min_accuracy,
+                "require_all_symbols": require_all_symbols,
+                "require_all_horizons": require_all_horizons,
+                "auto_promote": auto_promote,
+            },
+            "estimator": {
+                "name": "LGBMClassifier",
+                "calibration_method": getattr(model, "calibration_method", "sigmoid"),
+                "calibration_samples": int(getattr(model, "calibration_samples", 0)),
+                "fit_samples": int(getattr(model, "fit_samples", 0)),
+            },
+            "threshold": float(
+                ((temporal_summary or {}).get("selected") or {}).get("threshold_policy", {}).get("selected_threshold", 0.5)
+                or 0.5
+            ),
+            "threshold_policy": dict(
+                ((temporal_summary or {}).get("selected") or {}).get("threshold_policy")
+                or {
+                    "source": "default_fixed",
+                    "selected_threshold": 0.5,
+                    "selected_accuracy": None,
+                }
+            ),
+        }
+        _persist_staged_model_bundle(
+            model,
+            staging_path=path,
+            metadata=artifact_metadata,
+        )
+        _validate_artifact_bundle(path)
         model_paths[horizon] = path
         logger.info("Retrain horizon=%dh: saved to %s", horizon, path)
 
     if not model_paths:
         logger.error("Retrain: no models passed validation. Aborting promotion.")
-        _cleanup_artifact_dir(artifact_dir)
+        _abort(
+            "no_valid_horizon_models",
+            details={"missing_horizons": list(HORIZONS)},
+        )
         return None
 
-    require_all_horizons = _env_flag("RETRAIN_REQUIRE_ALL_HORIZONS", True)
     missing_horizons = sorted(set(HORIZONS) - set(model_paths))
     if require_all_horizons and (not all_passed or missing_horizons):
         logger.error(
@@ -361,16 +837,44 @@ def retrain_and_promote(
             missing_horizons,
             all_passed,
         )
-        _cleanup_artifact_dir(artifact_dir)
+        _abort(
+            "partial_horizon_set_rejected",
+            details={
+                "trained_horizons": sorted(model_paths),
+                "missing_horizons": missing_horizons,
+                "all_passed": bool(all_passed),
+            },
+        )
         return None
 
     if not all_passed:
         logger.warning("Retrain: some horizons failed but %d passed. Registering partial candidate.", len(model_paths))
 
+    try:
+        staging_dir.replace(final_dir)
+    except Exception as exc:
+        logger.error("Retrain: failed to publish staged artifact %s -> %s: %s", staging_dir, final_dir, exc)
+        _abort(
+            "staged_publish_failed",
+            details={"staging_dir": str(staging_dir), "final_dir": str(final_dir), "error": str(exc)},
+        )
+        return None
+
+    try:
+        for horizon in sorted(model_paths):
+            _validate_artifact_bundle(final_dir / f"model_{horizon}m.pkl")
+    except Exception as exc:
+        logger.error("Retrain: published artifact failed runtime validation: %s", exc)
+        _abort(
+            "published_artifact_validation_failed",
+            archive_source=final_dir,
+            details={"error": str(exc), "trained_horizons": sorted(model_paths)},
+        )
+        return None
+
     # Register as paper-quarantine by default. Activation is manual after
     # forward paper/shadow evaluation, unless the emergency override is set.
     registry = ModelRegistry(registry_root)
-    auto_promote = _env_flag("BOT_RETRAIN_AUTO_PROMOTE", False)
     registered_status = "candidate" if auto_promote else "paper_quarantine"
 
     metrics = {
@@ -381,6 +885,14 @@ def retrain_and_promote(
         "symbols_requested": symbols_to_fetch,
         "symbols_fetched": fetched_symbols,
         "symbols_failed": failed_symbols,
+        "raw_dataset_manifest": raw_manifest.to_dict(),
+        "temporal_validation_ledger": temporal_validation_ledger,
+        "selection_risk": {
+            horizon: _summarize_selection_risk(ledger)
+            for horizon, ledger in temporal_validation_ledger.items()
+            if isinstance(ledger, dict)
+        },
+        "trial_count": int(sum(int((entry.get("selected") or {}).get("trial_count", 0)) for entry in temporal_validation_ledger.values())) or len(HORIZONS),
         "min_train_rows": min_train_rows,
         "trained_at": timestamp,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -399,7 +911,7 @@ def retrain_and_promote(
     try:
         registry.register_version(
             version_id=version_id,
-            artifact_dir=artifact_dir,
+            artifact_dir=final_dir,
             metrics=metrics,
             tags={
                 "source": "scheduled_retrain",
@@ -426,19 +938,14 @@ def retrain_and_promote(
             logger.warning("Retrain: auto-promoted %s as active model", version_id)
     except Exception as e:
         logger.error("Retrain: registry candidate registration failed: %s", e)
+        _abort(
+            "registry_registration_failed",
+            archive_source=final_dir,
+            details={"error": str(e)},
+        )
         return None
 
     return version_id
-
-
-def _cleanup_artifact_dir(artifact_dir: Path) -> None:
-    """Remove empty artifact directory on failed retrain."""
-    try:
-        for f in artifact_dir.iterdir():
-            f.unlink()
-        artifact_dir.rmdir()
-    except Exception:
-        pass
 
 
 def run_scheduler_loop() -> None:

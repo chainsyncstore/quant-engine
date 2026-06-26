@@ -8,9 +8,9 @@ from pathlib import Path
 
 from quant.data.binance_client import BinanceClient
 from quant.features.pipeline import build_features, get_feature_columns
-from quant_v2.config import default_universe_symbols
 from quant_v2.data.multi_symbol_dataset import fetch_symbol_dataset
-from quant_v2.models.trainer import train, save_model
+from quant_v2.research.model_quality_recovery import QUALITY_RECOVERY_POLICY_VERSION, VALIDATION_POLICY_VERSION
+from quant_v2.models.trainer import save_model_bundle, train
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,18 @@ def run_retrain(
 
         model = train(X, y, horizon=horizon)
         path = output_dir / f"model_{horizon}m.pkl"
-        save_model(model, path)
+        save_model_bundle(
+            model,
+            path,
+            metadata={
+                "pipeline": "retrain_pipeline",
+                "symbol": symbol,
+                "train_months": train_months,
+                "horizon": horizon,
+                "validation_policy_version": VALIDATION_POLICY_VERSION,
+                "quality_recovery_policy_version": QUALITY_RECOVERY_POLICY_VERSION,
+            },
+        )
         model_paths[horizon] = path
         logger.info("Trained horizon=%dh: %d samples, saved to %s", horizon, len(X), path)
 
