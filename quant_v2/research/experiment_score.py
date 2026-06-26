@@ -27,6 +27,8 @@ class ExperimentScoreReport:
     gate_inputs: GateInputs
     score: float
     gates: GateResult
+    trial_count: int = 0
+    selection_risk: dict[str, Any] | None = None
 
 
 def _safe_mean(values: list[float], default: float = 0.0) -> float:
@@ -47,6 +49,8 @@ def build_report_from_experiment(experiment: dict[str, Any]) -> ExperimentScoreR
 
     results = experiment.get("results", {}) or {}
     horizons = [results[key] for key in sorted(results.keys(), key=lambda k: int(k))]
+    trial_count = int(experiment.get("trial_count") or 0)
+    selection_risk = experiment.get("selection_risk")
 
     dsr_values: list[float] = []
     overall_ev_values: list[float] = []
@@ -141,6 +145,8 @@ def build_report_from_experiment(experiment: dict[str, Any]) -> ExperimentScoreR
         gate_inputs=gate_inputs,
         score=score,
         gates=gates,
+        trial_count=trial_count,
+        selection_risk=selection_risk if isinstance(selection_risk, dict) else None,
     )
 
 

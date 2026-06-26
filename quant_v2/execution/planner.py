@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Iterable
 
 from quant_v2.contracts import ExecutionIntent, OrderPlan, StrategySignal
 from quant_v2.portfolio.allocation import AllocationDecision, allocate_signals
 from quant_v2.portfolio.optimizer import RiskParityOptimizer
-from quant_v2.portfolio.risk_policy import PolicyResult, PortfolioRiskPolicy
+from quant_v2.portfolio.risk_policy import OperatingRiskLimits, PolicyResult, PortfolioRiskPolicy
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,48 @@ class PlannerConfig:
     min_confidence: float = 0.65
     enable_optimizer: bool = True
     equity_usd: float = 300.0
+    target_headroom_ratio: float = 0.85
+    fee_reserve_frac: float = 0.0
+    slippage_reserve_frac: float = 0.0
+    rounding_reserve_frac: float = 0.0
+    min_quantity_reserve_frac: float = 0.0
+    adverse_mark_buffer_frac: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.total_risk_budget_frac <= 1.0:
+            raise ValueError("total_risk_budget_frac must be in [0, 1]")
+        if not 0.0 < self.max_symbol_exposure_frac <= 1.0:
+            raise ValueError("max_symbol_exposure_frac must be in (0, 1]")
+        if not 0.0 <= self.min_confidence <= 1.0:
+            raise ValueError("min_confidence must be in [0, 1]")
+        if self.equity_usd <= 0.0:
+            raise ValueError("equity_usd must be positive")
+        if not 0.0 < self.target_headroom_ratio <= 1.0:
+            raise ValueError("target_headroom_ratio must be within (0, 1]")
+        for name in (
+            "fee_reserve_frac",
+            "slippage_reserve_frac",
+            "rounding_reserve_frac",
+            "min_quantity_reserve_frac",
+            "adverse_mark_buffer_frac",
+        ):
+            value = float(getattr(self, name))
+            if not 0.0 <= value < 1.0:
+                raise ValueError(f"{name} must be within [0, 1)")
+
+    @property
+    def reserve_capacity_frac(self) -> float:
+        reserve = (
+            float(self.fee_reserve_frac)
+            + float(self.slippage_reserve_frac)
+            + float(self.rounding_reserve_frac)
+            + float(self.min_quantity_reserve_frac)
+        )
+        return min(max(reserve, 0.0), 0.95)
+
+    @property
+    def effective_operating_ratio(self) -> float:
+        return float(self.target_headroom_ratio) * (1.0 - self.reserve_capacity_frac)
 
 
 def build_execution_intents(
@@ -53,8 +99,6 @@ def build_execution_intents(
     preventing silent HOLDs from trapping a position indefinitely.  See
     audit_20260423 P0-3 / P0-3b.
     """
-    import pandas as pd  # local import to avoid circular dependency
-
     allocation = allocate_signals(
         signals,
         total_risk_budget_frac=config.total_risk_budget_frac,
@@ -86,7 +130,35 @@ def build_execution_intents(
         if opt_result.weights:
             optimized_exposures = opt_result.weights
 
-    policy_result = policy.apply(optimized_exposures, bucket_map=bucket_map)
+    if isinstance(policy, OperatingRiskLimits) and policy.limit_source == "operating_headroom":
+        policy_result = policy.apply(
+            optimized_exposures,
+            bucket_map=bucket_map,
+        )
+    elif isinstance(policy, OperatingRiskLimits):
+        operating_policy = OperatingRiskLimits.from_hard_limits(
+            policy.hard_limits,
+            max_symbol_exposure_frac=policy.max_symbol_exposure_frac,
+            max_gross_exposure_frac=policy.max_gross_exposure_frac,
+            max_net_exposure_frac=policy.max_net_exposure_frac,
+            correlation_bucket_caps=policy.correlation_bucket_caps,
+            limit_source=policy.limit_source,
+            target_headroom_ratio=config.target_headroom_ratio,
+            fee_reserve_frac=config.fee_reserve_frac,
+            slippage_reserve_frac=config.slippage_reserve_frac,
+            rounding_reserve_frac=config.rounding_reserve_frac,
+            min_quantity_reserve_frac=config.min_quantity_reserve_frac,
+            adverse_mark_buffer_frac=config.adverse_mark_buffer_frac,
+        )
+        policy_result = operating_policy.scaled(operating_policy.effective_headroom_ratio).apply(
+            optimized_exposures,
+            bucket_map=bucket_map,
+        )
+    else:
+        policy_result = policy.scaled(config.effective_operating_ratio).apply(
+            optimized_exposures,
+            bucket_map=bucket_map,
+        )
 
     intents: list[ExecutionIntent] = []
     signal_map = {signal.symbol: signal for signal in signals}

@@ -84,10 +84,17 @@ def load_or_build_dataset(
         dataset,
         dataset_name=f"stage1_{selected_interval}",
         metadata={
+            "requested_symbols": list(selected_symbols),
+            "fetched_symbols": sorted(set(dataset.index.get_level_values("symbol"))),
+            "requested_time_range_start": date_from.isoformat(),
+            "requested_time_range_end": date_to.isoformat(),
+            "source_retrieved_at": date_to.isoformat(),
             "symbols": list(selected_symbols),
             "interval": selected_interval,
             "months": months,
             "fail_fast": fail_fast,
+            "raw_schema_version": "wp08-multi-symbol-raw-v1",
+            "transformed_schema_version": "wp08-multi-symbol-transformed-v1",
         },
         root_dir=root_dir,
     )

@@ -8,9 +8,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Sequence
 
-import numpy as np
 import pandas as pd
 
 from quant_v2.research.backtester import BacktestResult
@@ -26,6 +24,8 @@ def _compute_metrics(r: BacktestResult) -> dict:
     eq = r.equity_curve
     cfg = r.config
     daily = r.daily_returns
+    cost_components = r.cost_components_usd or {}
+    total_cost_usd = float(cost_components.get("total_cost_usd", r.total_fees + r.total_slippage))
 
     calmar = 0.0
     if r.max_drawdown != 0.0:
@@ -33,17 +33,23 @@ def _compute_metrics(r: BacktestResult) -> dict:
         calmar = annual_return / abs(r.max_drawdown)
 
     avg_fee_per_trade = r.total_fees / max(r.total_trades, 1)
-    cost_drag_pct = (r.total_fees + r.total_slippage) / max(abs(r.gross_pnl), 1e-9)
+    cost_drag_pct = total_cost_usd / max(abs(r.gross_pnl), 1e-9)
 
     return {
         "Symbol": cfg.symbol,
         "Period": f"{cfg.start_date} → {cfg.end_date}",
+        "Cost policy": r.cost_policy_version or "legacy",
         "Initial equity": _fmt(cfg.initial_equity, pct=False),
         "Final equity": _fmt(float(eq.iloc[-1]) if not eq.empty else cfg.initial_equity),
         "Net PnL": _fmt(r.net_pnl),
         "Gross PnL": _fmt(r.gross_pnl),
         "Total fees": _fmt(r.total_fees),
         "Total slippage": _fmt(r.total_slippage),
+        "Total spread": _fmt(float(cost_components.get("spread", 0.0))),
+        "Total funding": _fmt(float(cost_components.get("funding", 0.0))),
+        "Total latency": _fmt(float(cost_components.get("latency", 0.0))),
+        "Total impact": _fmt(float(cost_components.get("impact", 0.0))),
+        "Total execution cost": _fmt(total_cost_usd),
         "Cost drag": _fmt(cost_drag_pct, pct=True),
         "Sharpe ratio": _fmt(r.sharpe),
         "Max drawdown": _fmt(r.max_drawdown, pct=True),
@@ -81,18 +87,49 @@ def _trade_log_html(fills: list, max_rows: int = 200) -> str:
         return "<p>No fills</p>"
     rows = []
     for f in fills[:max_rows]:
+        breakdown = getattr(f, "cost_breakdown", {}) or {}
+        total_cost = float(breakdown.get("total_cost_usd", f.fee_usd + f.slippage_usd))
         rows.append(
             f"<tr><td>{f.timestamp}</td><td>{f.symbol}</td><td>{f.side}</td>"
             f"<td>{f.quantity:.6f}</td><td>{f.price:,.2f}</td>"
             f"<td>{f.fee_usd:.4f}</td><td>{f.slippage_usd:.4f}</td>"
+            f"<td>{total_cost:.4f}</td><td>{getattr(f, 'policy_version', '')}</td>"
             f"<td>{f.confidence:.3f}</td></tr>"
         )
     return (
         "<table border='1' cellpadding='4' style='border-collapse:collapse;font-size:11px'>"
         "<tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th>"
-        "<th>Price</th><th>Fee $</th><th>Slip $</th><th>Conf</th></tr>"
+        "<th>Price</th><th>Fee $</th><th>Slip $</th><th>Total Cost $</th>"
+        "<th>Policy</th><th>Conf</th></tr>"
         + "".join(rows)
         + f"</table><p style='font-size:11px'>Showing {min(len(fills),max_rows)} of {len(fills)} fills</p>"
+    )
+
+
+def _cost_sensitivity_html(cost_scenarios: dict[str, dict[str, float]], policy_version: str) -> str:
+    if not cost_scenarios:
+        return "<p>No scenario data</p>"
+    order = ("base", "adverse", "severe")
+    rows = []
+    for scenario in order:
+        totals = cost_scenarios.get(scenario)
+        if not totals:
+            continue
+        rows.append(
+            "<tr>"
+            f"<td>{scenario.title()}</td>"
+            f"<td>{policy_version}</td>"
+            f"<td>{totals.get('notional_usd', 0.0):,.2f}</td>"
+            f"<td>{totals.get('total_cost_usd', 0.0):,.2f}</td>"
+            f"<td>{totals.get('total_cost_bps', 0.0):.2f}</td>"
+            "</tr>"
+        )
+    return (
+        "<table border='1' cellpadding='4' style='border-collapse:collapse;font-size:12px'>"
+        "<tr><th>Scenario</th><th>Policy</th><th>Notional $</th>"
+        "<th>Total Cost $</th><th>Total Cost bps</th></tr>"
+        + "".join(rows)
+        + "</table>"
     )
 
 
@@ -198,6 +235,8 @@ td {{ padding: 4px 8px; }}
 
 <h2>Monthly Returns</h2>
 {monthly_table}
+
+{sensitivity_section}
 
 <h2>Per-Symbol Breakdown</h2>
 {symbol_breakdown}
@@ -332,6 +371,12 @@ def generate_report(
     title = f"{result.config.symbol}"
     period = f"{result.config.start_date} → {result.config.end_date}"
     chart_data = _equity_chart_js(result.equity_curve, label=title, color="#3498db")
+    sensitivity_section = ""
+    if result.cost_scenarios:
+        sensitivity_section = (
+            "<h2>Cost Sensitivity</h2>"
+            + _cost_sensitivity_html(result.cost_scenarios, result.cost_policy_version or "legacy")
+        )
 
     comp_section = ""
     comp_chart_js = ""
@@ -358,6 +403,7 @@ def generate_report(
         comparison_section=comp_section,
         comparison_chart_js=comp_chart_js,
         monthly_table=_monthly_returns_table(result.daily_returns),
+        sensitivity_section=sensitivity_section,
         symbol_breakdown=_symbol_breakdown_html(result.fills),
         trade_log=_trade_log_html(result.fills),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

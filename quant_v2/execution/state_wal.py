@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -17,6 +16,35 @@ _SENSITIVE_KEYS = re.compile(
     r"(api_key|api_secret|secret|password|token|credentials)",
     re.IGNORECASE,
 )
+
+
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _stream_id_age_seconds(stream_id: str, *, now_ms: int | None = None) -> float | None:
+    raw = str(stream_id or "").strip()
+    if not raw or "-" not in raw:
+        return None
+
+    head = raw.split("-", 1)[0]
+    try:
+        entry_ms = int(head)
+    except ValueError:
+        return None
+
+    current_ms = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000.0)
+    return max((current_ms - entry_ms) / 1000.0, 0.0)
 
 
 def _scrub_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -34,6 +62,98 @@ def _scrub_payload(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             scrubbed[key] = value
     return scrubbed
+
+
+LIFECYCLE_STATE_ORDER: dict[str, int] = {
+    "ACTIVE": 0,
+    "SOFT_BREACH": 1,
+    "REDUCE_ONLY": 2,
+    "INCIDENT": 3,
+    "FLATTENING": 4,
+    "FLAT_CONFIRMED": 5,
+    "PAUSED": 6,
+}
+
+
+def _normalize_lifecycle_state(state: str) -> str:
+    normalized = str(state or "").strip().upper()
+    if normalized not in LIFECYCLE_STATE_ORDER:
+        raise ValueError(f"Unknown lifecycle state: {state!r}")
+    return normalized
+
+
+def validate_lifecycle_transition(previous_state: str | None, next_state: str) -> None:
+    """Raise if a lifecycle transition would move backwards."""
+
+    next_rank = LIFECYCLE_STATE_ORDER[_normalize_lifecycle_state(next_state)]
+    if previous_state is None:
+        return
+
+    previous_rank = LIFECYCLE_STATE_ORDER[_normalize_lifecycle_state(previous_state)]
+    if next_rank < previous_rank:
+        raise ValueError(
+            f"Lifecycle transition must be monotonic: {previous_state!r} -> {next_state!r}"
+        )
+
+
+@dataclass(frozen=True)
+class LifecycleStateRecord:
+    """Durable lifecycle state snapshot for an execution session."""
+
+    state: str
+    owner: str
+    retry_count: int
+    reason: str
+    policy_version: str
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    transitioned_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "state", _normalize_lifecycle_state(self.state))
+        object.__setattr__(self, "owner", str(self.owner or "").strip())
+        object.__setattr__(self, "reason", str(self.reason or "").strip())
+        object.__setattr__(self, "policy_version", str(self.policy_version or "").strip())
+        object.__setattr__(self, "retry_count", int(self.retry_count))
+
+        if not self.owner:
+            raise ValueError("Lifecycle owner cannot be empty")
+        if not self.reason:
+            raise ValueError("Lifecycle reason cannot be empty")
+        if not self.policy_version:
+            raise ValueError("Lifecycle policy_version cannot be empty")
+        if self.retry_count < 0:
+            raise ValueError("retry_count must be >= 0")
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a JSON-serialisable payload for WAL persistence."""
+
+        return asdict(self)
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "LifecycleStateRecord":
+        """Restore a record from a WAL payload."""
+
+        timestamps = payload.get("timestamps")
+        if isinstance(timestamps, dict):
+            created_at = str(timestamps.get("created_at", "") or "")
+            transitioned_at = str(timestamps.get("transitioned_at", "") or "")
+            updated_at = str(timestamps.get("updated_at", "") or "")
+        else:
+            created_at = str(payload.get("created_at", "") or "")
+            transitioned_at = str(payload.get("transitioned_at", "") or "")
+            updated_at = str(payload.get("updated_at", "") or "")
+
+        return cls(
+            state=str(payload.get("state", "")),
+            owner=str(payload.get("owner", "")),
+            retry_count=int(payload.get("retry_count", 0) or 0),
+            reason=str(payload.get("reason", "")),
+            policy_version=str(payload.get("policy_version", "")),
+            created_at=created_at or datetime.now(timezone.utc).isoformat(),
+            transitioned_at=transitioned_at or datetime.now(timezone.utc).isoformat(),
+            updated_at=updated_at or datetime.now(timezone.utc).isoformat(),
+        )
 
 
 @dataclass(frozen=True)
@@ -163,6 +283,55 @@ class RedisWAL:
             logger.info("WAL trimmed %d old entries (max=%d)", trimmed, max_entries)
         return trimmed
 
+    async def get_stream_health(self, *, stale_after_seconds: float = 120.0) -> dict[str, Any]:
+        """Summarize WAL freshness and append-only depth."""
+
+        if not self._redis:
+            raise RuntimeError("RedisWAL is not connected")
+
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000.0)
+
+        try:
+            raw_info = await self._redis.xinfo_stream(WAL_STREAM_KEY)
+        except Exception:
+            raw_info = {}
+        stream_info = raw_info if isinstance(raw_info, dict) else {}
+
+        entry_count = _coerce_int(stream_info.get("length", 0))
+        first_entry = stream_info.get("first-entry")
+        last_entry = stream_info.get("last-entry")
+
+        def _entry_id(entry: Any) -> str:
+            if isinstance(entry, (list, tuple)) and entry:
+                return str(entry[0] or "")
+            if isinstance(entry, dict):
+                return str(entry.get("id", "") or "")
+            return ""
+
+        oldest_entry_id = _entry_id(first_entry)
+        latest_entry_id = _entry_id(last_entry)
+        oldest_entry_age_seconds = _stream_id_age_seconds(oldest_entry_id, now_ms=now_ms)
+        latest_entry_age_seconds = _stream_id_age_seconds(latest_entry_id, now_ms=now_ms)
+
+        status = "unknown"
+        if entry_count > 0:
+            status = "healthy"
+            if latest_entry_age_seconds is not None and latest_entry_age_seconds >= stale_after_seconds:
+                status = "warning"
+            if latest_entry_age_seconds is not None and latest_entry_age_seconds >= stale_after_seconds * 2.0:
+                status = "degraded"
+
+        return {
+            "status": status,
+            "stream_key": WAL_STREAM_KEY,
+            "entry_count": entry_count,
+            "oldest_entry_id": oldest_entry_id,
+            "latest_entry_id": latest_entry_id,
+            "oldest_entry_age_seconds": oldest_entry_age_seconds,
+            "latest_entry_age_seconds": latest_entry_age_seconds,
+            "stale_after_seconds": float(stale_after_seconds),
+        }
+
     # -- Convenience helpers for common events --
 
     async def log_session_started(
@@ -172,15 +341,19 @@ class RedisWAL:
         live: bool,
         strategy_profile: str = "",
         universe: tuple[str, ...] = (),
+        lifecycle_state: LifecycleStateRecord | None = None,
     ) -> str:
+        payload: dict[str, Any] = {
+            "live": live,
+            "strategy_profile": strategy_profile,
+            "universe": list(universe),
+        }
+        if lifecycle_state is not None:
+            payload["lifecycle_state"] = lifecycle_state.to_payload()
         return await self.append(WALEntry(
             event_type=EVT_SESSION_STARTED,
             user_id=user_id,
-            payload={
-                "live": live,
-                "strategy_profile": strategy_profile,
-                "universe": list(universe),
-            },
+            payload=payload,
         ))
 
     async def log_session_stopped(self, user_id: int) -> str:
@@ -220,6 +393,18 @@ class RedisWAL:
             payload={"equity_usd": equity_usd},
         ))
 
+    async def log_lifecycle_transition(
+        self,
+        user_id: int,
+        *,
+        record: LifecycleStateRecord,
+    ) -> str:
+        return await self.append(WALEntry(
+            event_type=EVT_LIFECYCLE_CHANGED,
+            user_id=user_id,
+            payload=record.to_payload(),
+        ))
+
     async def log_order_executed(
         self,
         user_id: int,
@@ -229,6 +414,17 @@ class RedisWAL:
         quantity: float,
         avg_price: float,
         status: str,
+        risk_policy_version: str = "",
+        outcome: str = "",
+        newly_filled_qty: float = 0.0,
+        request_id: str = "",
+        venue_order_id: str = "",
+        fill_id: str = "",
+        accounting_transaction_id: str = "",
+        original_order_id: str = "",
+        original_fill_id: str = "",
+        replayed_at: str = "",
+        correlation_id: str = "",
     ) -> str:
         return await self.append(WALEntry(
             event_type=EVT_ORDER_EXECUTED,
@@ -239,6 +435,17 @@ class RedisWAL:
                 "quantity": quantity,
                 "avg_price": avg_price,
                 "status": status,
+                "risk_policy_version": risk_policy_version,
+                "outcome": outcome,
+                "newly_filled_qty": newly_filled_qty,
+                "request_id": request_id,
+                "venue_order_id": venue_order_id,
+                "fill_id": fill_id,
+                "accounting_transaction_id": accounting_transaction_id,
+                "original_order_id": original_order_id,
+                "original_fill_id": original_fill_id,
+                "replayed_at": replayed_at,
+                "correlation_id": correlation_id,
             },
         ))
 
@@ -297,8 +504,15 @@ class InMemoryWAL:
         return overflow
 
     # Convenience helpers matching RedisWAL interface
-    async def log_session_started(self, user_id: int, *, live: bool, strategy_profile: str = "", universe: tuple[str, ...] = ()) -> str:
-        return await self.append(WALEntry(event_type=EVT_SESSION_STARTED, user_id=user_id, payload={"live": live, "strategy_profile": strategy_profile, "universe": list(universe)}))
+    async def log_session_started(self, user_id: int, *, live: bool, strategy_profile: str = "", universe: tuple[str, ...] = (), lifecycle_state: LifecycleStateRecord | None = None) -> str:
+        payload: dict[str, Any] = {
+            "live": live,
+            "strategy_profile": strategy_profile,
+            "universe": list(universe),
+        }
+        if lifecycle_state is not None:
+            payload["lifecycle_state"] = lifecycle_state.to_payload()
+        return await self.append(WALEntry(event_type=EVT_SESSION_STARTED, user_id=user_id, payload=payload))
 
     async def log_session_stopped(self, user_id: int) -> str:
         return await self.append(WALEntry(event_type=EVT_SESSION_STOPPED, user_id=user_id, payload={}))
@@ -309,8 +523,54 @@ class InMemoryWAL:
     async def log_equity_updated(self, user_id: int, *, equity_usd: float) -> str:
         return await self.append(WALEntry(event_type=EVT_EQUITY_UPDATED, user_id=user_id, payload={"equity_usd": equity_usd}))
 
-    async def log_order_executed(self, user_id: int, *, symbol: str, side: str, quantity: float, avg_price: float, status: str) -> str:
-        return await self.append(WALEntry(event_type=EVT_ORDER_EXECUTED, user_id=user_id, payload={"symbol": symbol, "side": side, "quantity": quantity, "avg_price": avg_price, "status": status}))
+    async def log_lifecycle_transition(self, user_id: int, *, record: LifecycleStateRecord) -> str:
+        return await self.append(WALEntry(event_type=EVT_LIFECYCLE_CHANGED, user_id=user_id, payload=record.to_payload()))
+
+    async def log_order_executed(
+        self,
+        user_id: int,
+        *,
+        symbol: str,
+        side: str,
+        quantity: float,
+        avg_price: float,
+        status: str,
+        risk_policy_version: str = "",
+        outcome: str = "",
+        newly_filled_qty: float = 0.0,
+        request_id: str = "",
+        venue_order_id: str = "",
+        fill_id: str = "",
+        accounting_transaction_id: str = "",
+        original_order_id: str = "",
+        original_fill_id: str = "",
+        replayed_at: str = "",
+        correlation_id: str = "",
+    ) -> str:
+        return await self.append(
+            WALEntry(
+                event_type=EVT_ORDER_EXECUTED,
+                user_id=user_id,
+                payload={
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": quantity,
+                    "avg_price": avg_price,
+                    "status": status,
+                    "risk_policy_version": risk_policy_version,
+                    "outcome": outcome,
+                    "newly_filled_qty": newly_filled_qty,
+                    "request_id": request_id,
+                    "venue_order_id": venue_order_id,
+                    "fill_id": fill_id,
+                    "accounting_transaction_id": accounting_transaction_id,
+                    "original_order_id": original_order_id,
+                    "original_fill_id": original_fill_id,
+                    "replayed_at": replayed_at,
+                    "correlation_id": correlation_id,
+                },
+            )
+        )
 
     async def log_state_checkpoint(self, user_id: int, *, equity_baseline_usd: float, open_positions: dict[str, float], paper_entry_prices: dict[str, float]) -> str:
         return await self.append(WALEntry(event_type=EVT_STATE_CHECKPOINT, user_id=user_id, payload={"equity_baseline_usd": equity_baseline_usd, "open_positions": {k: v for k, v in open_positions.items() if abs(v) > 1e-12}, "paper_entry_prices": dict(paper_entry_prices)}))

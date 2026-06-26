@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
+from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, OrderPlan, StrategySignal
 from quant_v2.execution.adapters import ExecutionResult
+from quant_v2.execution.outcomes import ExecutionOutcome
 from quant_v2.execution.planner import PlannerConfig
 from quant_v2.execution.service import (
+    ExecutionStageTelemetry,
     HardRiskPauseEvent,
     InMemoryExecutionService,
     RouteAuditEvent,
@@ -113,6 +115,80 @@ def test_in_memory_execution_service_reset_session_state_rejects_live_and_missin
 
     assert asyncio.run(service.start_session(SessionRequest(user_id=110, live=True))) is True
     assert service.reset_session_state(110) is False
+
+
+def test_routed_execution_service_idempotent_replay_returns_zero_new_fill(monkeypatch) -> None:
+    class CountingAdapter:
+        def __init__(self) -> None:
+            self.place_calls = 0
+            self.positions: dict[str, float] = {}
+
+        def get_positions(self):
+            return dict(self.positions)
+
+        def place_order(
+            self,
+            plan,
+            *,
+            idempotency_key: str,
+            mark_price: float | None = None,
+            limit_price: float | None = None,
+            post_only: bool = False,
+        ):
+            _ = mark_price, limit_price, post_only
+            self.place_calls += 1
+            delta = float(plan.quantity) if plan.side == "BUY" else -float(plan.quantity)
+            self.positions[plan.symbol] = self.positions.get(plan.symbol, 0.0) + delta
+            return ExecutionResult(
+                accepted=True,
+                order_id=f"paper-{self.place_calls}",
+                idempotency_key=idempotency_key,
+                symbol=plan.symbol,
+                side=plan.side,
+                requested_qty=float(plan.quantity),
+                filled_qty=float(plan.quantity),
+                avg_price=100.0,
+                status="filled",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+    service = RoutedExecutionService(paper_adapter_factory=CountingAdapter)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=120, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.8,
+    )
+    prices = {"BTCUSDT": 100.0}
+
+    monkeypatch.setattr(
+        "quant_v2.execution.service.build_idempotency_key",
+        lambda *, user_id, plan, epoch_minute=None: "fixed-idempotency-key",
+    )
+    monkeypatch.setattr(
+        "quant_v2.execution.service.reconcile_target_exposures",
+        lambda *args, **kwargs: [OrderPlan(symbol="BTCUSDT", side="BUY", quantity=0.5)],
+    )
+
+    first = asyncio.run(service.route_signals(120, signals=(signal,), prices=prices))
+    second = asyncio.run(service.route_signals(120, signals=(signal,), prices=prices))
+
+    assert len(first) == 1
+    assert len(second) == 1
+    assert first[0].outcome == ExecutionOutcome.NEW_FILL
+    assert first[0].newly_filled_qty == first[0].filled_qty
+    assert second[0].outcome == ExecutionOutcome.IDEMPOTENT_REPLAY
+    assert second[0].newly_filled_qty == 0.0
+    assert second[0].filled_qty == first[0].filled_qty
+
+    adapter = service._sessions[120].adapter
+    assert adapter.place_calls == 1
+    snap = service.get_portfolio_snapshot(120)
+    assert snap is not None
+    assert snap.open_positions == {"BTCUSDT": float(first[0].filled_qty)}
 
 
 def test_routed_execution_service_demo_uses_paper_adapter_factory() -> None:
@@ -279,9 +355,10 @@ def test_duplicate_idempotency_key_does_not_reapply_paper_realized_pnl() -> None
     )
     assert state.equity_baseline_usd == pytest.approx(10_010.0)
 
+    replay = result.replay_copy()
     service._update_paper_entry_price(
         state,
-        results=(result,),
+        results=(replay,),
         prices={"BTCUSDT": 110.0},
         starting_positions={"BTCUSDT": 1.0},
     )
@@ -306,6 +383,7 @@ def test_routed_execution_service_emits_route_audit_events() -> None:
             4011,
             signals=(signal,),
             prices={"BTCUSDT": 100.0},
+            correlation_id="corr-route-4011",
         )
     )
 
@@ -313,12 +391,48 @@ def test_routed_execution_service_emits_route_audit_events() -> None:
     assert events
     event = events[-1]
     assert event.user_id == 4011
+    assert event.correlation_id == "corr-route-4011"
     assert event.symbol == "BTCUSDT"
     assert event.side == "BUY"
     assert event.accepted is True
     assert event.status == "filled"
-    assert event.action_class == "entry"
+    assert event.action_class == "INCREASE"
     assert event.mark_price == pytest.approx(100.0)
+    assert event.risk_policy_version
+    assert routed[0].risk_policy_version == event.risk_policy_version
+    assert event.hard_symbol_cap_frac >= event.operating_symbol_cap_frac
+    assert event.dynamic_symbol_cap_frac > event.operating_symbol_cap_frac
+    assert event.current_symbol_exposure_frac == pytest.approx(0.0)
+    assert event.projected_symbol_exposure_frac > 0.0
+
+
+def test_routed_execution_service_emits_stage_telemetry_for_planning_and_routing() -> None:
+    events: list[ExecutionStageTelemetry] = []
+    service = RoutedExecutionService(stage_telemetry_callback=events.append)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4012, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.90,
+    )
+
+    routed = asyncio.run(
+        service.route_signals(
+            4012,
+            signals=(signal,),
+            prices={"BTCUSDT": 100.0},
+            correlation_id="corr-stage-4012",
+        )
+    )
+
+    assert len(routed) == 1
+    assert [event.stage for event in events] == ["planning", "order_execution", "route_signals"]
+    assert all(event.correlation_id == "corr-stage-4012" for event in events)
+    assert all(event.duration_ms >= 0.0 for event in events)
+    assert events[-1].status == "ok"
 
 
 def test_routed_execution_service_hold_only_signals_do_not_flatten_existing_positions() -> None:
@@ -983,8 +1097,9 @@ def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None
         )
     )
     assert len(routed_rebalance) == 1
-    assert routed_rebalance[0].accepted is False
-    assert routed_rebalance[0].reason.startswith("skipped_by_deadband:")
+    assert routed_rebalance[0].accepted is True
+    assert routed_rebalance[0].side == "SELL"
+    assert routed_rebalance[0].reason == ""
 
     low_conf_signal = StrategySignal(
         symbol="BTCUSDT",
@@ -1009,12 +1124,12 @@ def test_routed_execution_service_tracks_entry_rebalance_exit_activity() -> None
 
     diagnostics = service.get_execution_diagnostics(509)
     assert diagnostics is not None
-    assert diagnostics.total_orders == 2
-    assert diagnostics.accepted_orders == 2
+    assert diagnostics.total_orders == 3
+    assert diagnostics.accepted_orders == 3
     assert diagnostics.entry_orders == 1
-    assert diagnostics.rebalance_orders == 0
+    assert diagnostics.rebalance_orders == 1
     assert diagnostics.exit_orders == 1
-    assert diagnostics.skipped_by_deadband == 1
+    assert diagnostics.skipped_by_deadband == 0
 
 
 def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
@@ -1031,6 +1146,7 @@ def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
             total_risk_budget_frac=1.0,
             max_symbol_exposure_frac=0.10,
             min_confidence=0.0,
+            target_headroom_ratio=1.0,
         ),
     )
     assert asyncio.run(service.start_session(SessionRequest(user_id=510, live=False))) is True
@@ -1074,13 +1190,16 @@ def test_routed_execution_service_deadband_skips_small_rebalance() -> None:
         )
     )
     assert len(routed_rebalance) == 1
-    assert routed_rebalance[0].accepted is False
-    assert routed_rebalance[0].reason.startswith("skipped_by_deadband:weight_drift_and_absolute_usd")
+    assert routed_rebalance[0].accepted is True
+    assert routed_rebalance[0].side == "SELL"
+    assert routed_rebalance[0].reason == ""
 
     diagnostics = service.get_execution_diagnostics(510)
     assert diagnostics is not None
-    assert diagnostics.total_orders == 1
-    assert diagnostics.skipped_by_deadband == 1
+    assert diagnostics.total_orders == 2
+    assert diagnostics.accepted_orders == 2
+    assert diagnostics.rebalance_orders == 1
+    assert diagnostics.skipped_by_deadband == 0
 
 
 def test_routed_execution_service_filter_skips_do_not_count_as_rejects() -> None:
@@ -1128,6 +1247,99 @@ def test_routed_execution_service_filter_skips_do_not_count_as_rejects() -> None
     assert diagnostics.total_orders == 0
     assert diagnostics.rejected_orders == 0
     assert diagnostics.skipped_by_filter == 1
+
+
+def test_routed_execution_service_residual_supervision_pauses_trading() -> None:
+    class ResidualAdapter:
+        def __init__(self) -> None:
+            self._positions = {"BTCUSDT": 20.0}
+
+        def get_positions(self):
+            return dict(self._positions)
+
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
+            return ExecutionResult(
+                accepted=True,
+                order_id="paper-residual-1",
+                idempotency_key=idempotency_key,
+                symbol=plan.symbol,
+                side=plan.side,
+                requested_qty=plan.quantity,
+                filled_qty=plan.quantity,
+                avg_price=float(mark_price or 0.0),
+                status="filled",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="bounded_limit_exit:supervised_residual_position_required:step_size",
+            )
+
+    service = RoutedExecutionService(paper_adapter_factory=ResidualAdapter)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=5111, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="BUY",
+        confidence=0.95,
+    )
+    routed = asyncio.run(
+        service.route_signals(
+            5111,
+            signals=(signal,),
+            prices={"BTCUSDT": 100.0},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=0.10,
+                max_symbol_exposure_frac=0.10,
+                min_confidence=0.0,
+                enable_optimizer=False,
+                equity_usd=10_000.0,
+                target_headroom_ratio=1.0,
+            ),
+        )
+    )
+
+    assert len(routed) == 1
+    assert routed[0].accepted is True
+    assert routed[0].status == "filled"
+    assert routed[0].reason == "bounded_limit_exit:supervised_residual_position_required:step_size"
+    evaluation = service.get_kill_switch_evaluation(5111)
+    assert evaluation is not None
+    assert evaluation.pause_trading is True
+    assert "residual_position_supervision_required" in evaluation.reasons
+
+
+def test_routed_execution_service_lifecycle_state_transitions_are_monotonic() -> None:
+    service = RoutedExecutionService()
+    assert asyncio.run(service.start_session(SessionRequest(user_id=519, live=False))) is True
+
+    incident = service.set_lifecycle_state(
+        519,
+        state="INCIDENT",
+        owner="liquidation_supervisor",
+        reason="heartbeat_stale",
+    )
+    confirmed = service.set_lifecycle_state(
+        519,
+        state="FLAT_CONFIRMED",
+        owner="liquidation_supervisor",
+        reason="flat_confirmed",
+    )
+
+    assert incident.state == "INCIDENT"
+    assert confirmed.state == "FLAT_CONFIRMED"
+
+    with pytest.raises(ValueError):
+        service.set_lifecycle_state(
+            519,
+            state="ACTIVE",
+            owner="alpha_session",
+            reason="rewind",
+        )
+
+    assert asyncio.run(service.stop_session(519)) is True
+    stopped = service.get_lifecycle_state(519)
+    assert stopped is not None
+    assert stopped.state == "PAUSED"
 
 
 def test_routed_execution_service_populates_unrealized_symbol_pnl_for_paper() -> None:
@@ -1296,6 +1508,7 @@ def test_routed_execution_service_enforces_aggregate_caps_across_sequential_symb
         total_risk_budget_frac=0.15,
         max_symbol_exposure_frac=0.05,
         min_confidence=0.0,
+        target_headroom_ratio=1.0,
     )
     for symbol, price in (
         ("BTCUSDT", 100.0),
@@ -1355,6 +1568,65 @@ def test_routed_execution_service_sync_positions_restores_and_flattens_snapshot(
     assert all(item.accepted for item in flattened)
 
     flat_snapshot = service.get_portfolio_snapshot(515)
+    assert flat_snapshot is not None
+    assert flat_snapshot.open_positions == {}
+
+
+def test_routed_execution_service_sync_positions_flatten_path_uses_reduce_only() -> None:
+    class FlattenAwareAdapter:
+        def __init__(self) -> None:
+            self.positions = {"BTCUSDT": 1.5, "ETHUSDT": -2.0}
+            self.place_calls: list[tuple[str, str, float, bool]] = []
+
+        def get_positions(self):
+            return dict(self.positions)
+
+        def place_order(self, plan, *, idempotency_key: str, mark_price: float | None = None, limit_price: float | None = None, post_only: bool = False):
+            self.place_calls.append((plan.symbol, plan.side, plan.quantity, plan.reduce_only))
+            current = float(self.positions.get(plan.symbol, 0.0))
+            if plan.reduce_only:
+                if current > 0.0 and plan.side == "SELL":
+                    self.positions[plan.symbol] = max(0.0, current - float(plan.quantity))
+                elif current < 0.0 and plan.side == "BUY":
+                    self.positions[plan.symbol] = min(0.0, current + float(plan.quantity))
+            else:
+                delta = float(plan.quantity) if plan.side == "BUY" else -float(plan.quantity)
+                self.positions[plan.symbol] = current + delta
+            if abs(float(self.positions.get(plan.symbol, 0.0))) <= 1e-12:
+                self.positions.pop(plan.symbol, None)
+            return ExecutionResult(
+                accepted=True,
+                order_id=f"{plan.symbol}-fill",
+                idempotency_key=idempotency_key,
+                symbol=plan.symbol,
+                side=plan.side,
+                requested_qty=float(plan.quantity),
+                filled_qty=float(plan.quantity),
+                avg_price=float(mark_price or 0.0),
+                status="filled",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="bounded_limit_exit",
+            )
+
+    service = RoutedExecutionService(paper_adapter_factory=FlattenAwareAdapter)
+    assert asyncio.run(service.start_session(SessionRequest(user_id=516, live=False))) is True
+
+    flattened = asyncio.run(
+        service.sync_positions(
+            516,
+            target_positions={},
+            prices={"BTCUSDT": 100.0, "ETHUSDT": 200.0},
+        )
+    )
+    assert len(flattened) == 2
+    assert all(item.accepted for item in flattened)
+
+    adapter = service._sessions[516].adapter
+    assert adapter.place_calls == [
+        ("BTCUSDT", "SELL", 1.5, True),
+        ("ETHUSDT", "BUY", 2.0, True),
+    ]
+    flat_snapshot = service.get_portfolio_snapshot(516)
     assert flat_snapshot is not None
     assert flat_snapshot.open_positions == {}
 
@@ -1497,6 +1769,7 @@ def test_routed_execution_service_applies_canary_risk_cap_for_live_sessions() ->
             total_risk_budget_frac=0.90,
             max_symbol_exposure_frac=0.90,
             min_confidence=0.0,
+            target_headroom_ratio=1.0,
         ),
         risk_policy=PortfolioRiskPolicy(
             max_symbol_exposure_frac=0.90,
@@ -1535,6 +1808,130 @@ def test_routed_execution_service_applies_canary_risk_cap_for_live_sessions() ->
     assert snapshot.risk is not None
     assert snapshot.risk.gross_exposure_frac == pytest.approx(0.10)
     assert snapshot.risk.risk_budget_used_frac == pytest.approx(1.0)
+
+
+def test_dynamic_risk_policy_is_clamped_by_hard_limits() -> None:
+    service = RoutedExecutionService(
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.05,
+            max_gross_exposure_frac=0.20,
+            max_net_exposure_frac=0.08,
+        )
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4111, live=False))) is True
+
+    state = service._sessions[4111]
+    state.equity_history = [10_000.0 + float(index) for index in range(60)]
+    dynamic = service._compute_dynamic_risk_policy(state)
+
+    assert dynamic is not None
+    assert dynamic.max_symbol_exposure_frac <= state.hard_risk_policy.max_symbol_exposure_frac
+    assert dynamic.max_gross_exposure_frac <= state.hard_risk_policy.max_gross_exposure_frac
+    assert dynamic.max_net_exposure_frac <= state.hard_risk_policy.max_net_exposure_frac
+
+
+def test_projected_hard_limit_guard_flags_gross_breach() -> None:
+    reason = RoutedExecutionService._projected_limit_breach_reason(
+        current_positions={"ETHUSDT": 10.0},
+        prices={"BTCUSDT": 100.0, "ETHUSDT": 100.0},
+        equity_usd=10_000.0,
+        hard_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.10,
+            max_gross_exposure_frac=0.14,
+            max_net_exposure_frac=0.14,
+        ),
+        symbol="BTCUSDT",
+        side="BUY",
+        quantity=5.0,
+    )
+
+    assert reason == "projected_gross_cap"
+
+
+def test_projected_hard_limit_guard_flags_bucket_breach() -> None:
+    reason = RoutedExecutionService._projected_limit_breach_reason(
+        current_positions={"ETHUSDT": 5.0},
+        prices={"BTCUSDT": 100.0, "ETHUSDT": 100.0},
+        equity_usd=10_000.0,
+        hard_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.10,
+            max_gross_exposure_frac=0.30,
+            max_net_exposure_frac=0.30,
+            correlation_bucket_caps={"majors": 0.08},
+        ),
+        bucket_map={"BTCUSDT": "majors", "ETHUSDT": "majors"},
+        symbol="BTCUSDT",
+        side="BUY",
+        quantity=4.0,
+    )
+
+    assert reason == "projected_bucket_cap"
+
+
+def test_june18_regression_target_stays_below_operating_cap_and_ordinary_move() -> None:
+    service = RoutedExecutionService(
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.255,
+            max_gross_exposure_frac=0.85,
+            max_net_exposure_frac=0.3825,
+        )
+    )
+    assert asyncio.run(service.start_session(SessionRequest(user_id=4113, live=False))) is True
+
+    signal = StrategySignal(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        horizon_bars=4,
+        signal="SELL",
+        confidence=0.95,
+    )
+    routed = asyncio.run(
+        service.route_signals(
+            4113,
+            signals=(signal,),
+            prices={"BTCUSDT": 62_957.2},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=1.0,
+                max_symbol_exposure_frac=0.255,
+                min_confidence=0.0,
+                enable_optimizer=False,
+                equity_usd=9_887.16,
+                target_headroom_ratio=0.85,
+            ),
+        )
+    )
+
+    assert len(routed) == 1
+    event = []
+    service_with_events = RoutedExecutionService(
+        route_audit_callback=event.append,
+        risk_policy=PortfolioRiskPolicy(
+            max_symbol_exposure_frac=0.255,
+            max_gross_exposure_frac=0.85,
+            max_net_exposure_frac=0.3825,
+        ),
+    )
+    assert asyncio.run(service_with_events.start_session(SessionRequest(user_id=4114, live=False))) is True
+    asyncio.run(
+        service_with_events.route_signals(
+            4114,
+            signals=(signal,),
+            prices={"BTCUSDT": 62_957.2},
+            planner_config=PlannerConfig(
+                total_risk_budget_frac=1.0,
+                max_symbol_exposure_frac=0.255,
+                min_confidence=0.0,
+                enable_optimizer=False,
+                equity_usd=9_887.16,
+                target_headroom_ratio=0.85,
+            ),
+        )
+    )
+    assert event
+    latest = event[-1]
+    assert latest.projected_symbol_exposure_frac < 0.255
+    moved_exposure = abs(latest.projected_symbol_exposure_frac) * 1.001449
+    assert moved_exposure < 0.255
 
 
 def test_routed_execution_service_blocks_live_start_when_go_no_go_fails() -> None:

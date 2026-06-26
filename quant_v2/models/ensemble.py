@@ -63,7 +63,8 @@ class HorizonEnsemble:
     def predict(self, X: pd.DataFrame) -> tuple[float, float]:
         """Return weighted ensemble (probability, uncertainty) for one row.
 
-        Falls back gracefully if some horizon models are missing features.
+        Each member model must satisfy the strict feature contract; missing or
+        unexpected columns fail closed via the underlying predictor.
         """
         probas: list[float] = []
         uncertainties: list[float] = []
@@ -71,18 +72,18 @@ class HorizonEnsemble:
 
         for horizon, model in self.models.items():
             try:
-                # Align features: fill missing with 0.0
-                missing = set(model.feature_names) - set(X.columns)
-                X_aligned = X.copy()
-                for col in missing:
-                    X_aligned[col] = 0.0
-                X_ordered = X_aligned[model.feature_names]
-
-                p, u = predict_proba_with_uncertainty(model, X_ordered)
+                p, u = predict_proba_with_uncertainty(model, X)
                 probas.append(float(p[0]))
                 uncertainties.append(float(u[0]))
                 weights_used.append(self.weights.get(horizon, 0.0))
             except Exception as e:
+                message = str(e)
+                if isinstance(e, ValueError) and (
+                    "Missing feature columns" in message
+                    or "Unexpected feature columns" in message
+                    or "Feature dtype mismatch" in message
+                ):
+                    raise
                 logger.warning("Horizon=%d prediction failed: %s", horizon, e)
                 continue
 

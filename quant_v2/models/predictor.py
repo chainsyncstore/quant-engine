@@ -23,11 +23,25 @@ def _primary_estimator(model: TrainedModel):
 def predict_proba(model: TrainedModel, X: pd.DataFrame) -> np.ndarray:
     """Return class-1 probabilities from v2 primary/meta/calibrated ensemble."""
 
-    missing = set(model.feature_names) - set(X.columns)
+    expected = list(model.feature_names)
+    provided = list(X.columns)
+    missing = [name for name in expected if name not in X.columns]
     if missing:
         raise ValueError(f"Missing feature columns: {sorted(missing)}")
+    unexpected = [name for name in provided if name not in model.feature_names]
+    if unexpected:
+        raise ValueError(f"Unexpected feature columns: {sorted(unexpected)}")
 
-    X_ordered = X[model.feature_names]
+    X_ordered = X[expected]
+    feature_dtypes = getattr(model, "feature_dtypes", {}) or {}
+    if feature_dtypes:
+        mismatched = {
+            name: {"expected": str(feature_dtypes.get(name)), "actual": str(X_ordered[name].dtype)}
+            for name in expected
+            if name in feature_dtypes and str(X_ordered[name].dtype) != str(feature_dtypes[name])
+        }
+        if mismatched:
+            raise ValueError(f"Feature dtype mismatch: {mismatched}")
     primary = _primary_estimator(model).predict_proba(X_ordered)[:, 1]
 
     calibrated = primary

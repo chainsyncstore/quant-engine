@@ -8,11 +8,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterator
 
 import pandas as pd
 import numpy as np
+
+from quant_v2.execution.cost_policy import ExecutionCostPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class Fill:
     fee_usd: float
     slippage_usd: float
     confidence: float
+    policy_version: str = ""
+    cost_breakdown: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -42,6 +45,8 @@ class BacktestConfig:
     warmup_bars: int = 200
     limit_fill_rate: float = 0.95     # simulate 95% fill for limit orders
     model_version: str | None = None   # None = use active registry pointer
+    signal_latency_bars: float = 0.0
+    cost_policy_version: str = "wp07-execution-cost-v1"
 
 
 @dataclass
@@ -55,10 +60,16 @@ class BacktestResult:
     gross_pnl: float = 0.0
     total_fees: float = 0.0
     total_slippage: float = 0.0
+    cost_policy_version: str = ""
+    cost_components_usd: dict[str, float] = field(default_factory=dict)
+    cost_scenarios: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @property
     def net_pnl(self) -> float:
-        return self.gross_pnl - self.total_fees - self.total_slippage
+        total_cost = self.cost_components_usd.get("total_cost_usd")
+        if total_cost is None:
+            total_cost = self.total_fees + self.total_slippage
+        return self.gross_pnl - float(total_cost)
 
     @property
     def win_rate(self) -> float:
@@ -122,20 +133,20 @@ class BacktestResult:
 
 def _load_model(config: BacktestConfig):
     """Load model from registry or by version."""
+    import os
     from pathlib import Path
-    import os, pickle
+    from quant_v2.model_registry import ModelRegistry
+    from quant_v2.models.trainer import load_model
     model_root = Path(os.getenv("BOT_MODEL_ROOT", "models/production"))
     if config.model_version:
         artifact_dir = model_root / config.model_version
     else:
         registry_root = Path(os.getenv("BOT_MODEL_REGISTRY_ROOT",
                                        str(model_root / "registry")))
-        ptr = registry_root / "active.json"
-        if ptr.exists():
-            import json
-            active = json.loads(ptr.read_text())
-            version_id = active.get("version_id", "")
-            artifact_dir = model_root / version_id
+        registry = ModelRegistry(registry_root)
+        active = registry.get_active_version()
+        if active is not None:
+            artifact_dir = Path(active.artifact_dir)
         else:
             dirs = sorted(model_root.glob("model_*"))
             if not dirs:
@@ -146,8 +157,7 @@ def _load_model(config: BacktestConfig):
     for h in (2, 4, 8):
         p = artifact_dir / f"model_{h}m.pkl"
         if p.exists():
-            with open(p, "rb") as f:
-                models[h] = pickle.load(f)
+            models[h] = load_model(p)
     if not models:
         raise FileNotFoundError(f"No horizon models in {artifact_dir}")
     return models
@@ -155,7 +165,6 @@ def _load_model(config: BacktestConfig):
 
 def _fetch_bars(symbol: str, start: str, end: str) -> pd.DataFrame:
     """Fetch full OHLCV + funding + OI for the backtest window."""
-    from datetime import timedelta
     from quant.config import BinanceAPIConfig
     from quant.data.binance_client import BinanceClient
     from quant_v2.research.scheduled_retrain import fetch_symbol_dataset
@@ -201,6 +210,29 @@ def _sim_fill(price: float, quantity: float, side: str,
     return fee_usd, slippage_usd
 
 
+def _estimate_adv_usd(window: pd.DataFrame) -> float:
+    if window.empty:
+        return 50_000_000.0
+    if "quote_volume" in window.columns:
+        series = pd.to_numeric(window["quote_volume"], errors="coerce").tail(24)
+    elif "volume" in window.columns and "close" in window.columns:
+        volume = pd.to_numeric(window["volume"], errors="coerce")
+        close = pd.to_numeric(window["close"], errors="coerce")
+        series = (volume * close).tail(24)
+    else:
+        return 50_000_000.0
+    adv = float(series.replace([np.inf, -np.inf], np.nan).dropna().mean()) if not series.empty else 0.0
+    return max(adv, 1.0)
+
+
+def _funding_rate_bps(bar: pd.Series) -> float:
+    raw = bar.get("funding_rate_raw", bar.get("funding_rate", 0.0))
+    try:
+        return abs(float(raw)) * 10_000.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def run_backtest(config: BacktestConfig) -> BacktestResult:
     """Run a single-symbol walk-forward backtest."""
     from quant.features.pipeline import build_features, get_feature_columns
@@ -210,6 +242,11 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
 
     logger.info("Backtest: loading model...")
     models = _load_model(config)
+    cost_policy = ExecutionCostPolicy(
+        policy_version=config.cost_policy_version,
+        maker_fee_bps=config.maker_fee_bps,
+        taker_fee_bps=config.taker_fee_bps,
+    )
 
     logger.info("Backtest: fetching bars for %s %s -> %s...",
                 config.symbol, config.start_date, config.end_date)
@@ -228,8 +265,27 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
     gross_pnl = 0.0
     total_fees = 0.0
     total_slippage = 0.0
+    total_spread = 0.0
+    total_funding = 0.0
+    total_latency = 0.0
+    total_impact = 0.0
+    total_cost_usd = 0.0
     win_trades = 0
     total_round_trips = 0
+    scenario_totals: dict[str, dict[str, float]] = {
+        name: {
+            "notional_usd": 0.0,
+            "fee_usd": 0.0,
+            "spread_usd": 0.0,
+            "slippage_usd": 0.0,
+            "funding_usd": 0.0,
+            "latency_usd": 0.0,
+            "impact_usd": 0.0,
+            "total_cost_usd": 0.0,
+            "total_cost_bps": 0.0,
+        }
+        for name in ("base", "adverse", "severe")
+    }
 
     logger.info("Backtest: running %d bars (warmup=%d)...",
                 len(raw), config.warmup_bars)
@@ -238,6 +294,8 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
         bar = window.iloc[-1]
         ts = bar.name if hasattr(bar.name, 'tzinfo') else pd.Timestamp(bar.name)
         close = float(bar["close"])
+        adv_usd = _estimate_adv_usd(window)
+        funding_bps = _funding_rate_bps(bar)
 
         try:
             frame = window.copy()
@@ -284,7 +342,6 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
         target_frac = alloc.target_exposures.get(config.symbol, 0.0)
         target_notional = abs(target_frac) * equity
         target_qty = target_notional / close if close > 0 else 0.0
-
         # Close existing position if direction changed or signal is HOLD
         if position != 0.0 and (target_frac == 0.0 or
                                   (position > 0 and target_frac < 0) or
@@ -292,19 +349,50 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
             exit_notional = abs(position) * close
             fee, slip = _sim_fill(close, abs(position), "SELL",
                                    config.maker_fee_bps, exit_notional)
-            pnl = (close - entry_price) * position - fee - slip
-            gross_pnl += pnl
+            exit_estimates = cost_policy.scenario_estimates(
+                config.symbol,
+                "SELL" if position > 0 else "BUY",
+                exit_notional,
+                adv_usd=adv_usd,
+                funding_rate_bps=funding_bps,
+                latency_bars=config.signal_latency_bars,
+            )
+            base_exit = exit_estimates["base"]
+            total_fill_cost = base_exit.total_cost_usd
+            trade_pnl = (close - entry_price) * position
+            net_trade_pnl = trade_pnl - total_fill_cost
+            gross_pnl += trade_pnl
             total_fees += fee
             total_slippage += slip
-            equity += pnl
+            total_spread += base_exit.spread_usd
+            total_funding += base_exit.funding_usd
+            total_latency += base_exit.latency_usd
+            total_impact += base_exit.impact_usd
+            total_cost_usd += total_fill_cost
+            for scenario_name, estimate in exit_estimates.items():
+                totals = scenario_totals[scenario_name]
+                for key, value in estimate.as_totals().items():
+                    totals[key] += value
+            equity += net_trade_pnl
             total_round_trips += 1
-            if pnl > 0:
+            if net_trade_pnl > 0:
                 win_trades += 1
             fills.append(Fill(
                 timestamp=ts, symbol=config.symbol,
                 side="SELL" if position > 0 else "BUY",
                 quantity=abs(position), price=close,
                 fee_usd=fee, slippage_usd=slip, confidence=confidence,
+                policy_version=config.cost_policy_version,
+                cost_breakdown={
+                    "fee_usd": base_exit.fee_usd,
+                    "spread_usd": base_exit.spread_usd,
+                    "slippage_usd": base_exit.slippage_usd,
+                    "funding_usd": base_exit.funding_usd,
+                    "latency_usd": base_exit.latency_usd,
+                    "impact_usd": base_exit.impact_usd,
+                    "total_cost_usd": base_exit.total_cost_usd,
+                    "total_cost_bps": base_exit.total_cost_bps,
+                },
             ))
             position = 0.0
             entry_price = 0.0
@@ -316,9 +404,28 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
             fee, slip = _sim_fill(close, filled_qty,
                                    "BUY" if target_frac > 0 else "SELL",
                                    config.maker_fee_bps, filled_notional)
+            entry_estimates = cost_policy.scenario_estimates(
+                config.symbol,
+                "BUY" if target_frac > 0 else "SELL",
+                filled_notional,
+                adv_usd=adv_usd,
+                funding_rate_bps=funding_bps,
+                latency_bars=config.signal_latency_bars,
+            )
+            base_entry = entry_estimates["base"]
+            total_fill_cost = base_entry.total_cost_usd
             total_fees += fee
             total_slippage += slip
-            equity -= (fee + slip)
+            total_spread += base_entry.spread_usd
+            total_funding += base_entry.funding_usd
+            total_latency += base_entry.latency_usd
+            total_impact += base_entry.impact_usd
+            total_cost_usd += total_fill_cost
+            for scenario_name, estimate in entry_estimates.items():
+                totals = scenario_totals[scenario_name]
+                for key, value in estimate.as_totals().items():
+                    totals[key] += value
+            equity -= total_fill_cost
             position = filled_qty if target_frac > 0 else -filled_qty
             entry_price = close
             fills.append(Fill(
@@ -326,6 +433,17 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
                 side="BUY" if target_frac > 0 else "SELL",
                 quantity=filled_qty, price=close,
                 fee_usd=fee, slippage_usd=slip, confidence=confidence,
+                policy_version=config.cost_policy_version,
+                cost_breakdown={
+                    "fee_usd": base_entry.fee_usd,
+                    "spread_usd": base_entry.spread_usd,
+                    "slippage_usd": base_entry.slippage_usd,
+                    "funding_usd": base_entry.funding_usd,
+                    "latency_usd": base_entry.latency_usd,
+                    "impact_usd": base_entry.impact_usd,
+                    "total_cost_usd": base_entry.total_cost_usd,
+                    "total_cost_bps": base_entry.total_cost_bps,
+                },
             ))
 
         equity_ts.append((ts, equity))
@@ -335,6 +453,9 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
         name="equity_usd",
     )
     daily = equity_series.resample("D").last().ffill().pct_change().dropna()
+    for totals in scenario_totals.values():
+        notional = totals.get("notional_usd", 0.0)
+        totals["total_cost_bps"] = (totals["total_cost_usd"] / notional * 10_000.0) if notional > 0.0 else 0.0
 
     return BacktestResult(
         config=config,
@@ -346,4 +467,15 @@ def run_backtest(config: BacktestConfig) -> BacktestResult:
         gross_pnl=gross_pnl,
         total_fees=total_fees,
         total_slippage=total_slippage,
+        cost_policy_version=config.cost_policy_version,
+        cost_components_usd={
+            "fees": total_fees,
+            "slippage": total_slippage,
+            "spread": total_spread,
+            "funding": total_funding,
+            "latency": total_latency,
+            "impact": total_impact,
+            "total_cost_usd": total_cost_usd,
+        },
+        cost_scenarios=scenario_totals,
     )

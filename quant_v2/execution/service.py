@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import functools
 import logging
 import os
+from time import perf_counter
 from typing import Any, Callable, Protocol
 
 import numpy as np
@@ -21,6 +22,7 @@ from quant_v2.execution.adapters import ExecutionResult
 from quant_v2.execution.idempotency import build_idempotency_key
 from quant_v2.execution.planner import PlannerConfig, build_execution_intents
 from quant_v2.execution.reconciler import reconcile_target_exposures
+from quant_v2.execution.state_wal import LifecycleStateRecord, validate_lifecycle_transition
 from quant_v2.monitoring.kill_switch import (
     KillSwitchConfig,
     KillSwitchEvaluation,
@@ -28,9 +30,62 @@ from quant_v2.monitoring.kill_switch import (
     evaluate_kill_switch,
 )
 from quant_v2.portfolio.optimizer import RiskParityOptimizer
-from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
+from quant_v2.portfolio.risk_policy import (
+    HardRiskLimits,
+    OperatingRiskLimits,
+    PortfolioRiskPolicy,
+    build_dynamic_operating_limits,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _default_dynamic_risk_policy() -> OperatingRiskLimits:
+    return OperatingRiskLimits.from_hard_limits(HardRiskLimits())
+
+
+def _default_operating_risk_policy() -> OperatingRiskLimits:
+    dynamic = _default_dynamic_risk_policy()
+    return dynamic.scaled(
+        dynamic.effective_headroom_ratio,
+        limit_source="operating_headroom",
+    )
+
+
+def _build_lifecycle_state_record(
+    previous: LifecycleStateRecord | None,
+    *,
+    state: str,
+    owner: str,
+    reason: str,
+    policy_version: str,
+    retry_count: int | None = None,
+) -> LifecycleStateRecord:
+    validate_lifecycle_transition(previous.state if previous is not None else None, state)
+
+    now = datetime.now(timezone.utc).isoformat()
+    normalized_policy_version = str(policy_version or "").strip()
+    if not normalized_policy_version:
+        normalized_policy_version = (
+            previous.policy_version
+            if previous is not None and previous.policy_version
+            else HardRiskLimits().policy_version
+        )
+
+    normalized_retry_count = 0 if retry_count is None else max(0, int(retry_count))
+    if previous is not None and previous.state == str(state).strip().upper() and retry_count is None:
+        normalized_retry_count = previous.retry_count + 1
+
+    return LifecycleStateRecord(
+        state=state,
+        owner=owner,
+        retry_count=normalized_retry_count,
+        reason=reason,
+        policy_version=normalized_policy_version,
+        created_at=previous.created_at if previous is not None else now,
+        transitioned_at=now if previous is None or previous.state != str(state).strip().upper() else previous.transitioned_at,
+        updated_at=now,
+    )
 
 
 @dataclass(frozen=True)
@@ -79,6 +134,13 @@ class ExecutionDiagnostics:
     effective_symbol_cap_frac: float = 0.0
     effective_gross_cap_frac: float = 0.0
     effective_net_cap_frac: float = 0.0
+    hard_symbol_cap_frac: float = 0.0
+    hard_gross_cap_frac: float = 0.0
+    hard_net_cap_frac: float = 0.0
+    target_headroom_ratio: float = 0.85
+    reserve_capacity_frac: float = 0.0
+    adverse_mark_buffer_frac: float = 0.0
+    risk_policy_version: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,7 +174,43 @@ class RouteAuditEvent:
     status: str = ""
     order_id: str = ""
     idempotency_key: str = ""
+    correlation_id: str = ""
     mark_price: float = 0.0
+    risk_policy_version: str = ""
+    hard_symbol_cap_frac: float = 0.0
+    hard_gross_cap_frac: float = 0.0
+    hard_net_cap_frac: float = 0.0
+    dynamic_symbol_cap_frac: float = 0.0
+    dynamic_gross_cap_frac: float = 0.0
+    dynamic_net_cap_frac: float = 0.0
+    operating_symbol_cap_frac: float = 0.0
+    operating_gross_cap_frac: float = 0.0
+    operating_net_cap_frac: float = 0.0
+    target_headroom_ratio: float = 0.85
+    reserve_capacity_frac: float = 0.0
+    adverse_mark_buffer_frac: float = 0.0
+    current_symbol_exposure_frac: float = 0.0
+    projected_symbol_exposure_frac: float = 0.0
+    current_gross_exposure_frac: float = 0.0
+    projected_gross_exposure_frac: float = 0.0
+    current_net_exposure_frac: float = 0.0
+    projected_net_exposure_frac: float = 0.0
+    symbol_headroom_frac: float = 0.0
+    gross_headroom_frac: float = 0.0
+    net_headroom_frac: float = 0.0
+
+
+@dataclass(frozen=True)
+class ExecutionStageTelemetry:
+    """Structured timing event for routing and persistence stages."""
+
+    user_id: int
+    created_at: datetime
+    stage: str
+    duration_ms: float
+    correlation_id: str = ""
+    status: str = ""
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -162,6 +260,9 @@ class ExecutionService(Protocol):
     def clear_execution_diagnostics(self, user_id: int) -> bool:
         """Reset execution diagnostics counters for the running session."""
 
+    def restore_order_result(self, user_id: int, result: ExecutionResult) -> bool:
+        """Restore a durable execution result for idempotent replay."""
+
     def set_monitoring_snapshot(
         self,
         user_id: int,
@@ -182,6 +283,7 @@ class ExecutionService(Protocol):
         signals: Iterable[StrategySignal],
         prices: dict[str, float],
         monitoring_snapshot: MonitoringSnapshot | None = None,
+        correlation_id: str = "",
     ) -> tuple[ExecutionResult, ...]:
         """Route strategy signals through execution planner and adapter."""
 
@@ -194,7 +296,9 @@ class _SessionState:
     adapter: object
     mode: str
     snapshot: PortfolioSnapshot
-    effective_risk_policy: PortfolioRiskPolicy
+    hard_risk_policy: HardRiskLimits = field(default_factory=HardRiskLimits)
+    dynamic_risk_policy: OperatingRiskLimits = field(default_factory=_default_dynamic_risk_policy)
+    effective_risk_policy: OperatingRiskLimits = field(default_factory=_default_operating_risk_policy)
     equity_baseline_usd: float = 10_000.0
     last_prices: dict[str, float] = field(default_factory=dict)
     latest_signals: dict[str, StrategySignal] = field(default_factory=dict)
@@ -202,6 +306,7 @@ class _SessionState:
     diagnostics: ExecutionDiagnostics = field(default_factory=ExecutionDiagnostics)
     paper_entry_price: dict[str, float] = field(default_factory=dict)
     accounted_order_keys: set[str] = field(default_factory=set)
+    order_results_by_key: dict[str, ExecutionResult] = field(default_factory=dict)
     position_opened_at: dict[str, datetime] = field(default_factory=dict)
     position_entry_atr_pct: dict[str, float] = field(default_factory=dict)
     position_peak_pnl_pct: dict[str, float] = field(default_factory=dict)
@@ -235,6 +340,7 @@ class InMemoryExecutionService:
         self._snapshots: dict[int, PortfolioSnapshot] = {}
         self._monitoring: dict[int, MonitoringSnapshot] = {}
         self._kill_switch: dict[int, KillSwitchEvaluation] = {}
+        self._lifecycle_states: dict[int, LifecycleStateRecord] = {}
 
     @staticmethod
     def _initial_snapshot() -> PortfolioSnapshot:
@@ -257,10 +363,37 @@ class InMemoryExecutionService:
         self._snapshots[request.user_id] = self._initial_snapshot()
         self._monitoring[request.user_id] = MonitoringSnapshot()
         self._kill_switch[request.user_id] = KillSwitchEvaluation(pause_trading=False)
+        self._lifecycle_states[request.user_id] = LifecycleStateRecord(
+            state="ACTIVE",
+            owner="alpha_session",
+            retry_count=0,
+            reason="session_started",
+            policy_version=HardRiskLimits().policy_version,
+        )
         return True
 
     async def stop_session(self, user_id: int) -> bool:
         existed = user_id in self._sessions
+        if user_id in self._sessions or user_id in self._lifecycle_states:
+            previous = self._lifecycle_states.get(user_id)
+            if previous is None:
+                previous = LifecycleStateRecord(
+                    state="ACTIVE",
+                    owner="alpha_session",
+                    retry_count=0,
+                    reason="session_started",
+                    policy_version=HardRiskLimits().policy_version,
+                )
+            try:
+                self._lifecycle_states[user_id] = _build_lifecycle_state_record(
+                    previous,
+                    state="PAUSED",
+                    owner="control_plane",
+                    reason="session_stopped",
+                    policy_version=previous.policy_version,
+                )
+            except ValueError:
+                self._lifecycle_states[user_id] = previous
         self._sessions.pop(user_id, None)
         self._snapshots.pop(user_id, None)
         self._monitoring.pop(user_id, None)
@@ -299,6 +432,9 @@ class InMemoryExecutionService:
     def clear_execution_diagnostics(self, user_id: int) -> bool:
         return user_id in self._sessions
 
+    def restore_order_result(self, user_id: int, result: ExecutionResult) -> bool:
+        return user_id in self._sessions
+
     def set_monitoring_snapshot(
         self,
         user_id: int,
@@ -314,6 +450,44 @@ class InMemoryExecutionService:
 
     def get_kill_switch_evaluation(self, user_id: int) -> KillSwitchEvaluation | None:
         return self._kill_switch.get(user_id)
+
+    def get_lifecycle_state(self, user_id: int) -> LifecycleStateRecord | None:
+        return self._lifecycle_states.get(user_id)
+
+    def set_lifecycle_state(
+        self,
+        user_id: int,
+        *,
+        state: str,
+        owner: str,
+        reason: str,
+        policy_version: str = "",
+        retry_count: int | None = None,
+    ) -> LifecycleStateRecord:
+        previous = self._lifecycle_states.get(user_id)
+        if previous is None and user_id not in self._sessions:
+            raise KeyError(f"No active session for user {user_id}")
+
+        record = _build_lifecycle_state_record(
+            previous,
+            state=state,
+            owner=owner,
+            reason=reason,
+            policy_version=policy_version,
+            retry_count=retry_count,
+        )
+        self._lifecycle_states[user_id] = record
+        return record
+
+    def restore_lifecycle_state(
+        self,
+        user_id: int,
+        record: LifecycleStateRecord,
+    ) -> LifecycleStateRecord:
+        previous = self._lifecycle_states.get(user_id)
+        validate_lifecycle_transition(previous.state if previous is not None else None, record.state)
+        self._lifecycle_states[user_id] = record
+        return record
 
     def get_portfolio_snapshot(self, user_id: int) -> PortfolioSnapshot | None:
         return self._snapshots.get(user_id)
@@ -352,9 +526,10 @@ class InMemoryExecutionService:
         signals: Iterable[StrategySignal],
         prices: dict[str, float],
         monitoring_snapshot: MonitoringSnapshot | None = None,
+        correlation_id: str = "",
     ) -> tuple[ExecutionResult, ...]:
         # Legacy placeholder backend; signal routing is implemented in RoutedExecutionService.
-        _ = (user_id, tuple(signals), prices, monitoring_snapshot)
+        _ = (user_id, tuple(signals), prices, monitoring_snapshot, correlation_id)
         return ()
 
 
@@ -380,19 +555,34 @@ class RoutedExecutionService:
         max_orders_per_cycle: int | None = None,
         hard_risk_pause_callback: Callable[[HardRiskPauseEvent], None] | None = None,
         route_audit_callback: Callable[[RouteAuditEvent], None] | None = None,
+        stage_telemetry_callback: Callable[[ExecutionStageTelemetry], None] | None = None,
     ) -> None:
         self._sessions: dict[int, _SessionState] = {}
         self._route_locks: dict[int, asyncio.Lock] = {}
+        self._lifecycle_states: dict[int, LifecycleStateRecord] = {}
         self._paper_adapter_factory = paper_adapter_factory or self._default_paper_adapter_factory
         self._live_adapter_factory = live_adapter_factory or self._default_live_adapter_factory
         self._initial_equity_usd = float(initial_equity_usd)
-        self._risk_policy = risk_policy or PortfolioRiskPolicy()
+        base_policy = risk_policy or PortfolioRiskPolicy()
+        if isinstance(base_policy, HardRiskLimits):
+            self._risk_policy = base_policy
+        else:
+            self._risk_policy = HardRiskLimits(
+                max_symbol_exposure_frac=float(base_policy.max_symbol_exposure_frac),
+                max_gross_exposure_frac=float(base_policy.max_gross_exposure_frac),
+                max_net_exposure_frac=float(base_policy.max_net_exposure_frac),
+                correlation_bucket_caps={
+                    bucket: float(limit)
+                    for bucket, limit in base_policy.correlation_bucket_caps.items()
+                },
+            )
         self._planner_config = planner_config or PlannerConfig()
         self._optimizer = RiskParityOptimizer()
         self._kill_switch_config = kill_switch_config or KillSwitchConfig()
         self._allow_live_execution = bool(allow_live_execution)
         self._hard_risk_pause_callback = hard_risk_pause_callback
         self._route_audit_callback = route_audit_callback
+        self._stage_telemetry_callback = stage_telemetry_callback
         if canary_live_risk_cap_frac is None:
             canary_live_risk_cap_frac = get_runtime_profile().deployment.canary_live_risk_cap_frac
         self._canary_live_risk_cap_frac = float(canary_live_risk_cap_frac)
@@ -470,6 +660,11 @@ class RoutedExecutionService:
             mode = "paper_shadow" if request.live else "paper"
 
         session_policy = self._resolve_session_risk_policy(request)
+        session_dynamic_policy = self._build_dynamic_operating_policy(
+            session_policy,
+            self._planner_config,
+        )
+        session_operating_policy = self._build_operating_policy(session_dynamic_policy)
 
         snapshot = self._build_snapshot(
             adapter,
@@ -483,15 +678,45 @@ class RoutedExecutionService:
             adapter=adapter,
             mode=mode,
             snapshot=snapshot,
-            effective_risk_policy=session_policy,
+            hard_risk_policy=session_policy,
+            dynamic_risk_policy=session_dynamic_policy,
+            effective_risk_policy=session_operating_policy,
             equity_baseline_usd=self._initial_equity_usd,
             last_prices={},
             diagnostics=diagnostics,
+        )
+        self._lifecycle_states[request.user_id] = _build_lifecycle_state_record(
+            None,
+            state="ACTIVE",
+            owner="alpha_session",
+            reason="session_started",
+            policy_version=session_policy.policy_version,
+            retry_count=0,
         )
         return True
 
     async def stop_session(self, user_id: int) -> bool:
         existed = user_id in self._sessions
+        if existed or user_id in self._lifecycle_states:
+            current = self._lifecycle_states.get(user_id)
+            if current is None:
+                current = LifecycleStateRecord(
+                    state="ACTIVE",
+                    owner="alpha_session",
+                    retry_count=0,
+                    reason="session_started",
+                    policy_version=HardRiskLimits().policy_version,
+                )
+            try:
+                self._lifecycle_states[user_id] = _build_lifecycle_state_record(
+                    current,
+                    state="PAUSED",
+                    owner="control_plane",
+                    reason="session_stopped",
+                    policy_version=current.policy_version,
+                )
+            except ValueError:
+                self._lifecycle_states[user_id] = current
         self._sessions.pop(user_id, None)
         self._route_locks.pop(user_id, None)
         return existed
@@ -509,16 +734,22 @@ class RoutedExecutionService:
         snapshot = self._build_snapshot(
             adapter,
             equity_usd=self._initial_equity_usd,
-            risk_policy=state.effective_risk_policy,
+            risk_policy=state.hard_risk_policy,
             prices={},
         )
-        diagnostics = self._build_initial_diagnostics(state.effective_risk_policy)
+        diagnostics = self._build_initial_diagnostics(state.hard_risk_policy)
+        session_dynamic_policy = self._build_dynamic_operating_policy(
+            state.hard_risk_policy,
+            self._planner_config,
+        )
         self._sessions[user_id] = _SessionState(
             request=state.request,
             adapter=adapter,
             mode=state.mode,
             snapshot=snapshot,
-            effective_risk_policy=state.effective_risk_policy,
+            hard_risk_policy=state.hard_risk_policy,
+            dynamic_risk_policy=session_dynamic_policy,
+            effective_risk_policy=self._build_operating_policy(session_dynamic_policy),
             equity_baseline_usd=self._initial_equity_usd,
             last_prices={},
             diagnostics=diagnostics,
@@ -567,6 +798,7 @@ class RoutedExecutionService:
 
         state.equity_baseline_usd = max(1.0, float(equity_baseline_usd))
         state.accounted_order_keys.clear()
+        state.order_results_by_key.clear()
 
         if open_positions:
             await self.sync_positions(
@@ -695,6 +927,7 @@ class RoutedExecutionService:
         planner_config: PlannerConfig | None = None,
         risk_policy: PortfolioRiskPolicy | None = None,
         equity_usd: float | None = None,
+        correlation_id: str = "",
     ) -> tuple[ExecutionResult, ...]:
         lock = self._route_locks.setdefault(int(user_id), asyncio.Lock())
         async with lock:
@@ -708,6 +941,7 @@ class RoutedExecutionService:
                 planner_config=planner_config,
                 risk_policy=risk_policy,
                 equity_usd=equity_usd,
+                correlation_id=correlation_id,
             )
 
     async def _route_signals_locked(
@@ -722,6 +956,7 @@ class RoutedExecutionService:
         planner_config: PlannerConfig | None = None,
         risk_policy: PortfolioRiskPolicy | None = None,
         equity_usd: float | None = None,
+        correlation_id: str = "",
     ) -> tuple[ExecutionResult, ...]:
         state = self._sessions.get(user_id)
         if state is None:
@@ -729,6 +964,7 @@ class RoutedExecutionService:
         if min_qty < 0.0:
             raise ValueError("min_qty must be >= 0")
 
+        route_started = perf_counter()
         signal_list = tuple(signals)
 
         _routed_buy = 0
@@ -815,14 +1051,17 @@ class RoutedExecutionService:
                     execution_anomaly_rate=merged_anomaly,
                 )
 
-        precheck_policy = (
-            self._apply_canary_risk_cap(risk_policy)
-            if (risk_policy is not None and state.request.live)
-            else (risk_policy or state.effective_risk_policy)
-        )
+        precheck_hard_policy = state.hard_risk_policy
+        if risk_policy is not None:
+            explicit_hard_policy = self._coerce_hard_risk_policy(risk_policy)
+            precheck_hard_policy = (
+                self._apply_canary_risk_cap(explicit_hard_policy)
+                if state.request.live
+                else explicit_hard_policy
+            )
         self._apply_snapshot_risk_monitoring(
             state,
-            risk_policy=precheck_policy,
+            risk_policy=precheck_hard_policy,
             defer_internal_hard_pause=True,
         )
         internal_risk_only = False
@@ -909,35 +1148,51 @@ class RoutedExecutionService:
                 state.latest_signals.pop(symbol, None)
 
         planning_signals = tuple(state.latest_signals.values())
+        cfg = planner_config or self._planner_config
 
         if risk_policy is None:
-            # Try dynamic volatility-scaled caps first
-            dynamic = self._compute_dynamic_risk_policy(state)
-            if dynamic is not None:
-                state.effective_risk_policy = dynamic
-            policy = state.effective_risk_policy
+            dynamic_policy = self._compute_dynamic_risk_policy(state)
+            if dynamic_policy is None:
+                dynamic_policy = self._build_dynamic_operating_policy(
+                    state.hard_risk_policy,
+                    cfg,
+                )
         else:
-            policy = self._apply_canary_risk_cap(risk_policy) if state.request.live else risk_policy
+            base_policy = self._coerce_hard_risk_policy(risk_policy)
+            if state.request.live:
+                base_policy = self._apply_canary_risk_cap(base_policy)
+            state.hard_risk_policy = base_policy
+            dynamic_policy = self._build_dynamic_operating_policy(
+                base_policy,
+                cfg,
+            )
 
         # Apply soft-breach 90% cap reduction when active
         if getattr(state, "soft_breach_active", False):
-            policy = self._apply_soft_breach_caps(policy)
+            dynamic_policy = self._apply_soft_breach_caps(dynamic_policy)
         elif internal_risk_only:
             # 50% cap reduction during a hard breach to aggressively wind down
-            policy = replace(
-                policy,
-                max_symbol_exposure_frac=float(policy.max_symbol_exposure_frac) * 0.5,
-                max_gross_exposure_frac=float(policy.max_gross_exposure_frac) * 0.5,
-                max_net_exposure_frac=float(policy.max_net_exposure_frac) * 0.5,
-            )
+            dynamic_policy = dynamic_policy.scaled(0.5, limit_source="hard_breach_winddown")
+
+        state.dynamic_risk_policy = dynamic_policy
+        policy = self._build_operating_policy(dynamic_policy)
+        state.effective_risk_policy = policy
 
         state.diagnostics = replace(
             state.diagnostics,
             effective_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
             effective_gross_cap_frac=float(policy.max_gross_exposure_frac),
             effective_net_cap_frac=float(policy.max_net_exposure_frac),
+            hard_symbol_cap_frac=float(state.hard_risk_policy.max_symbol_exposure_frac),
+            hard_gross_cap_frac=float(state.hard_risk_policy.max_gross_exposure_frac),
+            hard_net_cap_frac=float(state.hard_risk_policy.max_net_exposure_frac),
+            target_headroom_ratio=float(getattr(policy, "target_headroom_ratio", cfg.target_headroom_ratio)),
+            reserve_capacity_frac=float(getattr(policy, "reserve_capacity_frac", cfg.reserve_capacity_frac)),
+            adverse_mark_buffer_frac=float(
+                getattr(policy, "adverse_mark_buffer_frac", cfg.adverse_mark_buffer_frac)
+            ),
+            risk_policy_version=str(getattr(policy, "policy_version", "")),
         )
-        cfg = planner_config or self._planner_config
 
         if equity_usd is not None:
             if equity_usd <= 0.0:
@@ -958,6 +1213,7 @@ class RoutedExecutionService:
             if len(hist_list) >= 2:
                 price_histories_series[sym] = pd.Series(hist_list)
 
+        planning_started = perf_counter()
         intent_plan = build_execution_intents(
             planning_signals,
             policy=policy,
@@ -974,11 +1230,37 @@ class RoutedExecutionService:
             equity_usd=planning_equity,
             min_qty=min_qty,
         )
+        order_plans = tuple(
+            sorted(
+                order_plans,
+                key=lambda plan: (
+                    0
+                    if self._is_risk_reducing_order(
+                        current_qty=float(current_positions.get(plan.symbol, 0.0)),
+                        side=plan.side,
+                        quantity=float(plan.quantity),
+                    )
+                    else 1
+                ),
+            )
+        )
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="planning",
+            started_at=planning_started,
+            correlation_id=correlation_id,
+            detail=f"signals={len(signal_list)} orders={len(order_plans)}",
+        )
 
         now_utc = datetime.now(timezone.utc)
         epoch_minute = int(now_utc.timestamp() // 60)
         results: list[ExecutionResult] = []
         activity_by_key: dict[str, str] = {}
+        residual_supervision_triggered = False
+        projected_positions = {
+            symbol: float(qty)
+            for symbol, qty in current_positions.items()
+        }
         if internal_risk_only:
             allowed_plans: list[OrderPlan] = []
             for plan in order_plans:
@@ -998,6 +1280,7 @@ class RoutedExecutionService:
                     allowed_plans.append(plan)
                     self._log_route_audit(
                         user_id=user_id,
+                        correlation_id=correlation_id,
                         pause_state="internal_hard_risk",
                         is_active=None,
                         live_mode=(state.mode == "live"),
@@ -1013,6 +1296,7 @@ class RoutedExecutionService:
 
                 self._log_route_audit(
                     user_id=user_id,
+                    correlation_id=correlation_id,
                     pause_state="internal_hard_risk",
                     is_active=None,
                     live_mode=(state.mode == "live"),
@@ -1021,7 +1305,7 @@ class RoutedExecutionService:
                     qty=float(plan.quantity),
                     before_position=current_qty,
                     after_position=after_qty,
-                    action_class="blocked",
+                    action_class=action_class,
                     reason=reason,
                 )
                 results.append(
@@ -1036,26 +1320,36 @@ class RoutedExecutionService:
 
         attempted_orders = 0
         for plan in order_plans:
+            order_started = perf_counter()
             idempotency_key = build_idempotency_key(
                 user_id=user_id,
                 plan=plan,
                 epoch_minute=epoch_minute,
             )
             mark_price = float(planning_prices.get(plan.symbol, 0.0) or 0.0)
-            current_qty = float(current_positions.get(plan.symbol, 0.0))
-            if idempotency_key in state.accounted_order_keys:
+            current_qty = float(projected_positions.get(plan.symbol, 0.0))
+            audit_after = self._project_after_position(
+                current_qty=current_qty,
+                side=plan.side,
+                quantity=float(plan.quantity),
+            )
+            projected_candidate_positions = dict(projected_positions)
+            projected_candidate_positions[plan.symbol] = audit_after
+            telemetry = self._build_route_risk_telemetry(
+                symbol=plan.symbol,
+                current_positions=projected_positions,
+                projected_positions=projected_candidate_positions,
+                prices=planning_prices,
+                equity_usd=planning_equity,
+                bucket_map=bucket_map,
+                hard_policy=state.hard_risk_policy,
+                dynamic_policy=state.dynamic_risk_policy,
+                operating_policy=policy,
+            )
+            previous_result = state.order_results_by_key.get(idempotency_key)
+            if previous_result is not None:
                 results.append(
-                    self._build_skipped_result(
-                        idempotency_key=idempotency_key,
-                        plan=plan,
-                        mark_price=mark_price,
-                        reason="skipped_by_idempotency:already_accounted",
-                    )
-                )
-                audit_after = self._project_after_position(
-                    current_qty=current_qty,
-                    side=plan.side,
-                    quantity=float(plan.quantity),
+                    previous_result.replay_copy()
                 )
                 audit_action = self._audit_action_class(
                     current_qty=current_qty,
@@ -1064,6 +1358,7 @@ class RoutedExecutionService:
                 )
                 self._log_route_audit(
                     user_id=user_id,
+                    correlation_id=correlation_id,
                     pause_state="internal_hard_risk" if internal_risk_only else "none",
                     is_active=None,
                     live_mode=(state.mode == "live"),
@@ -1072,8 +1367,9 @@ class RoutedExecutionService:
                     qty=float(plan.quantity),
                     before_position=current_qty,
                     after_position=audit_after,
-                    action_class="blocked",
-                    reason=f"skipped_by_idempotency:already_accounted:{audit_action}",
+                    action_class=audit_action,
+                    reason=f"idempotent_replay:{audit_action}",
+                    **telemetry,
                 )
                 continue
             activity = self._classify_order_activity(
@@ -1086,19 +1382,52 @@ class RoutedExecutionService:
                 side=plan.side,
                 quantity=float(plan.quantity),
             )
-            audit_after = self._project_after_position(
-                current_qty=current_qty,
-                side=plan.side,
-                quantity=float(plan.quantity),
-            )
             risk_reducing_plan = self._is_risk_reducing_order(
                 current_qty=current_qty,
                 side=plan.side,
                 quantity=float(plan.quantity),
             )
-            bypass_alpha_filters = risk_reducing_plan and (
-                internal_risk_only or bool(getattr(state, "soft_breach_active", False))
-            )
+            bypass_alpha_filters = risk_reducing_plan
+
+            if not risk_reducing_plan:
+                limit_reason = self._projected_limit_breach_reason(
+                    current_positions=projected_positions,
+                    prices=planning_prices,
+                    equity_usd=planning_equity,
+                    hard_policy=state.hard_risk_policy,
+                    bucket_map=bucket_map,
+                    adverse_mark_buffer_frac=float(
+                        getattr(policy, "adverse_mark_buffer_frac", cfg.adverse_mark_buffer_frac)
+                    ),
+                    symbol=plan.symbol,
+                    side=plan.side,
+                    quantity=float(plan.quantity),
+                )
+                if limit_reason is not None:
+                    results.append(
+                        self._build_skipped_result(
+                            idempotency_key=idempotency_key,
+                            plan=plan,
+                            mark_price=mark_price,
+                            reason=f"skipped_by_risk:{limit_reason}",
+                        )
+                    )
+                    self._log_route_audit(
+                        user_id=user_id,
+                        correlation_id=correlation_id,
+                        pause_state="internal_hard_risk" if internal_risk_only else "none",
+                        is_active=None,
+                        live_mode=(state.mode == "live"),
+                        symbol=plan.symbol,
+                        side=plan.side,
+                        qty=float(plan.quantity),
+                        before_position=current_qty,
+                        after_position=audit_after,
+                        action_class=audit_action,
+                        reason=f"skipped_by_risk:{limit_reason}",
+                        **telemetry,
+                    )
+                    continue
 
             if activity == "rebalance" and not bypass_alpha_filters:
                 delta_notional_usd = abs(float(plan.quantity) * mark_price)
@@ -1123,6 +1452,7 @@ class RoutedExecutionService:
                         )
                         self._log_route_audit(
                             user_id=user_id,
+                            correlation_id=correlation_id,
                             pause_state="internal_hard_risk" if internal_risk_only else "none",
                             is_active=None,
                             live_mode=(state.mode == "live"),
@@ -1131,8 +1461,9 @@ class RoutedExecutionService:
                             qty=float(plan.quantity),
                             before_position=current_qty,
                             after_position=audit_after,
-                            action_class="blocked",
+                            action_class=audit_action,
                             reason="skipped_by_deadband:weight_drift_and_absolute_usd",
+                            **telemetry,
                         )
                         continue
 
@@ -1153,6 +1484,7 @@ class RoutedExecutionService:
                         )
                         self._log_route_audit(
                             user_id=user_id,
+                            correlation_id=correlation_id,
                             pause_state="internal_hard_risk" if internal_risk_only else "none",
                             is_active=None,
                             live_mode=(state.mode == "live"),
@@ -1161,8 +1493,9 @@ class RoutedExecutionService:
                             qty=float(plan.quantity),
                             before_position=current_qty,
                             after_position=audit_after,
-                            action_class="blocked",
+                            action_class=audit_action,
                             reason="skipped_by_deadband:confidence_delta",
+                            **telemetry,
                         )
                         continue
 
@@ -1181,6 +1514,7 @@ class RoutedExecutionService:
                         )
                         self._log_route_audit(
                             user_id=user_id,
+                            correlation_id=correlation_id,
                             pause_state="internal_hard_risk" if internal_risk_only else "none",
                             is_active=None,
                             live_mode=(state.mode == "live"),
@@ -1189,8 +1523,9 @@ class RoutedExecutionService:
                             qty=float(plan.quantity),
                             before_position=current_qty,
                             after_position=audit_after,
-                            action_class="blocked",
+                            action_class=audit_action,
                             reason="skipped_by_deadband:edge_improvement",
+                            **telemetry,
                         )
                         continue
 
@@ -1209,6 +1544,7 @@ class RoutedExecutionService:
                         )
                         self._log_route_audit(
                             user_id=user_id,
+                            correlation_id=correlation_id,
                             pause_state="internal_hard_risk" if internal_risk_only else "none",
                             is_active=None,
                             live_mode=(state.mode == "live"),
@@ -1217,8 +1553,9 @@ class RoutedExecutionService:
                             qty=float(plan.quantity),
                             before_position=current_qty,
                             after_position=audit_after,
-                            action_class="blocked",
+                            action_class=audit_action,
                             reason="skipped_by_deadband:cooldown",
+                            **telemetry,
                         )
                         continue
 
@@ -1237,6 +1574,7 @@ class RoutedExecutionService:
                 )
                 self._log_route_audit(
                     user_id=user_id,
+                    correlation_id=correlation_id,
                     pause_state="internal_hard_risk" if internal_risk_only else "none",
                     is_active=None,
                     live_mode=(state.mode == "live"),
@@ -1245,8 +1583,9 @@ class RoutedExecutionService:
                     qty=float(plan.quantity),
                     before_position=current_qty,
                     after_position=audit_after,
-                    action_class="blocked",
+                    action_class=audit_action,
                     reason="skipped_by_deadband:max_orders_per_cycle",
+                    **telemetry,
                 )
                 continue
 
@@ -1294,9 +1633,38 @@ class RoutedExecutionService:
                     created_at=datetime.now(timezone.utc).isoformat(),
                     reason=f"adapter_exception:{exc.__class__.__name__}",
                 )
+            self._emit_stage_telemetry(
+                user_id=user_id,
+                stage="order_execution",
+                started_at=order_started,
+                correlation_id=correlation_id,
+                status="accepted" if result.accepted else "rejected",
+                detail=f"symbol={plan.symbol} side={plan.side}",
+            )
+            result = replace(
+                result,
+                risk_policy_version=str(telemetry.get("risk_policy_version", "")),
+            )
+            if self._requires_residual_supervision(result):
+                residual_supervision_triggered = True
+                residual_reason = "residual_position_supervision_required"
+                state.kill_switch = KillSwitchEvaluation(
+                    pause_trading=True,
+                    reasons=tuple(
+                        dict.fromkeys((*state.kill_switch.reasons, residual_reason))
+                    ),
+                )
+                logger.warning(
+                    "Residual-position supervision required for user %s symbol=%s reason=%s",
+                    user_id,
+                    plan.symbol,
+                    result.reason,
+            )
             results.append(result)
             activity_by_key[idempotency_key] = activity
-            filled_qty = float(result.filled_qty or 0.0) if result.accepted else 0.0
+            if idempotency_key:
+                state.order_results_by_key[idempotency_key] = result
+            filled_qty = float(result.economic_filled_qty if result.accepted else 0.0)
             actual_after = self._project_after_position(
                 current_qty=current_qty,
                 side=plan.side,
@@ -1304,6 +1672,7 @@ class RoutedExecutionService:
             )
             self._log_route_audit(
                 user_id=user_id,
+                correlation_id=correlation_id,
                 pause_state="internal_hard_risk" if internal_risk_only else "none",
                 is_active=None,
                 live_mode=(state.mode == "live"),
@@ -1312,14 +1681,17 @@ class RoutedExecutionService:
                 qty=float(plan.quantity),
                 before_position=current_qty,
                 after_position=actual_after,
-                action_class=audit_action if result.accepted else "blocked",
+                action_class=audit_action,
                 reason=(result.reason or ("order_accepted" if result.accepted else "order_rejected")),
                 accepted=bool(result.accepted),
                 status=str(result.status or ""),
                 order_id=str(result.order_id or ""),
                 idempotency_key=str(result.idempotency_key or idempotency_key),
                 mark_price=mark_price,
+                **telemetry,
             )
+            if result.accepted and filled_qty > 0.0:
+                projected_positions[result.symbol] = actual_after
 
         state.diagnostics = self._update_execution_diagnostics(
             state.diagnostics,
@@ -1357,11 +1729,19 @@ class RoutedExecutionService:
         )
         self._apply_snapshot_risk_monitoring(
             state,
-            risk_policy=policy,
+            risk_policy=state.hard_risk_policy,
         )
+        if residual_supervision_triggered:
+            residual_reason = "residual_position_supervision_required"
+            state.kill_switch = KillSwitchEvaluation(
+                pause_trading=True,
+                reasons=tuple(
+                    dict.fromkeys((*state.kill_switch.reasons, residual_reason))
+                ),
+            )
 
         # Persist position snapshot to disk after every fill
-        any_fill = any(r.accepted and r.filled_qty > 0 for r in results)
+        any_fill = any(r.accepted and float(getattr(r, "economic_filled_qty", r.filled_qty) or 0.0) > 0 for r in results)
         if any_fill:
             self._persist_position_snapshot(user_id, state, planning_prices)
 
@@ -1381,6 +1761,14 @@ class RoutedExecutionService:
                 state,
                 gate_reasons=state.kill_switch.reasons if state.kill_switch.pause_trading else (),
             )
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="route_signals",
+            started_at=route_started,
+            correlation_id=correlation_id,
+            status="ok",
+            detail=f"results={len(results)} accepted={sum(1 for result in results if result.accepted)}",
+        )
         return tuple(results)
 
     @staticmethod
@@ -1514,11 +1902,12 @@ class RoutedExecutionService:
 
             side = "BUY" if delta_qty > 0.0 else "SELL"
             quantity = abs(delta_qty)
+            reduce_only = abs(target_qty) <= 1e-12
             plan = OrderPlan(
                 symbol=symbol,
                 side=side,
                 quantity=quantity,
-                reduce_only=False,
+                reduce_only=reduce_only,
             )
             idempotency_key = build_idempotency_key(
                 user_id=user_id,
@@ -1624,7 +2013,7 @@ class RoutedExecutionService:
         )
         self._apply_snapshot_risk_monitoring(
             state,
-            risk_policy=state.effective_risk_policy,
+            risk_policy=state.hard_risk_policy,
         )
         if state.kill_switch.pause_trading:
             logger.warning(
@@ -1666,7 +2055,7 @@ class RoutedExecutionService:
         if state is None:
             return False
 
-        state.diagnostics = self._build_initial_diagnostics(state.effective_risk_policy)
+        state.diagnostics = self._build_initial_diagnostics(state.hard_risk_policy)
         merged_anomaly = max(
             state.external_execution_anomaly_rate,
             state.diagnostics.reject_rate,
@@ -1678,8 +2067,22 @@ class RoutedExecutionService:
             )
         self._apply_snapshot_risk_monitoring(
             state,
-            risk_policy=state.effective_risk_policy,
+            risk_policy=state.hard_risk_policy,
         )
+        return True
+
+    def restore_order_result(self, user_id: int, result: ExecutionResult) -> bool:
+        """Restore a durable result for exact-once replay after a restart."""
+
+        state = self._sessions.get(user_id)
+        if state is None:
+            return False
+        key = str(getattr(result, "idempotency_key", "") or "").strip()
+        if not key:
+            return False
+        state.order_results_by_key[key] = result
+        if result.accepted and float(getattr(result, "economic_filled_qty", result.filled_qty) or 0.0) > 0.0:
+            state.accounted_order_keys.add(key)
         return True
 
     def get_session_mode(self, user_id: int) -> str | None:
@@ -1697,6 +2100,50 @@ class RoutedExecutionService:
         if state is None:
             return {}
         return dict(state.last_prices)
+
+    def get_lifecycle_state(self, user_id: int) -> LifecycleStateRecord | None:
+        """Return the durable lifecycle record for a session, if present."""
+
+        return self._lifecycle_states.get(user_id)
+
+    def set_lifecycle_state(
+        self,
+        user_id: int,
+        *,
+        state: str,
+        owner: str,
+        reason: str,
+        policy_version: str = "",
+        retry_count: int | None = None,
+    ) -> LifecycleStateRecord:
+        """Apply a monotonic lifecycle transition for a session."""
+
+        current = self._lifecycle_states.get(user_id)
+        if current is None and user_id not in self._sessions:
+            raise KeyError(f"No active session for user {user_id}")
+
+        record = _build_lifecycle_state_record(
+            current,
+            state=state,
+            owner=owner,
+            reason=reason,
+            policy_version=policy_version,
+            retry_count=retry_count,
+        )
+        self._lifecycle_states[user_id] = record
+        return record
+
+    def restore_lifecycle_state(
+        self,
+        user_id: int,
+        record: LifecycleStateRecord,
+    ) -> LifecycleStateRecord:
+        """Restore a lifecycle record from durable replay without recomputing timestamps."""
+
+        current = self._lifecycle_states.get(user_id)
+        validate_lifecycle_transition(current.state if current is not None else None, record.state)
+        self._lifecycle_states[user_id] = record
+        return record
 
     def set_lifecycle_rules(
         self,
@@ -1882,6 +2329,17 @@ class RoutedExecutionService:
             state.monitoring_snapshot,
             config=self._kill_switch_config,
         )
+        if combined_hard_breach or state.external_hard_risk_breach:
+            try:
+                self.set_lifecycle_state(
+                    state.request.user_id,
+                    state="REDUCE_ONLY",
+                    owner="liquidation_supervisor",
+                    reason="hard_risk_breach",
+                    policy_version=str(getattr(risk_policy, "policy_version", "")),
+                )
+            except ValueError:
+                pass
         if (
             state.kill_switch.pause_trading
             and "hard_risk_breach" in state.kill_switch.reasons
@@ -2169,7 +2627,7 @@ class RoutedExecutionService:
         except ValueError:
             return float(default)
 
-    def _build_initial_diagnostics(self, policy: PortfolioRiskPolicy) -> ExecutionDiagnostics:
+    def _build_initial_diagnostics(self, policy: HardRiskLimits) -> ExecutionDiagnostics:
         return ExecutionDiagnostics(
             live_go_no_go_passed=self._live_go_no_go_passed,
             rollback_required=self._rollback_required,
@@ -2178,16 +2636,66 @@ class RoutedExecutionService:
             effective_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
             effective_gross_cap_frac=float(policy.max_gross_exposure_frac),
             effective_net_cap_frac=float(policy.max_net_exposure_frac),
+            hard_symbol_cap_frac=float(policy.max_symbol_exposure_frac),
+            hard_gross_cap_frac=float(policy.max_gross_exposure_frac),
+            hard_net_cap_frac=float(policy.max_net_exposure_frac),
+            risk_policy_version=getattr(policy, "policy_version", ""),
         )
 
-    def _resolve_session_risk_policy(self, request: SessionRequest) -> PortfolioRiskPolicy:
+    @staticmethod
+    def _coerce_hard_risk_policy(policy: PortfolioRiskPolicy) -> HardRiskLimits:
+        if isinstance(policy, HardRiskLimits):
+            return policy
+        return HardRiskLimits(
+            max_symbol_exposure_frac=float(policy.max_symbol_exposure_frac),
+            max_gross_exposure_frac=float(policy.max_gross_exposure_frac),
+            max_net_exposure_frac=float(policy.max_net_exposure_frac),
+            correlation_bucket_caps={
+                bucket: float(limit)
+                for bucket, limit in policy.correlation_bucket_caps.items()
+            },
+            policy_version=str(getattr(policy, "policy_version", "")) or HardRiskLimits().policy_version,
+        )
+
+    @staticmethod
+    def _build_dynamic_operating_policy(
+        hard_policy: HardRiskLimits,
+        cfg: PlannerConfig,
+    ) -> OperatingRiskLimits:
+        return OperatingRiskLimits.from_hard_limits(
+            hard_policy,
+            target_headroom_ratio=cfg.target_headroom_ratio,
+            fee_reserve_frac=cfg.fee_reserve_frac,
+            slippage_reserve_frac=cfg.slippage_reserve_frac,
+            rounding_reserve_frac=cfg.rounding_reserve_frac,
+            min_quantity_reserve_frac=cfg.min_quantity_reserve_frac,
+            adverse_mark_buffer_frac=cfg.adverse_mark_buffer_frac,
+        )
+
+    @staticmethod
+    def _build_operating_policy(policy: OperatingRiskLimits) -> OperatingRiskLimits:
+        return policy.scaled(
+            policy.effective_headroom_ratio,
+            limit_source="operating_headroom",
+        )
+
+    @staticmethod
+    def _requires_residual_supervision(result: ExecutionResult) -> bool:
+        reason = str(result.reason or "")
+        status = str(result.status or "")
+        return (
+            "supervised_residual_position_required" in reason
+            or status == "residual_supervision_required"
+        )
+
+    def _resolve_session_risk_policy(self, request: SessionRequest) -> HardRiskLimits:
         if not request.live:
             return self._risk_policy
         return self._apply_canary_risk_cap(self._risk_policy)
 
-    def _apply_canary_risk_cap(self, policy: PortfolioRiskPolicy) -> PortfolioRiskPolicy:
+    def _apply_canary_risk_cap(self, policy: HardRiskLimits) -> HardRiskLimits:
         cap = self._canary_live_risk_cap_frac
-        return PortfolioRiskPolicy(
+        return HardRiskLimits(
             max_symbol_exposure_frac=min(policy.max_symbol_exposure_frac, cap),
             max_gross_exposure_frac=min(policy.max_gross_exposure_frac, cap),
             max_net_exposure_frac=min(policy.max_net_exposure_frac, cap),
@@ -2195,12 +2703,13 @@ class RoutedExecutionService:
                 bucket: min(float(limit), cap)
                 for bucket, limit in policy.correlation_bucket_caps.items()
             },
+            policy_version=policy.policy_version,
         )
 
     @staticmethod
     def _compute_dynamic_risk_policy(
         state: _SessionState,
-    ) -> PortfolioRiskPolicy | None:
+    ) -> OperatingRiskLimits | None:
         """Compute volatility-scaled risk caps from equity history.
 
         Returns ``None`` when history is too short to estimate volatility,
@@ -2225,31 +2734,33 @@ class RoutedExecutionService:
         if sigma_60 <= 1e-9:
             return None
 
-        gross_cap = min(1.20 / sigma_60, 0.85)
-        gross_cap = max(gross_cap, 0.05)
-        net_cap = min(0.45 * gross_cap, gross_cap)
-        symbol_cap = min(0.30 * gross_cap, 1.0)
-
-        return PortfolioRiskPolicy(
-            max_symbol_exposure_frac=symbol_cap,
-            max_gross_exposure_frac=gross_cap,
-            max_net_exposure_frac=net_cap,
-            correlation_bucket_caps=state.effective_risk_policy.correlation_bucket_caps,
+        return build_dynamic_operating_limits(
+            hard_limits=state.hard_risk_policy,
+            sigma_60=sigma_60,
+            target_headroom_ratio=float(
+                getattr(state.effective_risk_policy, "target_headroom_ratio", 1.0)
+            ),
+            fee_reserve_frac=float(
+                getattr(state.effective_risk_policy, "fee_reserve_frac", 0.0)
+            ),
+            slippage_reserve_frac=float(
+                getattr(state.effective_risk_policy, "slippage_reserve_frac", 0.0)
+            ),
+            rounding_reserve_frac=float(
+                getattr(state.effective_risk_policy, "rounding_reserve_frac", 0.0)
+            ),
+            min_quantity_reserve_frac=float(
+                getattr(state.effective_risk_policy, "min_quantity_reserve_frac", 0.0)
+            ),
+            adverse_mark_buffer_frac=float(
+                getattr(state.effective_risk_policy, "adverse_mark_buffer_frac", 0.0)
+            ),
         )
 
     @staticmethod
-    def _apply_soft_breach_caps(policy: PortfolioRiskPolicy) -> PortfolioRiskPolicy:
+    def _apply_soft_breach_caps(policy: OperatingRiskLimits) -> OperatingRiskLimits:
         """Scale all risk caps to 90% during a soft-breach window."""
-        scale = 0.90
-        return PortfolioRiskPolicy(
-            max_symbol_exposure_frac=policy.max_symbol_exposure_frac * scale,
-            max_gross_exposure_frac=policy.max_gross_exposure_frac * scale,
-            max_net_exposure_frac=policy.max_net_exposure_frac * scale,
-            correlation_bucket_caps={
-                bucket: float(limit) * scale
-                for bucket, limit in policy.correlation_bucket_caps.items()
-            },
-        )
+        return policy.scaled(0.90, limit_source="soft_breach")
 
     async def check_and_handle_partial_fills(self, user_id: int) -> list[dict]:
         """Check for partially filled limit orders and cancel remaining quantity.
@@ -2280,7 +2791,6 @@ class RoutedExecutionService:
         handled_events: list[dict] = []
         get_open_orders = getattr(state.adapter, "get_open_orders", None)
         cancel_order = getattr(state.adapter, "cancel_order", None)
-        get_order_status = getattr(state.adapter, "get_order_status", None)
 
         if not callable(get_open_orders) or not callable(cancel_order):
             return []
@@ -2433,6 +2943,205 @@ class RoutedExecutionService:
         side_sign = 1.0 if side == "BUY" else -1.0
         return float(current_qty) + (side_sign * float(quantity))
 
+    @staticmethod
+    def _conservative_mark(*, price: float, adverse_mark_buffer_frac: float) -> float:
+        if price <= 0.0:
+            return 0.0
+        return float(price) * (1.0 + max(float(adverse_mark_buffer_frac), 0.0))
+
+    @classmethod
+    def _exposure_metrics(
+        cls,
+        *,
+        positions: dict[str, float],
+        prices: dict[str, float],
+        equity_usd: float,
+        bucket_map: dict[str, str] | None = None,
+        adverse_mark_buffer_frac: float = 0.0,
+    ) -> dict[str, Any]:
+        symbol_exposure_fracs: dict[str, float] = {}
+        bucket_gross_exposure: dict[str, float] = {}
+        gross = 0.0
+        net = 0.0
+        if equity_usd <= 0.0:
+            return {
+                "symbol_exposure_fracs": symbol_exposure_fracs,
+                "bucket_gross_exposure": bucket_gross_exposure,
+                "gross_exposure_frac": 0.0,
+                "net_exposure_frac": 0.0,
+            }
+
+        for sym, qty in positions.items():
+            base_price = float(prices.get(sym, 0.0) or 0.0)
+            price = cls._conservative_mark(
+                price=base_price,
+                adverse_mark_buffer_frac=adverse_mark_buffer_frac,
+            )
+            if price <= 0.0 or abs(qty) <= 1e-12:
+                continue
+            exposure = (float(qty) * price) / equity_usd
+            symbol_exposure_fracs[sym] = float(exposure)
+            gross += abs(exposure)
+            net += exposure
+            if bucket_map:
+                bucket = bucket_map.get(sym, "unmapped")
+                bucket_gross_exposure[bucket] = bucket_gross_exposure.get(bucket, 0.0) + abs(exposure)
+
+        return {
+            "symbol_exposure_fracs": symbol_exposure_fracs,
+            "bucket_gross_exposure": bucket_gross_exposure,
+            "gross_exposure_frac": float(gross),
+            "net_exposure_frac": float(net),
+        }
+
+    @classmethod
+    def _projected_limit_breach_reason(
+        cls,
+        *,
+        current_positions: dict[str, float],
+        prices: dict[str, float],
+        equity_usd: float,
+        hard_policy: PortfolioRiskPolicy,
+        bucket_map: dict[str, str] | None = None,
+        adverse_mark_buffer_frac: float = 0.0,
+        symbol: str,
+        side: str,
+        quantity: float,
+    ) -> str | None:
+        if equity_usd <= 0.0:
+            return "non_positive_equity"
+
+        projected_positions = {
+            sym: float(qty)
+            for sym, qty in current_positions.items()
+        }
+        current_qty = float(projected_positions.get(symbol, 0.0))
+        projected_positions[symbol] = cls._project_after_position(
+            current_qty=current_qty,
+            side=side,
+            quantity=quantity,
+        )
+
+        metrics = cls._exposure_metrics(
+            positions=projected_positions,
+            prices=prices,
+            equity_usd=equity_usd,
+            bucket_map=bucket_map,
+            adverse_mark_buffer_frac=adverse_mark_buffer_frac,
+        )
+        for exposure in metrics["symbol_exposure_fracs"].values():
+            if abs(float(exposure)) > float(hard_policy.max_symbol_exposure_frac) + 1e-9:
+                return "projected_symbol_cap"
+        for bucket, limit in hard_policy.correlation_bucket_caps.items():
+            if float(metrics["bucket_gross_exposure"].get(bucket, 0.0)) > float(limit) + 1e-9:
+                return "projected_bucket_cap"
+        if float(metrics["gross_exposure_frac"]) > float(hard_policy.max_gross_exposure_frac) + 1e-9:
+            return "projected_gross_cap"
+        if abs(float(metrics["net_exposure_frac"])) > float(hard_policy.max_net_exposure_frac) + 1e-9:
+            return "projected_net_cap"
+        return None
+
+    @classmethod
+    def _portfolio_limit_breach_reason(
+        cls,
+        *,
+        positions: dict[str, float],
+        prices: dict[str, float],
+        equity_usd: float,
+        policy: PortfolioRiskPolicy,
+        bucket_map: dict[str, str] | None = None,
+        adverse_mark_buffer_frac: float = 0.0,
+    ) -> str | None:
+        if equity_usd <= 0.0:
+            return "non_positive_equity"
+
+        metrics = cls._exposure_metrics(
+            positions=positions,
+            prices=prices,
+            equity_usd=equity_usd,
+            bucket_map=bucket_map,
+            adverse_mark_buffer_frac=adverse_mark_buffer_frac,
+        )
+        for exposure in metrics["symbol_exposure_fracs"].values():
+            if abs(float(exposure)) > float(policy.max_symbol_exposure_frac) + 1e-9:
+                return "current_symbol_cap"
+        for bucket, limit in policy.correlation_bucket_caps.items():
+            if float(metrics["bucket_gross_exposure"].get(bucket, 0.0)) > float(limit) + 1e-9:
+                return "current_bucket_cap"
+        if float(metrics["gross_exposure_frac"]) > float(policy.max_gross_exposure_frac) + 1e-9:
+            return "current_gross_cap"
+        if abs(float(metrics["net_exposure_frac"])) > float(policy.max_net_exposure_frac) + 1e-9:
+            return "current_net_cap"
+        return None
+
+    @staticmethod
+    def _headroom_value(limit: float, exposure: float) -> float:
+        return max(float(limit) - abs(float(exposure)), 0.0)
+
+    @classmethod
+    def _build_route_risk_telemetry(
+        cls,
+        *,
+        symbol: str,
+        current_positions: dict[str, float],
+        projected_positions: dict[str, float],
+        prices: dict[str, float],
+        equity_usd: float,
+        bucket_map: dict[str, str] | None,
+        hard_policy: HardRiskLimits,
+        dynamic_policy: OperatingRiskLimits,
+        operating_policy: OperatingRiskLimits,
+    ) -> dict[str, float | str]:
+        current_metrics = cls._exposure_metrics(
+            positions=current_positions,
+            prices=prices,
+            equity_usd=equity_usd,
+            bucket_map=bucket_map,
+            adverse_mark_buffer_frac=float(dynamic_policy.adverse_mark_buffer_frac),
+        )
+        projected_metrics = cls._exposure_metrics(
+            positions=projected_positions,
+            prices=prices,
+            equity_usd=equity_usd,
+            bucket_map=bucket_map,
+            adverse_mark_buffer_frac=float(operating_policy.adverse_mark_buffer_frac),
+        )
+        current_symbol = float(current_metrics["symbol_exposure_fracs"].get(symbol, 0.0))
+        projected_symbol = float(projected_metrics["symbol_exposure_fracs"].get(symbol, 0.0))
+        return {
+            "risk_policy_version": str(hard_policy.policy_version),
+            "hard_symbol_cap_frac": float(hard_policy.max_symbol_exposure_frac),
+            "hard_gross_cap_frac": float(hard_policy.max_gross_exposure_frac),
+            "hard_net_cap_frac": float(hard_policy.max_net_exposure_frac),
+            "dynamic_symbol_cap_frac": float(dynamic_policy.max_symbol_exposure_frac),
+            "dynamic_gross_cap_frac": float(dynamic_policy.max_gross_exposure_frac),
+            "dynamic_net_cap_frac": float(dynamic_policy.max_net_exposure_frac),
+            "operating_symbol_cap_frac": float(operating_policy.max_symbol_exposure_frac),
+            "operating_gross_cap_frac": float(operating_policy.max_gross_exposure_frac),
+            "operating_net_cap_frac": float(operating_policy.max_net_exposure_frac),
+            "target_headroom_ratio": float(operating_policy.target_headroom_ratio),
+            "reserve_capacity_frac": float(operating_policy.reserve_capacity_frac),
+            "adverse_mark_buffer_frac": float(operating_policy.adverse_mark_buffer_frac),
+            "current_symbol_exposure_frac": current_symbol,
+            "projected_symbol_exposure_frac": projected_symbol,
+            "current_gross_exposure_frac": float(current_metrics["gross_exposure_frac"]),
+            "projected_gross_exposure_frac": float(projected_metrics["gross_exposure_frac"]),
+            "current_net_exposure_frac": float(current_metrics["net_exposure_frac"]),
+            "projected_net_exposure_frac": float(projected_metrics["net_exposure_frac"]),
+            "symbol_headroom_frac": cls._headroom_value(
+                operating_policy.max_symbol_exposure_frac,
+                projected_symbol,
+            ),
+            "gross_headroom_frac": cls._headroom_value(
+                operating_policy.max_gross_exposure_frac,
+                float(projected_metrics["gross_exposure_frac"]),
+            ),
+            "net_headroom_frac": cls._headroom_value(
+                operating_policy.max_net_exposure_frac,
+                float(projected_metrics["net_exposure_frac"]),
+            ),
+        }
+
     @classmethod
     def _audit_action_class(cls, *, current_qty: float, side: str, quantity: float) -> str:
         eps = 1e-12
@@ -2442,14 +3151,14 @@ class RoutedExecutionService:
             quantity=quantity,
         )
         if abs(current_qty) <= eps and abs(next_qty) > eps:
-            return "entry"
+            return "INCREASE"
         if current_qty * next_qty < -eps:
-            return "flip"
+            return "FLIP"
         if abs(next_qty) <= eps and abs(current_qty) > eps:
-            return "flatten"
+            return "FLATTEN"
         if abs(next_qty) < abs(current_qty) - eps:
-            return "reduce"
-        return "rebalance"
+            return "REDUCE"
+        return "INCREASE"
 
     @classmethod
     def _is_risk_reducing_order(cls, *, current_qty: float, side: str, quantity: float) -> bool:
@@ -2457,7 +3166,7 @@ class RoutedExecutionService:
             current_qty=current_qty,
             side=side,
             quantity=quantity,
-        ) in {"flatten", "reduce"}
+        ) in {"FLATTEN", "REDUCE"}
 
     @classmethod
     def _hard_pause_reduce_only_decision(
@@ -2481,12 +3190,12 @@ class RoutedExecutionService:
         if abs(current_qty) <= eps:
             return False, action_class, "hard_pause_new_symbol_exposure", after_qty
         if current_qty * after_qty < -eps:
-            return False, "flip", "hard_pause_position_flip_blocked", after_qty
+            return False, "FLIP", "hard_pause_position_flip_blocked", after_qty
         if abs(after_qty) > abs(current_qty) + eps:
             return False, action_class, "hard_pause_increased_abs_exposure_blocked", after_qty
         if abs(after_qty) <= eps:
-            return True, "flatten", "hard_pause_reduce_only_flatten_allowed", 0.0
-        return True, "reduce", "hard_pause_reduce_only_allowed", after_qty
+            return True, "FLATTEN", "hard_pause_reduce_only_flatten_allowed", 0.0
+        return True, "REDUCE", "hard_pause_reduce_only_allowed", after_qty
 
     def _log_route_audit(
         self,
@@ -2507,11 +3216,37 @@ class RoutedExecutionService:
         order_id: str = "",
         idempotency_key: str = "",
         mark_price: float = 0.0,
+        risk_policy_version: str = "",
+        hard_symbol_cap_frac: float = 0.0,
+        hard_gross_cap_frac: float = 0.0,
+        hard_net_cap_frac: float = 0.0,
+        dynamic_symbol_cap_frac: float = 0.0,
+        dynamic_gross_cap_frac: float = 0.0,
+        dynamic_net_cap_frac: float = 0.0,
+        operating_symbol_cap_frac: float = 0.0,
+        operating_gross_cap_frac: float = 0.0,
+        operating_net_cap_frac: float = 0.0,
+        target_headroom_ratio: float = 0.85,
+        reserve_capacity_frac: float = 0.0,
+        adverse_mark_buffer_frac: float = 0.0,
+        current_symbol_exposure_frac: float = 0.0,
+        projected_symbol_exposure_frac: float = 0.0,
+        current_gross_exposure_frac: float = 0.0,
+        projected_gross_exposure_frac: float = 0.0,
+        current_net_exposure_frac: float = 0.0,
+        projected_net_exposure_frac: float = 0.0,
+        symbol_headroom_frac: float = 0.0,
+        gross_headroom_frac: float = 0.0,
+        net_headroom_frac: float = 0.0,
+        correlation_id: str = "",
     ) -> None:
         logger.info(
             "V2 route audit user_id=%s pause_state=%s is_active=%s live_mode=%s "
             "symbol=%s side=%s qty=%.12g before_position=%s after_position=%s "
-            "action_class=%s reason=%s",
+            "action_class=%s reason=%s risk_policy_version=%s "
+            "hard_caps=(%.4f,%.4f,%.4f) dynamic_caps=(%.4f,%.4f,%.4f) "
+            "operating_caps=(%.4f,%.4f,%.4f) current_exp=(%.4f,%.4f,%.4f) "
+            "projected_exp=(%.4f,%.4f,%.4f) headroom=(%.4f,%.4f,%.4f)",
             user_id,
             pause_state,
             "unknown" if is_active is None else bool(is_active),
@@ -2523,6 +3258,25 @@ class RoutedExecutionService:
             "unknown" if after_position is None else f"{float(after_position):.12g}",
             action_class,
             reason,
+            risk_policy_version,
+            float(hard_symbol_cap_frac),
+            float(hard_gross_cap_frac),
+            float(hard_net_cap_frac),
+            float(dynamic_symbol_cap_frac),
+            float(dynamic_gross_cap_frac),
+            float(dynamic_net_cap_frac),
+            float(operating_symbol_cap_frac),
+            float(operating_gross_cap_frac),
+            float(operating_net_cap_frac),
+            float(current_symbol_exposure_frac),
+            float(current_gross_exposure_frac),
+            float(current_net_exposure_frac),
+            float(projected_symbol_exposure_frac),
+            float(projected_gross_exposure_frac),
+            float(projected_net_exposure_frac),
+            float(symbol_headroom_frac),
+            float(gross_headroom_frac),
+            float(net_headroom_frac),
         )
         callback = self._route_audit_callback
         if callback is None:
@@ -2530,6 +3284,7 @@ class RoutedExecutionService:
         event = RouteAuditEvent(
             user_id=user_id,
             created_at=datetime.now(timezone.utc),
+            correlation_id=str(correlation_id or ""),
             pause_state=pause_state,
             is_active=is_active,
             live_mode=bool(live_mode),
@@ -2545,6 +3300,28 @@ class RoutedExecutionService:
             order_id=str(order_id or ""),
             idempotency_key=str(idempotency_key or ""),
             mark_price=float(mark_price or 0.0),
+            risk_policy_version=str(risk_policy_version or ""),
+            hard_symbol_cap_frac=float(hard_symbol_cap_frac or 0.0),
+            hard_gross_cap_frac=float(hard_gross_cap_frac or 0.0),
+            hard_net_cap_frac=float(hard_net_cap_frac or 0.0),
+            dynamic_symbol_cap_frac=float(dynamic_symbol_cap_frac or 0.0),
+            dynamic_gross_cap_frac=float(dynamic_gross_cap_frac or 0.0),
+            dynamic_net_cap_frac=float(dynamic_net_cap_frac or 0.0),
+            operating_symbol_cap_frac=float(operating_symbol_cap_frac or 0.0),
+            operating_gross_cap_frac=float(operating_gross_cap_frac or 0.0),
+            operating_net_cap_frac=float(operating_net_cap_frac or 0.0),
+            target_headroom_ratio=float(target_headroom_ratio or 0.0),
+            reserve_capacity_frac=float(reserve_capacity_frac or 0.0),
+            adverse_mark_buffer_frac=float(adverse_mark_buffer_frac or 0.0),
+            current_symbol_exposure_frac=float(current_symbol_exposure_frac or 0.0),
+            projected_symbol_exposure_frac=float(projected_symbol_exposure_frac or 0.0),
+            current_gross_exposure_frac=float(current_gross_exposure_frac or 0.0),
+            projected_gross_exposure_frac=float(projected_gross_exposure_frac or 0.0),
+            current_net_exposure_frac=float(current_net_exposure_frac or 0.0),
+            projected_net_exposure_frac=float(projected_net_exposure_frac or 0.0),
+            symbol_headroom_frac=float(symbol_headroom_frac or 0.0),
+            gross_headroom_frac=float(gross_headroom_frac or 0.0),
+            net_headroom_frac=float(net_headroom_frac or 0.0),
         )
         try:
             callback(event)
@@ -2553,6 +3330,38 @@ class RoutedExecutionService:
                 "Route-audit callback failed for user %s symbol=%s: %s",
                 user_id,
                 symbol,
+                exc,
+            )
+
+    def _emit_stage_telemetry(
+        self,
+        *,
+        user_id: int,
+        stage: str,
+        started_at: float,
+        correlation_id: str = "",
+        status: str = "",
+        detail: str = "",
+    ) -> None:
+        callback = self._stage_telemetry_callback
+        if callback is None:
+            return
+        event = ExecutionStageTelemetry(
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+            stage=str(stage or ""),
+            duration_ms=max((perf_counter() - started_at) * 1000.0, 0.0),
+            correlation_id=str(correlation_id or ""),
+            status=str(status or ""),
+            detail=str(detail or ""),
+        )
+        try:
+            callback(event)
+        except Exception as exc:
+            logger.warning(
+                "Stage-telemetry callback failed for user %s stage=%s: %s",
+                user_id,
+                stage,
                 exc,
             )
 
@@ -2660,6 +3469,13 @@ class RoutedExecutionService:
             effective_symbol_cap_frac=current.effective_symbol_cap_frac,
             effective_gross_cap_frac=current.effective_gross_cap_frac,
             effective_net_cap_frac=current.effective_net_cap_frac,
+            hard_symbol_cap_frac=current.hard_symbol_cap_frac,
+            hard_gross_cap_frac=current.hard_gross_cap_frac,
+            hard_net_cap_frac=current.hard_net_cap_frac,
+            target_headroom_ratio=current.target_headroom_ratio,
+            reserve_capacity_frac=current.reserve_capacity_frac,
+            adverse_mark_buffer_frac=current.adverse_mark_buffer_frac,
+            risk_policy_version=current.risk_policy_version,
         )
 
     @staticmethod
@@ -2677,17 +3493,10 @@ class RoutedExecutionService:
         now_utc = datetime.now(timezone.utc)
 
         for result in results:
-            if not result.accepted or result.filled_qty <= 0.0:
+            fill_qty = float(result.economic_filled_qty if result.accepted else 0.0)
+            if not result.accepted or fill_qty <= 0.0:
                 continue
             idempotency_key = str(result.idempotency_key or "")
-            if idempotency_key and idempotency_key in state.accounted_order_keys:
-                logger.warning(
-                    "Skipping duplicate paper accounting for user=%s key=%s symbol=%s",
-                    getattr(state.request, "user_id", "unknown"),
-                    idempotency_key,
-                    result.symbol,
-                )
-                continue
 
             symbol = result.symbol
             current_qty = float(running_positions.get(symbol, 0.0))
@@ -2704,7 +3513,7 @@ class RoutedExecutionService:
                 current_qty=current_qty,
                 current_entry_price=entry_price,
                 side=result.side,
-                fill_qty=float(result.filled_qty),
+                fill_qty=fill_qty,
                 fill_price=fill_price,
             )
             if realized_pnl != 0.0:

@@ -10,7 +10,6 @@ from quant_v2.contracts import (
 )
 from quant_v2.execution import InMemoryExecutionService
 from quant_v2.model_registry import ActiveModelPointer, ModelRegistry, ModelVersionRecord
-from quant_v2.research import build_report_from_path
 
 __all__ = [
     "InMemoryExecutionService",
@@ -22,7 +21,6 @@ __all__ = [
     "PortfolioSnapshot",
     "RiskSnapshot",
     "StrategySignal",
-    "build_report_from_path",
     "default_universe_symbols",
     "get_runtime_profile",
 ]

@@ -79,11 +79,17 @@ def build_universe_snapshot(
         dataset,
         dataset_name=dataset_name,
         metadata={
+            "requested_symbols": list(selected_symbols),
+            "fetched_symbols": sorted(set(dataset.index.get_level_values("symbol"))),
+            "requested_time_range_start": date_from.isoformat(),
+            "requested_time_range_end": date_to.isoformat(),
+            "source_retrieved_at": date_to.isoformat(),
             "interval": selected_interval,
-            "symbols": list(selected_symbols),
             "include_funding": include_funding,
             "include_open_interest": include_open_interest,
             "fail_fast": fail_fast,
+            "raw_schema_version": "wp08-multi-symbol-raw-v1",
+            "transformed_schema_version": "wp08-multi-symbol-transformed-v1",
         },
         root_dir=root_dir,
     )

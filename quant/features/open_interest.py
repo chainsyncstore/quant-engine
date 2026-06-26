@@ -23,13 +23,18 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
 
     # Skip if open interest data not available
     if "open_interest" not in out.columns:
+        out["oi_roc_1"] = 0.0
+        out["oi_roc_8"] = 0.0
+        out["oi_zscore"] = 0.0
+        out["oi_price_divergence"] = 0.0
+        out["oi_acceleration"] = 0.0
         return out
 
-    oi = out["open_interest"]
+    oi = pd.to_numeric(out["open_interest"], errors="coerce")
 
     # Rate of change at different horizons
-    out["oi_roc_1"] = oi.pct_change(1)
-    out["oi_roc_8"] = oi.pct_change(8)
+    out["oi_roc_1"] = oi.pct_change(1, fill_method=None)
+    out["oi_roc_8"] = oi.pct_change(8, fill_method=None)
 
     # Z-score relative to 30-bar window
     oi_mean = oi.rolling(30).mean()
@@ -44,5 +49,14 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
 
     # OI acceleration (second derivative)
     out["oi_acceleration"] = out["oi_roc_1"].diff(1)
+
+    oi_feature_cols = [
+        "oi_roc_1",
+        "oi_roc_8",
+        "oi_zscore",
+        "oi_price_divergence",
+        "oi_acceleration",
+    ]
+    out[oi_feature_cols] = out[oi_feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     return out

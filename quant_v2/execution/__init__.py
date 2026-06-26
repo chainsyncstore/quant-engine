@@ -3,6 +3,7 @@
 from quant_v2.execution.adapters import ExecutionAdapter, ExecutionResult, InMemoryPaperAdapter
 from quant_v2.execution.binance_adapter import BinanceExecutionAdapter
 from quant_v2.execution.idempotency import InMemoryIdempotencyJournal, build_idempotency_key
+from quant_v2.execution.outcomes import ExecutionFillRecord, ExecutionIdentifiers, ExecutionOutcome
 from quant_v2.execution.planner import (
     IntentPlan,
     PlannerConfig,
@@ -25,11 +26,14 @@ __all__ = [
     "BinanceExecutionAdapter",
     "ExecutionDiagnostics",
     "ExecutionResult",
+    "ExecutionFillRecord",
+    "ExecutionIdentifiers",
     "ExecutionService",
     "HardRiskPauseEvent",
     "InMemoryExecutionService",
     "InMemoryIdempotencyJournal",
     "InMemoryPaperAdapter",
+    "ExecutionOutcome",
     "IntentPlan",
     "PlannerConfig",
     "RouteAuditEvent",

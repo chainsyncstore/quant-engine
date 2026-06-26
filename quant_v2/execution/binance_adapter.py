@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
-import math
 from typing import Any
 
 from quant.data.binance_client import BinanceClient
 from quant_v2.contracts import OrderPlan
 from quant_v2.execution.adapters import ExecutionResult
 from quant_v2.execution.idempotency import InMemoryIdempotencyJournal
+from quant_v2.execution.outcomes import ExecutionOutcome
 
 
 class BinanceExecutionAdapter:
@@ -35,12 +35,14 @@ class BinanceExecutionAdapter:
         post_only: bool = False,
     ) -> ExecutionResult:
         if self.journal.seen(idempotency_key):
-            return self.journal.get(idempotency_key)
+            return self.journal.get(idempotency_key).replay_copy()
 
         if plan.reduce_only:
             # FIX-4: Use slippage-bounded exit instead of raw MARKET orders.
             result = self.close_position_bounded(
                 plan.symbol,
+                quantity=float(plan.quantity),
+                side_hint=plan.side,
                 max_slippage_bps=50,
                 idempotency_key=idempotency_key,
             )
@@ -64,6 +66,7 @@ class BinanceExecutionAdapter:
                     status="skipped",
                     created_at=datetime.now(timezone.utc).isoformat(),
                     reason=skip_reason,
+                    outcome=ExecutionOutcome.BLOCKED_PRE_ROUTE,
                 )
                 self.journal.record(idempotency_key, result)
                 return result
@@ -152,6 +155,8 @@ class BinanceExecutionAdapter:
         self,
         symbol: str,
         *,
+        quantity: float | None = None,
+        side_hint: str | None = None,
         max_slippage_bps: float = 50.0,
         idempotency_key: str = "",
         fill_check_timeout_seconds: float = 5.0,
@@ -183,6 +188,7 @@ class BinanceExecutionAdapter:
                 status="no_position",
                 created_at=datetime.now(timezone.utc).isoformat(),
                 reason="reduce_only_no_position",
+                outcome=ExecutionOutcome.ADAPTER_REJECTED,
             )
             if idempotency_key:
                 self.journal.record(idempotency_key, result)
@@ -203,23 +209,94 @@ class BinanceExecutionAdapter:
                 status="no_position",
                 created_at=datetime.now(timezone.utc).isoformat(),
                 reason="reduce_only_no_position",
+                outcome=ExecutionOutcome.ADAPTER_REJECTED,
             )
             if idempotency_key:
                 self.journal.record(idempotency_key, result)
             return result
 
         side = "SELL" if pos_amt > 0 else "BUY"
-        qty = abs(pos_amt)
+        if side_hint is not None and str(side_hint).strip().upper() != side:
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side=side,
+                requested_qty=0.0 if quantity is None else abs(float(quantity)),
+                filled_qty=0.0,
+                avg_price=0.0,
+                status="rejected",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="reduce_only_wrong_side",
+                outcome=ExecutionOutcome.ADAPTER_REJECTED,
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
+
+        requested_qty = abs(float(quantity)) if quantity is not None else abs(pos_amt)
+        qty = min(abs(pos_amt), requested_qty)
+        if qty <= 0.0:
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side=side,
+                requested_qty=requested_qty,
+                filled_qty=0.0,
+                avg_price=0.0,
+                status="rejected",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason="reduce_only_no_reducible_quantity",
+                outcome=ExecutionOutcome.ADAPTER_REJECTED,
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
 
         # Fetch top-of-book for slippage-bounded pricing
         top = self.get_orderbook_top(symbol)
         bid, ask = top["bid"], top["ask"]
+        filter_mark = ask if side == "BUY" else bid
+        if filter_mark <= 0.0:
+            filter_mark = max(bid, ask, 0.0)
+        normalized_qty, skip_reason = self._normalize_quantity_with_filters(
+            symbol,
+            quantity=qty,
+            mark_price=filter_mark,
+        )
+        if skip_reason is not None:
+            skip_suffix = skip_reason.split(":", 1)[-1]
+            result = ExecutionResult(
+                accepted=False,
+                order_id="",
+                idempotency_key=idempotency_key,
+                symbol=symbol,
+                side=side,
+                requested_qty=requested_qty,
+                filled_qty=0.0,
+                avg_price=filter_mark,
+                status="residual_supervision_required",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                reason=f"supervised_residual_position_required:{skip_suffix}",
+                outcome=ExecutionOutcome.ADAPTER_REJECTED,
+            )
+            if idempotency_key:
+                self.journal.record(idempotency_key, result)
+            return result
+
+        residual_supervision_required = normalized_qty + 1e-12 < qty
+        qty = normalized_qty
 
         import logging as _logging
         _logger = _logging.getLogger(__name__)
 
         base_slippage_bps = max_slippage_bps
         reason = "bounded_limit_exit"
+        if residual_supervision_required:
+            reason = "bounded_limit_exit:supervised_residual_position_required:step_size"
         raw = None
         max_chase_attempts = 3
 
@@ -262,7 +339,8 @@ class BinanceExecutionAdapter:
 
             # Check if immediately filled
             if str(raw.get("status", "")).upper() in {"FILLED"}:
-                reason = "bounded_limit_exit"
+                if not residual_supervision_required:
+                    reason = "bounded_limit_exit"
                 break
 
             if str(raw.get("status", "")).upper() in {"CANCELED", "EXPIRED"}:
@@ -279,7 +357,8 @@ class BinanceExecutionAdapter:
             )
             if not still_open:
                 # Order filled while we waited
-                reason = "bounded_limit_exit"
+                if not residual_supervision_required:
+                    reason = "bounded_limit_exit"
                 break
 
             # Cancel with verification before chasing
@@ -323,16 +402,21 @@ class BinanceExecutionAdapter:
                 idempotency_key=idempotency_key,
                 symbol=symbol,
                 side=side,
-                requested_qty=qty,
+                requested_qty=requested_qty,
                 filled_qty=0.0,
                 avg_price=0.0,
                 status="chase_exhausted",
                 created_at=datetime.now(timezone.utc).isoformat(),
                 reason=final_reason,
+                outcome=ExecutionOutcome.UNKNOWN_REQUIRES_RECONCILIATION,
             )
             if idempotency_key:
                 self.journal.record(idempotency_key, result)
             return result
+
+        result_reason = reason
+        if residual_supervision_required and "supervised_residual_position_required" not in result_reason:
+            result_reason = "bounded_limit_exit:supervised_residual_position_required:step_size"
 
         result = ExecutionResult(
             accepted=True,
@@ -340,12 +424,12 @@ class BinanceExecutionAdapter:
             idempotency_key=idempotency_key,
             symbol=symbol,
             side=side,
-            requested_qty=qty,
+            requested_qty=requested_qty,
             filled_qty=float(raw.get("executedQty", qty)),
             avg_price=float(raw.get("avgPrice", aggressive_price or 0.0)),
             status=str(raw.get("status", "filled")).lower(),
             created_at=datetime.now(timezone.utc).isoformat(),
-            reason=reason,
+            reason=result_reason,
         )
         if idempotency_key:
             self.journal.record(idempotency_key, result)

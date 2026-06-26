@@ -12,7 +12,8 @@ from typing import Any
 from uuid import uuid4
 
 from quant_v2.config import default_universe_symbols, get_runtime_profile
-from quant_v2.monitoring.health_dashboard import emit_run_health_artifacts
+from quant_v2.monitoring.health_dashboard import emit_run_audit_artifacts, emit_run_health_artifacts
+from quant_v2.monitoring.provider_probes import probe_market_data_provider
 from quant_v2.research.experiment_score import build_report_from_experiment
 from quant_v2.research.forward_live import build_forward_live_simulation
 from quant_v2.research.group_validation import (
@@ -108,6 +109,21 @@ def run_validation_pipeline(
         )
         horizon_results[horizon] = result
 
+    validation_evidence = {
+        str(h): {
+            "trial_count": int(result.trial_count),
+            "n_trials_assumed": int(result.n_trials_assumed),
+            "fold_dispersion": result.fold_dispersion,
+            "selection_risk": result.selection_risk,
+            "cost_sensitivity": result.cost_sensitivity,
+            "failure_reasons": list(result.failure_reasons),
+            "net_expectancy": float(result.overall.get("net_expectancy", result.overall.get("spread_adjusted_ev", 0.0))),
+            "total_return": float(result.overall.get("total_return", 0.0)),
+            "time_under_water": int(result.overall.get("time_under_water", 0)),
+        }
+        for h, result in horizon_results.items()
+    }
+
     experiment_like = {
         "config": {"validation_mode": "group_purged_cpcv"},
         "results": {
@@ -115,13 +131,25 @@ def run_validation_pipeline(
                 "overall": result.overall,
                 "robustness": result.robustness,
                 "per_fold": [asdict(f.metrics) for f in result.folds],
+                "validation_evidence": validation_evidence[str(h)],
             }
             for h, result in horizon_results.items()
         },
         "monte_carlo": {},
+        "trial_count": int(sum(result.trial_count for result in horizon_results.values())),
+        "selection_risk": {str(h): result.selection_risk for h, result in horizon_results.items()},
     }
     score_report = build_report_from_experiment(experiment_like)
     forward_live = build_forward_live_simulation(horizon_results)
+
+    probe_symbols = tuple(symbols or tuple(sorted(set(prepared.index.get_level_values("symbol")))))
+    provider_probes: dict[str, Any] = {}
+    if client is not None and probe_symbols:
+        provider_probes["market_data"] = probe_market_data_provider(
+            probe_symbols,
+            client=client,
+            interval=interval or get_runtime_profile().universe.anchor_interval,
+        )
 
     baseline_forward_live: dict[str, Any] | None = None
     if baseline_report_path:
@@ -168,6 +196,12 @@ def run_validation_pipeline(
                 "overall": result.overall,
                 "robustness": result.robustness,
                 "n_trials_assumed": result.n_trials_assumed,
+                "trial_count": result.trial_count,
+                "fold_dispersion": result.fold_dispersion,
+                "selection_risk": result.selection_risk,
+                "cost_sensitivity": result.cost_sensitivity,
+                "failure_reasons": list(result.failure_reasons),
+                "validation_evidence": validation_evidence[str(h)],
                 "folds": [
                     {
                         "split_id": fold.split_id,
@@ -190,9 +224,12 @@ def run_validation_pipeline(
                 "checks": score_report.gates.checks,
                 "inputs": asdict(score_report.gate_inputs),
             },
+            "trial_count": score_report.trial_count,
+            "selection_risk": score_report.selection_risk,
         },
         "forward_live_simulation": forward_live,
         "replay_regression": replay_regression,
+        "provider_probes": provider_probes,
     }
 
     if output_path is None:
@@ -205,10 +242,12 @@ def run_validation_pipeline(
         report,
         report_output_path=output_path,
     )
+    audit_jsonl_path = emit_run_audit_artifacts(report, report_output_path=output_path)
     report["health_dashboard"] = {
         "payload": health_payload,
         "json_path": str(health_json_path),
         "summary_path": str(health_text_path),
+        "audit_path": str(audit_jsonl_path),
     }
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 

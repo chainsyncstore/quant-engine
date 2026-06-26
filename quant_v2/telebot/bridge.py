@@ -219,6 +219,20 @@ class V2ExecutionBridge:
             prices=prices,
         )
 
+    async def flatten_session(
+        self,
+        user_id: int,
+        *,
+        prices: dict[str, float] | None = None,
+    ) -> tuple[ExecutionResult, ...]:
+        """Flatten all open exposure for a running session through the runtime service."""
+
+        return await self.sync_positions(
+            user_id,
+            target_positions={},
+            prices=prices,
+        )
+
     def set_monitoring_snapshot(
         self,
         user_id: int,

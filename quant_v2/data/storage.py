@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,8 @@ from quant_v2.config import get_runtime_profile
 MAX_CLOSE_SPIKE_FRAC = 0.60
 FUNDING_STALE_MAX_STREAK = 72
 OPEN_INTEREST_STALE_MAX_STREAK = 24
+DATASET_RAW_SCHEMA_VERSION = "wp08-multi-symbol-raw-v1"
+DATASET_TRANSFORMED_SCHEMA_VERSION = "wp08-multi-symbol-transformed-v1"
 
 
 class DataQualityError(Exception):
@@ -28,6 +31,54 @@ class MultiSymbolSnapshot:
     parquet_path: Path
     manifest_path: Path
     manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DatasetManifest:
+    """Canonical reproducibility manifest for a multi-symbol dataset."""
+
+    dataset_name: str
+    created_at: str
+    source_retrieved_at: str
+    raw_schema_version: str
+    transformed_schema_version: str
+    requested_symbols: list[str]
+    fetched_symbols: list[str]
+    failed_symbols: dict[str, str]
+    requested_time_range: dict[str, str | None]
+    actual_time_range: dict[str, str | None]
+    n_rows: int
+    n_symbols: int
+    rows_per_symbol: dict[str, int]
+    unique_timestamps_per_symbol: dict[str, int]
+    duplicate_rows_per_symbol: dict[str, int]
+    gap_stats_per_symbol: dict[str, dict[str, Any]]
+    coverage_by_symbol: dict[str, dict[str, float]]
+    content_digests: dict[str, str]
+    metadata: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dataset_name": self.dataset_name,
+            "created_at": self.created_at,
+            "source_retrieved_at": self.source_retrieved_at,
+            "raw_schema_version": self.raw_schema_version,
+            "transformed_schema_version": self.transformed_schema_version,
+            "requested_symbols": list(self.requested_symbols),
+            "fetched_symbols": list(self.fetched_symbols),
+            "failed_symbols": dict(self.failed_symbols),
+            "requested_time_range": dict(self.requested_time_range),
+            "actual_time_range": dict(self.actual_time_range),
+            "n_rows": self.n_rows,
+            "n_symbols": self.n_symbols,
+            "rows_per_symbol": dict(self.rows_per_symbol),
+            "unique_timestamps_per_symbol": dict(self.unique_timestamps_per_symbol),
+            "duplicate_rows_per_symbol": dict(self.duplicate_rows_per_symbol),
+            "gap_stats_per_symbol": dict(self.gap_stats_per_symbol),
+            "coverage_by_symbol": dict(self.coverage_by_symbol),
+            "content_digests": dict(self.content_digests),
+            "metadata": dict(self.metadata),
+        }
 
 
 def _max_constant_streak(series: pd.Series) -> int:
@@ -58,6 +109,18 @@ def _infer_expected_step(timestamps: pd.DatetimeIndex) -> pd.Timedelta | None:
     return pd.Timedelta(step)
 
 
+def _canonical_digest(df: pd.DataFrame) -> str:
+    """Return a stable digest for a canonical multi-symbol frame."""
+
+    canonical = df.sort_index()
+    digest = hashlib.sha256()
+    digest.update("|".join(map(str, canonical.columns)).encode("utf-8"))
+    digest.update("|".join(str(dtype) for dtype in canonical.dtypes).encode("utf-8"))
+    hashed = pd.util.hash_pandas_object(canonical, index=True).to_numpy(dtype="uint64", copy=False)
+    digest.update(hashed.tobytes())
+    return digest.hexdigest()
+
+
 def validate_multi_symbol_ohlcv(
     df: pd.DataFrame,
     *,
@@ -81,6 +144,8 @@ def validate_multi_symbol_ohlcv(
         raise DataQualityError("timestamp level must be DatetimeIndex")
     if ts.tz is None:
         raise DataQualityError("timestamp level must be timezone-aware")
+    if str(ts.tz) not in {"UTC", "UTC+00:00", "UTC-00:00"}:
+        raise DataQualityError("timestamp level must be UTC")
 
     dupes = int(df.index.duplicated().sum())
     if dupes > 0:
@@ -135,8 +200,15 @@ def validate_multi_symbol_ohlcv(
                 f"(max={float(close_returns.max()):.4f})"
             )
 
+        if "funding_rate_raw" in sym_df.columns:
+            funding_null_ratio = float(sym_df["funding_rate_raw"].isna().mean())
+            if funding_null_ratio > 0.02:
+                raise DataQualityError(
+                    f"Null ratio for funding_rate_raw on symbol {symbol} exceeds 0.02 "
+                    f"({funding_null_ratio:.4f})"
+                )
+
         stale_rules = (
-            ("funding_rate_raw", FUNDING_STALE_MAX_STREAK),
             ("open_interest", OPEN_INTEREST_STALE_MAX_STREAK),
             ("open_interest_value", OPEN_INTEREST_STALE_MAX_STREAK),
         )
@@ -151,6 +223,86 @@ def validate_multi_symbol_ohlcv(
                 )
 
 
+def build_dataset_manifest(
+    df: pd.DataFrame,
+    *,
+    dataset_name: str,
+    metadata: dict[str, Any] | None = None,
+) -> DatasetManifest:
+    """Build a reproducibility manifest from a canonical multi-symbol frame."""
+
+    validate_multi_symbol_ohlcv(df)
+    metadata = dict(metadata or {})
+
+    symbols = sorted(str(s) for s in df.index.get_level_values("symbol").unique())
+    ts = df.index.get_level_values("timestamp")
+    requested_symbols = [str(s) for s in metadata.get("requested_symbols", symbols)]
+    fetched_symbols = [str(s) for s in metadata.get("fetched_symbols", symbols)]
+    failed_symbols = {str(k): str(v) for k, v in metadata.get("failed_symbols", {}).items()}
+    requested_time_range = {
+        "start": metadata.get("requested_time_range_start"),
+        "end": metadata.get("requested_time_range_end"),
+    }
+    actual_time_range = {
+        "start": str(ts.min()) if len(ts) else None,
+        "end": str(ts.max()) if len(ts) else None,
+    }
+
+    rows_per_symbol: dict[str, int] = {}
+    unique_timestamps_per_symbol: dict[str, int] = {}
+    duplicate_rows_per_symbol: dict[str, int] = {}
+    gap_stats_per_symbol: dict[str, dict[str, Any]] = {}
+    coverage_by_symbol: dict[str, dict[str, float]] = {}
+
+    for symbol, sym_df in df.groupby(level="symbol", sort=False):
+        sym_ts = pd.DatetimeIndex(sym_df.index.get_level_values("timestamp"))
+        rows_per_symbol[str(symbol)] = int(len(sym_df))
+        unique_timestamps_per_symbol[str(symbol)] = int(sym_ts.nunique())
+        duplicate_rows_per_symbol[str(symbol)] = int(sym_df.index.duplicated().sum())
+
+        expected_step = _infer_expected_step(sym_ts)
+        if expected_step is None or len(sym_ts) < 2:
+            gap_stats = {"expected_step": None, "gap_count": 0, "max_gap": None}
+        else:
+            deltas = sym_ts.to_series().diff().dropna()
+            gap_mask = deltas > expected_step * 1.5
+            gap_stats = {
+                "expected_step": str(expected_step),
+                "gap_count": int(gap_mask.sum()),
+                "max_gap": str(deltas.max()) if not deltas.empty else None,
+            }
+        gap_stats_per_symbol[str(symbol)] = gap_stats
+
+        coverage_by_symbol[str(symbol)] = {
+            column: float(1.0 - sym_df[column].isna().mean())
+            for column in df.columns
+        }
+
+    return DatasetManifest(
+        dataset_name=dataset_name,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        source_retrieved_at=str(metadata.get("source_retrieved_at", datetime.now(timezone.utc).isoformat())),
+        raw_schema_version=str(metadata.get("raw_schema_version", DATASET_RAW_SCHEMA_VERSION)),
+        transformed_schema_version=str(metadata.get("transformed_schema_version", DATASET_TRANSFORMED_SCHEMA_VERSION)),
+        requested_symbols=requested_symbols,
+        fetched_symbols=fetched_symbols,
+        failed_symbols=failed_symbols,
+        requested_time_range=requested_time_range,
+        actual_time_range=actual_time_range,
+        n_rows=int(len(df)),
+        n_symbols=int(len(symbols)),
+        rows_per_symbol=rows_per_symbol,
+        unique_timestamps_per_symbol=unique_timestamps_per_symbol,
+        duplicate_rows_per_symbol=duplicate_rows_per_symbol,
+        gap_stats_per_symbol=gap_stats_per_symbol,
+        coverage_by_symbol=coverage_by_symbol,
+        content_digests={
+            "frame_sha256": _canonical_digest(df),
+        },
+        metadata=metadata,
+    )
+
+
 def build_snapshot_manifest(
     df: pd.DataFrame,
     *,
@@ -158,34 +310,13 @@ def build_snapshot_manifest(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a compact manifest describing a multi-symbol snapshot."""
-
-    symbols = sorted(str(s) for s in df.index.get_level_values("symbol").unique())
-    ts = df.index.get_level_values("timestamp")
-
-    rows_per_symbol = {
-        symbol: int((df.index.get_level_values("symbol") == symbol).sum())
-        for symbol in symbols
-    }
-
-    manifest: dict[str, Any] = {
-        "dataset_name": dataset_name,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "n_rows": int(len(df)),
-        "n_symbols": int(len(symbols)),
-        "symbols": symbols,
-        "rows_per_symbol": rows_per_symbol,
-        "columns": list(df.columns),
-        "time_range": {
-            "start": str(ts.min()) if len(ts) else None,
-            "end": str(ts.max()) if len(ts) else None,
-        },
-        "null_ratio_by_column": {
-            col: float(df[col].isna().mean())
-            for col in df.columns
-        },
-        "metadata": metadata or {},
-    }
-    return manifest
+    manifest = build_dataset_manifest(df, dataset_name=dataset_name, metadata=metadata)
+    output = manifest.to_dict()
+    output["columns"] = list(df.columns)
+    output["null_ratio_by_column"] = {col: float(df[col].isna().mean()) for col in df.columns}
+    output["symbols"] = list(manifest.fetched_symbols)
+    output["time_range"] = output.pop("actual_time_range")
+    return output
 
 
 def save_multi_symbol_snapshot(

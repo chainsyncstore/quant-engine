@@ -9,8 +9,8 @@ from __future__ import annotations
 import math
 import logging
 from statistics import NormalDist
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -33,7 +33,8 @@ class FoldMetrics:
     n_trades: int
     sharpe: float
     max_drawdown: float
-    worst_losing_streak: int
+    max_drawdown_duration: int = 0
+    worst_losing_streak: int = 0
 
 
 @dataclass
@@ -161,6 +162,7 @@ def compute_metrics(
 
     # Worst losing streak
     worst_streak = _worst_losing_streak(pnl)
+    max_dd_duration = _max_drawdown_duration(pnl)
 
     return FoldMetrics(
         fold=fold,
@@ -172,6 +174,7 @@ def compute_metrics(
         n_trades=n,
         sharpe=sharpe,
         max_drawdown=max_dd,
+        max_drawdown_duration=max_dd_duration,
         worst_losing_streak=worst_streak,
     )
 
@@ -188,6 +191,7 @@ def aggregate_fold_metrics(folds: List[FoldMetrics]) -> dict:
             "win_rate": 0.0,
             "sharpe": 0.0,
             "max_drawdown": 0.0,
+            "max_drawdown_duration": 0,
             "n_trades": 0,
             "worst_losing_streak": 0,
         }
@@ -200,6 +204,7 @@ def aggregate_fold_metrics(folds: List[FoldMetrics]) -> dict:
             "win_rate": 0.0,
             "sharpe": 0.0,
             "max_drawdown": 0.0,
+            "max_drawdown_duration": 0,
             "n_trades": 0,
             "worst_losing_streak": 0,
         }
@@ -215,6 +220,7 @@ def aggregate_fold_metrics(folds: List[FoldMetrics]) -> dict:
         "win_rate": weighted_wr,
         "sharpe": avg_sharpe,
         "max_drawdown": min(f.max_drawdown for f in folds),
+        "max_drawdown_duration": max(f.max_drawdown_duration for f in folds),
         "n_trades": total_trades,
         "worst_losing_streak": max(f.worst_losing_streak for f in folds),
     }
@@ -297,3 +303,18 @@ def _worst_losing_streak(pnl: np.ndarray) -> int:
         else:
             current = 0
     return max_streak
+
+
+def _max_drawdown_duration(pnl: np.ndarray) -> int:
+    """Return the longest consecutive drawdown stretch."""
+
+    if len(pnl) == 0:
+        return 0
+    equity = np.cumsum(np.asarray(pnl, dtype=float))
+    peak = np.maximum.accumulate(equity)
+    in_drawdown = pd.Series(equity < peak)
+    if not in_drawdown.any():
+        return 0
+    groups = (~in_drawdown).cumsum()
+    durations = in_drawdown.groupby(groups).sum()
+    return int(durations.max()) if not durations.empty else 0

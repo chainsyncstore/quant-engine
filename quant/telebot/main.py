@@ -5,9 +5,11 @@ import json
 import inspect
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, quote_plus
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from sqlalchemy import create_engine, or_, text
@@ -34,10 +36,68 @@ if TYPE_CHECKING:
     from quant.telebot.manager import BotManager
 
 # Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+_REDACTED = "[REDACTED]"
+_TELEGRAM_URL_RE = re.compile(
+    r"(?i)(https?://api\.telegram\.org/(?:bot|%62%6f%74))[^/?#\s]+"
 )
+_TELEGRAM_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])\d{5,}:[A-Za-z0-9_-]{20,}")
+_AUTHENTICATED_URL_RE = re.compile(
+    r"(?i)([a-z][a-z0-9+.-]*://)([^/@\s:]+):([^/@\s]+)@"
+)
+
+
+def _redact_sensitive_text(value: object, sensitive_values: tuple[str, ...] = ()) -> str:
+    """Redact Telegram credentials and URL user-info from rendered log text."""
+
+    rendered = str(value)
+    for secret in sensitive_values:
+        if not secret:
+            continue
+        for variant in {secret, quote(secret, safe=""), quote_plus(secret, safe="")}:
+            if variant:
+                rendered = rendered.replace(variant, _REDACTED)
+    rendered = _TELEGRAM_URL_RE.sub(rf"\1{_REDACTED}", rendered)
+    rendered = _TELEGRAM_TOKEN_RE.sub(_REDACTED, rendered)
+    return _AUTHENTICATED_URL_RE.sub(rf"\1{_REDACTED}@", rendered)
+
+
+class _SensitiveLogFilter(logging.Filter):
+    def __init__(self, sensitive_values: tuple[str, ...] = ()) -> None:
+        super().__init__()
+        self._sensitive_values = sensitive_values
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _redact_sensitive_text(record.getMessage(), self._sensitive_values)
+        record.args = ()
+        if record.exc_text:
+            record.exc_text = _redact_sensitive_text(record.exc_text, self._sensitive_values)
+        return True
+
+
+class _SensitiveLogFormatter(logging.Formatter):
+    def __init__(self, sensitive_values: tuple[str, ...] = ()) -> None:
+        super().__init__(_LOG_FORMAT)
+        self._sensitive_values = sensitive_values
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _redact_sensitive_text(super().format(record), self._sensitive_values)
+
+
+def _configure_secure_logging(telegram_token: str = "") -> None:
+    """Install transport suppression and final-output credential redaction."""
+
+    logging.basicConfig(format=_LOG_FORMAT, level=logging.INFO)
+    sensitive_values = (telegram_token,) if telegram_token else ()
+    root = logging.getLogger()
+    for handler in root.handlers:
+        handler.addFilter(_SensitiveLogFilter(sensitive_values))
+        handler.setFormatter(_SensitiveLogFormatter(sensitive_values))
+    for transport_logger in ("httpx", "httpcore"):
+        logging.getLogger(transport_logger).setLevel(logging.WARNING)
+
+
+_configure_secure_logging(os.getenv("TELEGRAM_TOKEN", "").strip())
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +190,13 @@ try:
     )
 except ValueError:
     V2_STRANDED_FLATTEN_CYCLES = 4
+LIFECYCLE_TRANSITION_POLICY_VERSION = "wp04-reviewed-transition-v1"
+LIFECYCLE_TRANSITION_REQUEST_STATE = "review_requested"
+_LIFECYCLE_TRANSITION_BLOCKING_STATES = {
+    "review_requested",
+    "pending_review",
+    "pause_requested",
+}
 DEFAULT_V2_SYMBOL = default_universe_symbols()[0] if default_universe_symbols() else "BTCUSDT"
 
 
@@ -220,6 +287,18 @@ def _ensure_user_context_schema() -> None:
         ("hard_risk_pause_triggered_at", "DATETIME"),
         ("hard_risk_pause_breach_type", "VARCHAR"),
         ("hard_risk_pause_details", "TEXT"),
+        ("lifecycle_transition_state", "VARCHAR"),
+        ("lifecycle_transition_owner", "VARCHAR"),
+        ("lifecycle_transition_retry_count", "INTEGER DEFAULT 0"),
+        ("lifecycle_transition_policy_version", "VARCHAR"),
+        ("lifecycle_transition_requested_at", "DATETIME"),
+        ("lifecycle_transition_reviewed_at", "DATETIME"),
+        ("lifecycle_transition_approval_count", "INTEGER DEFAULT 0"),
+        ("lifecycle_transition_approved_by", "TEXT"),
+        ("lifecycle_transition_reason", "TEXT"),
+        ("lifecycle_transition_evidence_ref", "TEXT"),
+        ("lifecycle_transition_reconciliation_ref", "TEXT"),
+        ("lifecycle_transition_clear_reason", "TEXT"),
         ("lifetime_demo_pnl_usd", "FLOAT DEFAULT 0.0"),
         ("lifetime_live_pnl_usd", "FLOAT DEFAULT 0.0"),
         ("current_demo_equity_usd", "FLOAT DEFAULT 0.0"),
@@ -253,10 +332,13 @@ _ensure_user_context_schema()
 def _ensure_execution_route_event_schema() -> None:
     """Backfill route telemetry columns for existing SQLite deployments."""
 
-    required: tuple[tuple[str, str], ...] = (
-        ("future_mark_price", "FLOAT"),
-        ("future_return_bps", "FLOAT"),
-        ("shadow_evaluated_at", "DATETIME"),
+    required: tuple[tuple[str, str], ...] = tuple(
+        (
+            column.name,
+            column.type.compile(dialect=ENGINE.dialect),
+        )
+        for column in ExecutionRouteEvent.__table__.columns
+        if not column.primary_key
     )
 
     with ENGINE.connect() as conn:
@@ -556,6 +638,268 @@ def _persist_user_session_flags(
     except Exception as e:
         session.rollback()
         logger.warning(f"Failed to persist session flags for user {user_id}: {e}")
+    finally:
+        session.close()
+
+
+def _normalize_lifecycle_transition_retry_count(value: object) -> int:
+    """Normalize lifecycle transition retry count into a non-negative int."""
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(parsed, 0)
+
+
+def _normalize_lifecycle_transition_approval_count(value: object) -> int:
+    """Normalize lifecycle transition approval count into a non-negative int."""
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(parsed, 0)
+
+
+def _normalize_lifecycle_transition_approved_by(value: object) -> tuple[str, ...]:
+    """Normalize lifecycle transition approver IDs into a stable tuple."""
+
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple, set)):
+        raw_items = value
+    else:
+        raw_items = str(value).split(",")
+    approvers = []
+    for item in raw_items:
+        clean = str(item).strip()
+        if clean:
+            approvers.append(clean)
+    return tuple(dict.fromkeys(approvers))
+
+
+def _active_lifecycle_transition_from_context(ctx: UserContext | None) -> dict[str, Any] | None:
+    if ctx is None:
+        return None
+
+    state = str(getattr(ctx, "lifecycle_transition_state", None) or "").strip()
+    owner = str(getattr(ctx, "lifecycle_transition_owner", None) or "").strip()
+    policy_version = str(getattr(ctx, "lifecycle_transition_policy_version", None) or "").strip()
+    reason = str(getattr(ctx, "lifecycle_transition_reason", None) or "").strip()
+    evidence_ref = str(getattr(ctx, "lifecycle_transition_evidence_ref", None) or "").strip()
+    reconciliation_ref = str(getattr(ctx, "lifecycle_transition_reconciliation_ref", None) or "").strip()
+    clear_reason = str(getattr(ctx, "lifecycle_transition_clear_reason", None) or "").strip()
+    retry_count = _normalize_lifecycle_transition_retry_count(
+        getattr(ctx, "lifecycle_transition_retry_count", 0)
+    )
+    approval_count = _normalize_lifecycle_transition_approval_count(
+        getattr(ctx, "lifecycle_transition_approval_count", 0)
+    )
+    approved_by = _normalize_lifecycle_transition_approved_by(
+        getattr(ctx, "lifecycle_transition_approved_by", "")
+    )
+    requested_at = getattr(ctx, "lifecycle_transition_requested_at", None)
+    reviewed_at = getattr(ctx, "lifecycle_transition_reviewed_at", None)
+
+    if not any(
+        (
+            state,
+            owner,
+            policy_version,
+            reason,
+            evidence_ref,
+            reconciliation_ref,
+            clear_reason,
+            retry_count,
+            approval_count,
+            approved_by,
+            requested_at,
+            reviewed_at,
+        )
+    ):
+        return None
+
+    return {
+        "state": state or "unknown",
+        "owner": owner or "unknown",
+        "retry_count": retry_count,
+        "approval_count": approval_count,
+        "approved_by": approved_by,
+        "policy_version": policy_version or "unknown",
+        "requested_at": requested_at,
+        "reviewed_at": reviewed_at,
+        "reason": reason or "unspecified",
+        "evidence_ref": evidence_ref or "unspecified",
+        "reconciliation_ref": reconciliation_ref or "unspecified",
+        "clear_reason": clear_reason or "unspecified",
+    }
+
+
+def _load_active_lifecycle_transition(user_id: int) -> dict[str, Any] | None:
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None:
+            return None
+        return _active_lifecycle_transition_from_context(db_user.context)
+    except Exception as exc:
+        logger.warning("Failed loading lifecycle transition for user %s: %s", user_id, exc)
+        return None
+    finally:
+        session.close()
+
+
+def _format_lifecycle_transition_text(transition: dict[str, Any]) -> str:
+    requested_at = transition.get("requested_at")
+    if isinstance(requested_at, datetime):
+        requested_text = requested_at.isoformat()
+    else:
+        requested_text = str(requested_at or "unknown")
+
+    reviewed_at = transition.get("reviewed_at")
+    if isinstance(reviewed_at, datetime):
+        reviewed_text = reviewed_at.isoformat()
+    else:
+        reviewed_text = str(reviewed_at or "pending review")
+    approvers = transition.get("approved_by") or ()
+    if isinstance(approvers, (list, tuple)):
+        approver_text = ", ".join(str(item) for item in approvers[:3]) if approvers else "none"
+    else:
+        approver_text = str(approvers or "none")
+
+    return (
+        "Lifecycle transition review\n"
+        f"- State: `{transition.get('state', 'unknown')}`\n"
+        f"- Owner: `{transition.get('owner', 'unknown')}`\n"
+        f"- Retry count: `{int(transition.get('retry_count', 0) or 0)}`\n"
+        f"- Approval count: `{int(transition.get('approval_count', 0) or 0)}`\n"
+        f"- Approved by: `{approver_text}`\n"
+        f"- Policy version: `{transition.get('policy_version', 'unknown')}`\n"
+        f"- Requested at: `{requested_text}`\n"
+        f"- Reviewed at: `{reviewed_text}`\n"
+        f"- Reason: `{transition.get('reason', 'unspecified')}`\n"
+        f"- Evidence ref: `{transition.get('evidence_ref', 'unspecified')}`\n"
+        f"- Reconciliation ref: `{transition.get('reconciliation_ref', 'unspecified')}`\n"
+        f"- Clear reason: `{transition.get('clear_reason', 'unspecified')}`"
+    )
+
+
+def _request_reviewed_lifecycle_transition(
+    user_id: int,
+    *,
+    state: str,
+    owner: str,
+    reason: str,
+    evidence_ref: str,
+    policy_version: str = LIFECYCLE_TRANSITION_POLICY_VERSION,
+) -> dict[str, Any] | None:
+    """Persist a review-gated lifecycle transition request on user_context."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None:
+            return None
+
+        ctx = db_user.context
+        if ctx is None:
+            ctx = UserContext(telegram_id=user_id)
+            db_user.context = ctx
+
+        ctx.lifecycle_transition_state = state
+        ctx.lifecycle_transition_owner = owner
+        ctx.lifecycle_transition_retry_count = (
+            _normalize_lifecycle_transition_retry_count(
+                getattr(ctx, "lifecycle_transition_retry_count", 0)
+            )
+            + 1
+        )
+        ctx.lifecycle_transition_policy_version = policy_version
+        ctx.lifecycle_transition_requested_at = _utc_naive(datetime.now(timezone.utc))
+        ctx.lifecycle_transition_reviewed_at = None
+        ctx.lifecycle_transition_approval_count = 0
+        ctx.lifecycle_transition_approved_by = ""
+        ctx.lifecycle_transition_reason = reason
+        ctx.lifecycle_transition_evidence_ref = evidence_ref
+        ctx.lifecycle_transition_reconciliation_ref = ""
+        ctx.lifecycle_transition_clear_reason = ""
+        session.commit()
+        return _active_lifecycle_transition_from_context(ctx)
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Failed to persist lifecycle transition for user %s: %s", user_id, exc)
+        return None
+    finally:
+        session.close()
+
+
+def _resolve_reviewed_lifecycle_transition(
+    user_id: int,
+    *,
+    reviewer_id: int,
+    live_mode: bool,
+    flat_confirmed: bool,
+    reconciliation_ref: str,
+    evidence_ref: str,
+    policy_version: str = LIFECYCLE_TRANSITION_POLICY_VERSION,
+) -> dict[str, Any] | None:
+    """Record an approval or rejection decision for a pending lifecycle transition."""
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if db_user is None or db_user.context is None:
+            return None
+
+        ctx = db_user.context
+        current = _active_lifecycle_transition_from_context(ctx)
+        if current is None:
+            return None
+
+        if str(current["state"]).strip().lower() not in _LIFECYCLE_TRANSITION_BLOCKING_STATES:
+            return current
+
+        approvals = list(_normalize_lifecycle_transition_approved_by(
+            getattr(ctx, "lifecycle_transition_approved_by", "")
+        ))
+        reviewer_token = str(int(reviewer_id))
+        if reviewer_token not in approvals:
+            approvals.append(reviewer_token)
+
+        ctx.lifecycle_transition_approved_by = ",".join(approvals)
+        ctx.lifecycle_transition_approval_count = len(approvals)
+        ctx.lifecycle_transition_reconciliation_ref = reconciliation_ref or getattr(
+            ctx, "lifecycle_transition_reconciliation_ref", ""
+        )
+        ctx.lifecycle_transition_reason = str(current.get("reason") or evidence_ref or "reviewed_transition")
+        ctx.lifecycle_transition_policy_version = policy_version or str(
+            current.get("policy_version") or LIFECYCLE_TRANSITION_POLICY_VERSION
+        )
+
+        if not flat_confirmed:
+            ctx.lifecycle_transition_reviewed_at = None
+            session.commit()
+            return _active_lifecycle_transition_from_context(ctx)
+
+        if not reconciliation_ref and not str(getattr(ctx, "lifecycle_transition_reconciliation_ref", "") or "").strip():
+            raise ValueError("reconciliation_ref is required to clear the transition")
+
+        if live_mode and len(approvals) < 2:
+            ctx.lifecycle_transition_reviewed_at = None
+            session.commit()
+            return _active_lifecycle_transition_from_context(ctx)
+
+        ctx.lifecycle_transition_state = "cleared"
+        ctx.lifecycle_transition_reviewed_at = _utc_naive(datetime.now(timezone.utc))
+        ctx.lifecycle_transition_reason = str(evidence_ref or current.get("reason") or "review_cleared")
+        ctx.lifecycle_transition_clear_reason = "flat_confirmed"
+        session.commit()
+        return _active_lifecycle_transition_from_context(ctx)
+    except Exception as exc:
+        session.rollback()
+        logger.warning("Failed to resolve lifecycle transition for user %s: %s", user_id, exc)
+        return None
     finally:
         session.close()
 
@@ -1225,6 +1569,53 @@ def _capture_resume_snapshot_from_bridge(bridge: V2ExecutionBridge, user_id: int
     return positions, prices
 
 
+def _load_running_demo_session_ids(
+    *,
+    bridge: V2ExecutionBridge | None,
+    source_manager,
+) -> list[int]:
+    """Return active demo session user ids tracked by runtime services."""
+
+    session = SessionLocal()
+    try:
+        active_users = (
+            session.query(User)
+            .join(UserContext, UserContext.telegram_id == User.telegram_id)
+            .filter(User.status.in_(("active", "approved")), UserContext.is_active.is_(True))
+            .all()
+        )
+
+        running_user_ids: list[int] = []
+        for db_user in active_users:
+            ctx = db_user.context
+            if ctx is None:
+                continue
+
+            user_id = int(db_user.telegram_id)
+            db_live_mode = bool(getattr(ctx, "live_mode", False))
+            bridge_running = bool(bridge and bridge.is_running(user_id))
+            source_running = bool(source_manager and source_manager.is_running(user_id))
+            if not bridge_running and not source_running:
+                continue
+
+            bridge_mode_getter = getattr(bridge, "get_session_mode", None)
+            source_mode_getter = getattr(source_manager, "get_session_mode", None)
+            bridge_mode = bridge_mode_getter(user_id) if callable(bridge_mode_getter) else None
+            source_mode = source_mode_getter(user_id) if callable(source_mode_getter) else None
+            runtime_live = bridge_mode == "live" or source_mode == "live" or db_live_mode
+            if runtime_live:
+                continue
+
+            running_user_ids.append(user_id)
+
+        return running_user_ids
+    except Exception as exc:
+        logger.warning("Failed loading running demo sessions for flattening: %s", exc)
+        return []
+    finally:
+        session.close()
+
+
 def _clear_user_maintenance_resume_state(user_id: int) -> None:
     """Clear persisted maintenance resume metadata for a user context."""
 
@@ -1299,14 +1690,21 @@ def _load_persisted_routing_state(user_id: int) -> dict[str, Any]:
                 "is_active": False,
                 "live_mode": False,
                 "hard_risk_paused": False,
+                "lifecycle_transition_state": "",
+                "lifecycle_transition_pending": False,
                 "load_error": None,
             }
         ctx = db_user.context
+        lifecycle_transition_state = str(
+            getattr(ctx, "lifecycle_transition_state", "") or ""
+        ).strip().lower()
         return {
             "exists": True,
             "is_active": bool(getattr(ctx, "is_active", False)),
             "live_mode": bool(getattr(ctx, "live_mode", False)),
             "hard_risk_paused": bool(getattr(ctx, "hard_risk_paused", False)),
+            "lifecycle_transition_state": lifecycle_transition_state,
+            "lifecycle_transition_pending": lifecycle_transition_state in _LIFECYCLE_TRANSITION_BLOCKING_STATES,
             "load_error": None,
         }
     except Exception as exc:
@@ -1316,6 +1714,8 @@ def _load_persisted_routing_state(user_id: int) -> dict[str, Any]:
             "is_active": False,
             "live_mode": False,
             "hard_risk_paused": True,
+            "lifecycle_transition_state": "error",
+            "lifecycle_transition_pending": True,
             "load_error": str(exc),
         }
     finally:
@@ -1363,13 +1763,17 @@ def _v2_routing_allowed_from_db(
     state = _load_persisted_routing_state(user_id)
     symbol = str(getattr(signal, "symbol", "") or "").strip().upper()
     side = str(getattr(signal, "signal", "") or "").strip().upper()
-    pause_state = "hard_risk_paused" if state["hard_risk_paused"] else "none"
+    pause_state = "hard_risk_paused" if state["hard_risk_paused"] else (
+        state["lifecycle_transition_state"] or "none"
+    )
 
     block_reason = ""
     if state.get("load_error"):
         block_reason = "routing_state_load_error"
     elif state["hard_risk_paused"]:
         block_reason = "persisted_hard_risk_pause"
+    elif state["lifecycle_transition_pending"]:
+        block_reason = "pending_reviewed_lifecycle_transition"
     elif not state["is_active"]:
         block_reason = "inactive_user"
     else:
@@ -1528,6 +1932,9 @@ def _persist_route_audit_event(event: RouteAuditEvent) -> None:
 
     session = SessionLocal()
     try:
+        def _event_attr(name: str, default: object = None) -> object:
+            return getattr(event, name, default)
+
         _evaluate_prior_blocked_route_shadows(session, event=event)
         session.add(
             ExecutionRouteEvent(
@@ -1543,11 +1950,33 @@ def _persist_route_audit_event(event: RouteAuditEvent) -> None:
                 after_position=event.after_position,
                 action_class=event.action_class,
                 reason=event.reason,
-                accepted=event.accepted,
-                status=event.status,
-                order_id=event.order_id,
-                idempotency_key=event.idempotency_key,
-                mark_price=float(event.mark_price or 0.0),
+                accepted=_event_attr("accepted", None),
+                status=str(_event_attr("status", "") or ""),
+                order_id=str(_event_attr("order_id", "") or ""),
+                idempotency_key=str(_event_attr("idempotency_key", "") or ""),
+                mark_price=_safe_float(_event_attr("mark_price", 0.0)),
+                risk_policy_version=str(_event_attr("risk_policy_version", "") or ""),
+                hard_symbol_cap_frac=_safe_float(_event_attr("hard_symbol_cap_frac", 0.0)),
+                hard_gross_cap_frac=_safe_float(_event_attr("hard_gross_cap_frac", 0.0)),
+                hard_net_cap_frac=_safe_float(_event_attr("hard_net_cap_frac", 0.0)),
+                dynamic_symbol_cap_frac=_safe_float(_event_attr("dynamic_symbol_cap_frac", 0.0)),
+                dynamic_gross_cap_frac=_safe_float(_event_attr("dynamic_gross_cap_frac", 0.0)),
+                dynamic_net_cap_frac=_safe_float(_event_attr("dynamic_net_cap_frac", 0.0)),
+                operating_symbol_cap_frac=_safe_float(_event_attr("operating_symbol_cap_frac", 0.0)),
+                operating_gross_cap_frac=_safe_float(_event_attr("operating_gross_cap_frac", 0.0)),
+                operating_net_cap_frac=_safe_float(_event_attr("operating_net_cap_frac", 0.0)),
+                target_headroom_ratio=_safe_float(_event_attr("target_headroom_ratio", 0.0)),
+                reserve_capacity_frac=_safe_float(_event_attr("reserve_capacity_frac", 0.0)),
+                adverse_mark_buffer_frac=_safe_float(_event_attr("adverse_mark_buffer_frac", 0.0)),
+                current_symbol_exposure_frac=_safe_float(_event_attr("current_symbol_exposure_frac", 0.0)),
+                projected_symbol_exposure_frac=_safe_float(_event_attr("projected_symbol_exposure_frac", 0.0)),
+                current_gross_exposure_frac=_safe_float(_event_attr("current_gross_exposure_frac", 0.0)),
+                projected_gross_exposure_frac=_safe_float(_event_attr("projected_gross_exposure_frac", 0.0)),
+                current_net_exposure_frac=_safe_float(_event_attr("current_net_exposure_frac", 0.0)),
+                projected_net_exposure_frac=_safe_float(_event_attr("projected_net_exposure_frac", 0.0)),
+                symbol_headroom_frac=_safe_float(_event_attr("symbol_headroom_frac", 0.0)),
+                gross_headroom_frac=_safe_float(_event_attr("gross_headroom_frac", 0.0)),
+                net_headroom_frac=_safe_float(_event_attr("net_headroom_frac", 0.0)),
             )
         )
         session.commit()
@@ -1686,8 +2115,6 @@ def _format_cycle_digest(payload: dict) -> str:
         for item in top_list:
             symbol = item.get("symbol", "?")
             proba = float(item.get("probability", 0.5))
-            buy_th = float(item.get("buy_th", 0.59))
-            sell_th = float(item.get("sell_th", 0.41))
             gap_to_buy = float(item.get("gap_to_buy", 0.0))
             gap_to_sell = float(item.get("gap_to_sell", 0.0))
 
@@ -2448,6 +2875,14 @@ async def _restore_active_sessions(application):
                 )
                 continue
 
+            lifecycle_transition = _active_lifecycle_transition_from_context(ctx)
+            if lifecycle_transition is not None and str(lifecycle_transition["state"]).strip().lower() in _LIFECYCLE_TRANSITION_BLOCKING_STATES:
+                logger.error(
+                    "Auto-restore blocked for user %s by pending lifecycle transition review.",
+                    db_user.telegram_id,
+                )
+                continue
+
             live = bool(ctx.live_mode)
             try:
                 creds = _build_creds_from_context(ctx, live=live)
@@ -2710,6 +3145,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/continue_demo - Resume after maintenance from snapshot\n"
             "/continue_live - Resume LIVE after maintenance from snapshot\n"
             "/stop - Stop execution\n"
+            "/review_transition <user_id> approve <evidence_ref> <reconciliation_ref> [flat_confirmed] - Clear a reviewed lifecycle transition\n"
             "/reset_demo - Reset paper state\n"
             "/status - Check if running\n"
             "/stats - View live performance\n"
@@ -2727,17 +3163,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += (
                 "\n\nAdmin\n"
                 "/approve <id> - Approve user\n"
+                "/review_transition <user_id> approve <evidence_ref> <reconciliation_ref> [flat_confirmed] - Resolve lifecycle review\n"
                 "/revoke <id> - Freeze user\n"
                 "/prepare_update - Save user snapshots and send pre-update notice\n"
                 "/update_complete - Notify users deploy is done and share recovery steps\n"
+                "/flatten_demo - Flatten open positions for running demo sessions\n"
                 "/model_active - Show runtime model routing\n"
                 "/model_versions - List registered model versions\n"
                 "/model_candidates - List retrain candidates\n"
                 "/model_eval - Show quarantine forward-evaluation summary\n"
                 "/model_eval_detail <version_id> - Show candidate vs incumbent metrics\n"
                 "/model_auto_promote on|off - Toggle gated automatic promotion\n"
-                "/model_promote <version_id> - Manually activate a candidate\n"
+                "/model_approve <version_id> <evidence_digest> [--expires-at=<iso>] [reason...] - Record a promotion approval\n"
+                "/model_events [count] - Show registry transition history\n"
+                "/model_promote <version_id> [evidence_digest] [reason...] - Manually activate a candidate\n"
                 "/model_quarantine <version_id> - Mark candidate for paper quarantine\n"
+                "/model_reject <version_id> [reason...] - Mark candidate as rejected\n"
+                "/model_expire <version_id> [reason...] - Mark candidate as expired\n"
                 "/model_rollback [version_id] - Switch active pointer (default: previous)"
             )
         
@@ -2783,6 +3225,15 @@ async def _start_engine(update: Update, context: ContextTypes.DEFAULT_TYPE, live
         hard_pause = _active_hard_risk_pause_from_context(ctx)
         if hard_pause is not None:
             await update.message.reply_text(_format_hard_risk_pause_text(hard_pause) + FOOTER)
+            session.close()
+            return
+        lifecycle_transition = _active_lifecycle_transition_from_context(ctx)
+        if lifecycle_transition is not None and str(lifecycle_transition["state"]).strip().lower() in _LIFECYCLE_TRANSITION_BLOCKING_STATES:
+            await update.message.reply_text(
+                "Trading is waiting on a reviewed lifecycle transition before it can start.\n\n"
+                + _format_lifecycle_transition_text(lifecycle_transition)
+                + FOOTER
+            )
             session.close()
             return
         creds = _build_creds_from_context(ctx, live=live)
@@ -2941,6 +3392,11 @@ async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             runtime_state = "Session is running, but this backend cannot update lifecycle settings live."
 
+    transition = _load_active_lifecycle_transition(user_id)
+    transition_text = ""
+    if transition is not None:
+        transition_text = "\n\n" + _format_lifecycle_transition_text(transition)
+
     await update.message.reply_text(
         "🧭 **Trade Safety Auto-Close Settings**\n\n"
         f"Saved time limit: `{_format_lifecycle_horizon(persisted_horizon)}`\n"
@@ -2950,6 +3406,7 @@ async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Status: {runtime_state}\n\n"
         "Change with `/set_horizon <hours|off>` (example: `/set_horizon 4`) and "
         "`/set_stoploss <percent|off>` (example: `/set_stoploss 2`)."
+        + transition_text
         + FOOTER
     )
 
@@ -3139,6 +3596,15 @@ async def _continue_from_maintenance(
         hard_pause = _active_hard_risk_pause_from_context(ctx)
         if hard_pause is not None:
             await update.message.reply_text(_format_hard_risk_pause_text(hard_pause) + FOOTER)
+            return
+
+        lifecycle_transition = _active_lifecycle_transition_from_context(ctx)
+        if lifecycle_transition is not None and str(lifecycle_transition["state"]).strip().lower() in _LIFECYCLE_TRANSITION_BLOCKING_STATES:
+            await update.message.reply_text(
+                "⚠️ Trading is waiting on a reviewed lifecycle transition before it can resume.\n\n"
+                + _format_lifecycle_transition_text(lifecycle_transition)
+                + FOOTER
+            )
             return
 
         parsed_snapshot = _parse_maintenance_resume_payload(ctx.maintenance_resume_payload)
@@ -3468,6 +3934,80 @@ async def reset_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Engine continues running with fresh state." + FOOTER
     )
 
+async def flatten_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: flatten open positions for running demo sessions."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    bridge = _get_v2_bridge()
+    source_manager = _get_signal_source_manager()
+    if bridge is None:
+        await update.message.reply_text("âŒ No execution bridge found. Contact admin." + FOOTER)
+        return
+
+    if context.args:
+        target_ids: list[int] = []
+        for raw_value in context.args:
+            try:
+                target_ids.append(int(raw_value))
+            except (TypeError, ValueError):
+                await update.message.reply_text("Usage: `/flatten_demo [user_id ...]`" + FOOTER)
+                return
+    else:
+        target_ids = _load_running_demo_session_ids(
+            bridge=bridge,
+            source_manager=source_manager,
+        )
+
+    if not target_ids:
+        await update.message.reply_text(
+            "â„¹ï¸ No running demo sessions were found to flatten." + FOOTER
+        )
+        return
+
+    flattened_lines: list[str] = []
+    skipped_lines: list[str] = []
+    total_orders = 0
+
+    for target_id in sorted(dict.fromkeys(target_ids)):
+        mode_getter = getattr(bridge, "get_session_mode", None)
+        runtime_mode = mode_getter(target_id) if callable(mode_getter) else None
+        if runtime_mode == "live":
+            skipped_lines.append(f"- `{target_id}`: skipped live session")
+            continue
+
+        positions, prices = _capture_resume_snapshot_from_bridge(bridge, target_id)
+        try:
+            results = await bridge.flatten_session(target_id, prices=prices or None)
+        except Exception as exc:
+            skipped_lines.append(f"- `{target_id}`: {exc.__class__.__name__}")
+            continue
+
+        accepted_orders = sum(1 for result in results if bool(getattr(result, "accepted", False)))
+        total_orders += accepted_orders
+        if accepted_orders:
+            flattened_lines.append(
+                f"- `{target_id}`: flattened `{accepted_orders}` order(s) across `{len(positions)}` symbol(s)"
+            )
+        else:
+            flattened_lines.append(f"- `{target_id}`: already flat")
+
+    lines = [
+        "✅ Demo flatten complete",
+        "",
+        f"Sessions targeted: `{len(target_ids)}`",
+        f"Accepted orders: `{total_orders}`",
+    ]
+    if flattened_lines:
+        lines.extend(["", "Results:"] + flattened_lines)
+    if skipped_lines:
+        lines.extend(["", "Skipped:"] + skipped_lines)
+
+    await update.message.reply_text("\n".join(lines) + FOOTER)
+
+
 async def stop_trading(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global V2_DEGRADED_ALERTED_USERS
 
@@ -3486,18 +4026,138 @@ async def stop_trading(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stopped = await source_manager.stop_session(user_id)
     else:
         stopped = await bridge.stop_session(user_id)
-    # Explicit /stop means user opted out of auto-resume.
-    _persist_user_session_flags(user_id, is_active=False)
+
+    transition = _request_reviewed_lifecycle_transition(
+        user_id,
+        state=LIFECYCLE_TRANSITION_REQUEST_STATE,
+        owner="telegram_operator",
+        reason="operator_stop",
+        evidence_ref="telegram:/stop",
+        policy_version=LIFECYCLE_TRANSITION_POLICY_VERSION,
+    )
+    if transition is None:
+        logger.warning("Failed to persist reviewed lifecycle transition request for user %s", user_id)
     V2_DEGRADED_ALERTED_USERS.discard(user_id)
 
     if stopped:
+        transition_note = (
+            "\n\nPause request recorded for review."
+            if transition is not None
+            else ""
+        )
         await update.message.reply_text(
             "Bzzt. **Engine STOPPED** 🛑\n\n"
             "To resume:\n"
-            "`/start_demo` or `/start_live`" + FOOTER
+            "`/start_demo` or `/start_live`"
+            + transition_note
+            + FOOTER
         )
     else:
         await update.message.reply_text("⚠️ Engine not running. Auto-resume disabled." + FOOTER)
+
+
+async def review_transition(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Record or resolve a reviewed lifecycle transition request."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if len(context.args) < 4:
+        await update.message.reply_text(
+            "Usage: `/review_transition <user_id> approve <evidence_ref> <reconciliation_ref> [flat_confirmed]`"
+            + FOOTER
+        )
+        return
+
+    try:
+        target_id = int(context.args[0])
+    except (TypeError, ValueError):
+        await update.message.reply_text("Usage: `/review_transition <user_id> ...`" + FOOTER)
+        return
+
+    action = str(context.args[1]).strip().lower()
+    if action != "approve":
+        await update.message.reply_text(
+            "Usage: `/review_transition <user_id> approve <evidence_ref> <reconciliation_ref> [flat_confirmed]`"
+            + FOOTER
+        )
+        return
+
+    evidence_ref = str(context.args[2]).strip()
+    reconciliation_ref = str(context.args[3]).strip()
+    flat_confirmed = False
+    if len(context.args) > 4:
+        flat_confirmed = str(context.args[4]).strip().lower() in {"1", "true", "yes", "y", "flat", "confirmed"}
+
+    bridge = _get_v2_bridge()
+    if flat_confirmed and bridge is not None and hasattr(bridge, "get_portfolio_snapshot"):
+        try:
+            snapshot = bridge.get_portfolio_snapshot(target_id)
+        except Exception as exc:
+            logger.warning("Failed checking flat confirmation for user %s: %s", target_id, exc)
+            snapshot = None
+        if snapshot is not None:
+            open_positions = getattr(snapshot, "open_positions", {}) or {}
+            if any(abs(float(qty)) > 1e-12 for qty in open_positions.values()):
+                await update.message.reply_text(
+                    "⚠️ Lifecycle transition cannot be cleared until positions are flat." + FOOTER
+                )
+                return
+
+    session = SessionLocal()
+    try:
+        db_user = session.query(User).filter_by(telegram_id=target_id).first()
+        if db_user is None or db_user.context is None:
+            await update.message.reply_text("âŒ User not found." + FOOTER)
+            return
+
+        live_mode = bool(getattr(db_user.context, "live_mode", False))
+    finally:
+        session.close()
+
+    transition = _resolve_reviewed_lifecycle_transition(
+        target_id,
+        reviewer_id=user_id,
+        live_mode=live_mode,
+        flat_confirmed=flat_confirmed,
+        reconciliation_ref=reconciliation_ref,
+        evidence_ref=evidence_ref,
+        policy_version=LIFECYCLE_TRANSITION_POLICY_VERSION,
+    )
+    if transition is None:
+        await update.message.reply_text("⚠️ No pending reviewed lifecycle transition found." + FOOTER)
+        return
+
+    if str(transition["state"]).strip().lower() == "cleared":
+        await update.message.reply_text(
+            "✅ Lifecycle transition cleared.\n\n"
+            + _format_lifecycle_transition_text(transition)
+            + FOOTER
+        )
+        return
+
+    if live_mode and int(transition.get("approval_count", 0) or 0) < 2:
+        await update.message.reply_text(
+            "⏳ Approval recorded. Live mode requires a second authorized approval.\n\n"
+            + _format_lifecycle_transition_text(transition)
+            + FOOTER
+        )
+        return
+
+    if not flat_confirmed:
+        await update.message.reply_text(
+            "⏳ Approval recorded. Flat confirmation and reconciliation reference are still required.\n\n"
+            + _format_lifecycle_transition_text(transition)
+            + FOOTER
+        )
+        return
+
+    await update.message.reply_text(
+        "⏳ Approval recorded. Awaiting the remaining clearance checks.\n\n"
+        + _format_lifecycle_transition_text(transition)
+        + FOOTER
+    )
 
 
 async def model_active(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3542,6 +4202,33 @@ async def model_active(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Active artifact: `{active.artifact_dir}`",
             ]
         )
+        if active_pointer is not None and getattr(active_pointer, "artifact_manifest_sha256", None):
+            lines.extend(
+                [
+                    f"Pointer manifest: `{getattr(active_pointer, 'artifact_manifest_sha256', '(none)')}`",
+                    f"Pointer image: `{getattr(active_pointer, 'artifact_image_reference', '(none)')}`",
+                    f"Pointer feature schema: `{getattr(active_pointer, 'artifact_feature_schema_sha256', '(none)')}`",
+                    f"Pointer dataset digest: `{getattr(active_pointer, 'artifact_dataset_digest', '(none)')}`",
+                    f"Pointer threshold: `{getattr(active_pointer, 'artifact_threshold', '(none)')}`",
+                ]
+            )
+        try:
+            active_manifest = MODEL_REGISTRY.get_artifact_manifest(active.version_id)
+            manifest_runtime = active_manifest.get("runtime") or {}
+            manifest_model = active_manifest.get("model") or {}
+            manifest_training = active_manifest.get("training") or {}
+            manifest_threshold_policy = manifest_training.get("threshold_policy") or {}
+            lines.extend(
+                [
+                    f"Manifest image: `{manifest_runtime.get('image_reference') or '(none)'}`",
+                    f"Manifest feature schema: `{manifest_model.get('feature_schema_sha256') or '(none)'}`",
+                    f"Manifest dataset digest: `{manifest_training.get('dataset_digest') or '(none)'}`",
+                    f"Manifest threshold: `{manifest_training.get('threshold') or '(none)'}`",
+                    f"Manifest threshold policy: `{manifest_threshold_policy.get('source') or '(none)'}`",
+                ]
+            )
+        except Exception as exc:
+            lines.append(f"Manifest: `(unavailable: {exc})`")
         previous_active = active_pointer.previous_version_id if active_pointer else None
         lines.append(
             f"Previous active: `{previous_active}`"
@@ -3583,6 +4270,7 @@ async def model_versions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(
             f"{marker} `{record.version_id}` [{getattr(record, 'status', 'candidate')}] -> `{record.artifact_dir}`"
         )
+        lines.append(_format_model_contract_summary(record.version_id))
 
     lines.append("")
     lines.append("Use: `/model_candidates`, `/model_promote <version_id>`, or `/model_rollback`")
@@ -3609,6 +4297,26 @@ def _format_model_record_summary(record) -> str:
         f"  rows={train_rows} scores={score_text}\n"
         f"  symbols={symbols_text}\n"
         f"  notes={notes or 'n/a'}"
+    )
+
+
+def _format_model_contract_summary(version_id: str) -> str:
+    try:
+        manifest = MODEL_REGISTRY.get_artifact_manifest(version_id)
+    except Exception as exc:
+        return f"  contract=(unavailable: {exc})"
+
+    runtime = manifest.get("runtime") or {}
+    model = manifest.get("model") or {}
+    training = manifest.get("training") or {}
+    threshold_policy = training.get("threshold_policy") or {}
+    return (
+        "  contract="
+        f"image={runtime.get('image_reference') or '(none)'} "
+        f"schema={model.get('feature_schema_sha256') or '(none)'} "
+        f"dataset={training.get('dataset_digest') or '(none)'} "
+        f"threshold={training.get('threshold') or '(none)'} "
+        f"policy={threshold_policy.get('source') or '(none)'}"
     )
 
 
@@ -3756,15 +4464,68 @@ async def model_auto_promote(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     enabled = raw in {"on", "1", "true"}
-    write_evaluator_control(
+    control = write_evaluator_control(
         MODEL_REGISTRY_ROOT,
         auto_promote=enabled,
         updated_by=f"telegram:{user_id}",
     )
+    effective_enabled = bool(control.get("auto_promote", False))
+    policy_note = ""
+    if enabled and not effective_enabled:
+        policy_note = "\nDeployment policy keeps automatic promotion disabled."
     await update.message.reply_text(
         "Model evaluator auto-promote set to "
-        f"`{'on' if enabled else 'off'}`.\n"
+        f"`{'on' if effective_enabled else 'off'}`."
+        f"{policy_note}\n"
         "Promotion still requires the 7-day forward gate and no runtime blockers."
+        + FOOTER
+    )
+
+
+async def model_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Record a promotion approval for a registered model version (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "Usage: `/model_approve <version_id> <evidence_digest> [--expires-at=<iso>] [reason...]`" + FOOTER
+        )
+        return
+
+    version_id = str(context.args[0]).strip()
+    evidence_digest = str(context.args[1]).strip()
+    expires_at = None
+    reason_parts: list[str] = []
+    for arg in context.args[2:]:
+        clean_arg = str(arg).strip()
+        if clean_arg.startswith("--expires-at=") or clean_arg.startswith("expires_at="):
+            expires_at = clean_arg.split("=", 1)[1].strip() or None
+            continue
+        reason_parts.append(clean_arg)
+    reason = " ".join(reason_parts).strip()
+
+    try:
+        event = MODEL_REGISTRY.record_promotion_approval(
+            version_id,
+            approved_by=f"telegram:{user_id}",
+            evidence_digest=evidence_digest,
+            reason=reason or "telegram admin approval",
+            expires_at=expires_at,
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Promotion approval rejected: `{exc}`" + FOOTER)
+        return
+
+    await update.message.reply_text(
+        "✅ **Promotion Approval Recorded**\n\n"
+        f"Version: `{version_id}`\n"
+        f"Approved by: `telegram:{user_id}`\n"
+        f"Evidence digest: `{evidence_digest}`\n"
+        f"Expires at: `{expires_at or '(none)'}`\n"
+        f"Event hash: `{event.event_hash[:12]}`"
         + FOOTER
     )
 
@@ -3788,9 +4549,87 @@ async def model_candidates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append("")
     for record in records[-10:]:
         lines.append(_format_model_record_summary(record))
+        lines.append(_format_model_contract_summary(record.version_id))
         lines.append("")
 
     lines.append("Use: `/model_promote <version_id>` or `/model_quarantine <version_id>`")
+    lines.append("Use: `/model_reject <version_id>` or `/model_expire <version_id>` to close terminal candidates")
+    await update.message.reply_text("\n".join(lines).rstrip() + FOOTER)
+
+
+def _format_registry_event_summary(event) -> str:
+    payload = getattr(event, "payload", {}) or {}
+    event_hash = str(getattr(event, "event_hash", ""))
+    lines = [
+        f"`{getattr(event, 'event_type', 'unknown')}`",
+        f"  version={getattr(event, 'version_id', None) or '(none)'}",
+        f"  at={getattr(event, 'created_at', 'n/a')}",
+        f"  hash={event_hash[:12] if event_hash else 'n/a'}",
+    ]
+    if getattr(event, "event_type", "") == "promotion_approval_recorded":
+        approved_by = str(payload.get("approved_by") or "n/a")
+        evidence_digest = str(payload.get("evidence_digest") or "")
+        scope = str(payload.get("scope") or "live")
+        expires_at = str(payload.get("expires_at") or "(none)")
+        lines.extend(
+            [
+                f"  approved_by={approved_by}",
+                f"  evidence={evidence_digest[:12] if evidence_digest else 'n/a'}",
+                f"  scope={scope}",
+                f"  expires_at={expires_at}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+async def model_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show append-only registry event history (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    limit = 10
+    if context.args:
+        if len(context.args) != 1:
+            await update.message.reply_text("Usage: `/model_events [count]`" + FOOTER)
+            return
+        try:
+            limit = max(1, min(int(str(context.args[0]).strip()), 25))
+        except ValueError:
+            await update.message.reply_text("Usage: `/model_events [count]`" + FOOTER)
+            return
+
+    try:
+        events = MODEL_REGISTRY.list_registry_events()
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Unable to read registry events: `{exc}`" + FOOTER)
+        return
+
+    if not events:
+        await update.message.reply_text("⚠️ No registry events found." + FOOTER)
+        return
+
+    active_pointer = MODEL_REGISTRY.get_active_pointer()
+    active_text = (
+        f"`{active_pointer.version_id}`"
+        if active_pointer is not None
+        else "`(none)`"
+    )
+    lines = [
+        "🧾 **Registry Event History**",
+        "",
+        f"Registry root: `{MODEL_REGISTRY_ROOT}`",
+        f"Active pointer: {active_text}",
+        "",
+    ]
+    for event in events[-limit:]:
+        lines.append(_format_registry_event_summary(event))
+        lines.append("")
+
+    lines.append(
+        "Use `/model_approve`, `/model_promote`, and `/model_rollback` for governed transitions."
+    )
     await update.message.reply_text("\n".join(lines).rstrip() + FOOTER)
 
 
@@ -3805,7 +4644,9 @@ async def model_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: `/model_promote <version_id>`" + FOOTER)
+        await update.message.reply_text(
+            "Usage: `/model_promote <version_id> [evidence_digest] [reason...]`" + FOOTER
+        )
         return
 
     target_version = str(context.args[0]).strip()
@@ -3813,6 +4654,12 @@ async def model_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if target_record is None:
         await update.message.reply_text(f"❌ Unknown model version: `{target_version}`" + FOOTER)
         return
+    evidence_digest = ""
+    notes = "manual Telegram admin promotion"
+    if len(context.args) > 1:
+        evidence_digest = str(context.args[1]).strip()
+        if len(context.args) > 2:
+            notes = " ".join(str(arg) for arg in context.args[2:]).strip() or notes
 
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
@@ -3832,7 +4679,8 @@ async def model_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         promoted = MODEL_REGISTRY.promote_version(
             target_record.version_id,
             promoted_by=f"telegram:{user_id}",
-            notes="manual Telegram admin promotion",
+            evidence_digest=evidence_digest,
+            notes=notes,
         )
     except Exception as exc:
         await update.message.reply_text(f"❌ Model promotion rejected: `{exc}`" + FOOTER)
@@ -3874,6 +4722,7 @@ async def model_promote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ **Model Promotion Applied**\n\n"
         f"From: `{previous_id}`\n"
         f"To: `{promoted.version_id}`\n"
+        f"Evidence digest: `{evidence_digest or '(none)'}`\n"
         f"Runtime model: `{Path(reloaded_source.model_dir).expanduser()}`"
         + FOOTER
     )
@@ -3908,8 +4757,68 @@ async def model_quarantine(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def model_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a candidate model as rejected (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: `/model_reject <version_id> [reason...]`" + FOOTER)
+        return
+
+    target_version = str(context.args[0]).strip()
+    notes = " ".join(str(arg) for arg in context.args[1:]).strip()
+    try:
+        record = MODEL_REGISTRY.reject_version(
+            target_version,
+            notes=notes or f"rejected by telegram:{user_id}",
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Cannot mark rejected: `{exc}`" + FOOTER)
+        return
+
+    await update.message.reply_text(
+        "⛔ **Model Rejected**\n\n"
+        f"Candidate: `{record.version_id}`\n"
+        f"Reason: `{notes or 'telegram admin rejection'}`"
+        + FOOTER
+    )
+
+
+async def model_expire(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mark a candidate model as expired (admin only)."""
+
+    user_id = update.effective_user.id
+    if not _is_admin_user(user_id):
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: `/model_expire <version_id> [reason...]`" + FOOTER)
+        return
+
+    target_version = str(context.args[0]).strip()
+    notes = " ".join(str(arg) for arg in context.args[1:]).strip()
+    try:
+        record = MODEL_REGISTRY.expire_version(
+            target_version,
+            notes=notes or f"expired by telegram:{user_id}",
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"❌ Cannot mark expired: `{exc}`" + FOOTER)
+        return
+
+    await update.message.reply_text(
+        "⌛ **Model Expired**\n\n"
+        f"Candidate: `{record.version_id}`\n"
+        f"Reason: `{notes or 'telegram admin expiry'}`"
+        + FOOTER
+    )
+
+
 async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Roll active model pointer back to a registered version (admin only)."""
+    """Roll active model pointer back to the previous registered version (admin only)."""
 
     global MANAGER
     global V2_SIGNAL_MANAGER
@@ -3919,33 +4828,29 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target_record = None
-    target_source = "explicit"
     if context.args:
         target_version = str(context.args[0]).strip()
-        target_record = MODEL_REGISTRY.get_version(target_version)
-        if target_record is None:
-            await update.message.reply_text(f"❌ Unknown model version: `{target_version}`" + FOOTER)
+        try:
+            target_record = MODEL_REGISTRY.validate_rollback_target(target_version)
+        except Exception as exc:
+            await update.message.reply_text(
+                f"\u274c Target model is not rollback eligible: `{exc}`" + FOOTER
+            )
             return
     else:
-        target_source = "previous"
         target_record = MODEL_REGISTRY.get_previous_active_version()
         if target_record is None:
             await update.message.reply_text(
-                "⚠️ No previous active model version available for automatic rollback." + FOOTER
+                "\u26a0\ufe0f No previous active model version available for automatic rollback." + FOOTER
             )
             return
-
-    target_artifact = Path(target_record.artifact_dir).expanduser().resolve()
-    if not target_artifact.is_dir() or (
-        not (target_artifact / "config.json").exists()
-        and not any(target_artifact.glob("model_*m.pkl"))
-    ):
-        await update.message.reply_text(
-            "❌ Registered version artifact missing required `config.json`: "
-            f"`{target_artifact}`"
-            + FOOTER
-        )
-        return
+        try:
+            target_record = MODEL_REGISTRY.validate_rollback_target(target_record.version_id)
+        except Exception as exc:
+            await update.message.reply_text(
+                f"\u274c Target model is not rollback eligible: `{exc}`" + FOOTER
+            )
+            return
 
     bridge = _get_v2_bridge()
     source_manager = _get_signal_source_manager()
@@ -3954,7 +4859,7 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if source_active_sessions > 0 or bridge_active_sessions > 0:
         await update.message.reply_text(
-            "⚠️ Cannot switch model while sessions are running. Stop active sessions first." + FOOTER
+            "\u26a0\ufe0f Cannot switch model while sessions are running. Stop active sessions first." + FOOTER
         )
         return
 
@@ -3962,21 +4867,12 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     previous_id = previous.version_id if previous else "(none)"
     if previous and previous.version_id == target_record.version_id:
         await update.message.reply_text(
-            f"ℹ️ Model `{target_record.version_id}` is already active." + FOOTER
+            f"\u2139\ufe0f Model `{target_record.version_id}` is already active." + FOOTER
         )
         return
 
     pre_switch_pointer = MODEL_REGISTRY.get_active_pointer()
-    if target_source == "previous":
-        switched = MODEL_REGISTRY.rollback_to_previous_version()
-        if switched is None:
-            await update.message.reply_text(
-                "⚠️ No previous active model version available for automatic rollback." + FOOTER
-            )
-            return
-        target_record = switched
-    else:
-        MODEL_REGISTRY.set_active_version(target_record.version_id)
+    MODEL_REGISTRY.set_active_version(target_record.version_id)
 
     MANAGER = None
     V2_SIGNAL_MANAGER = None
@@ -4007,7 +4903,7 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else "(unresolved)"
         )
         await update.message.reply_text(
-            "❌ Rollback pointer update failed runtime load; reverted to previous pointer.\n"
+            "\u274c Rollback pointer update failed runtime load; reverted to previous pointer.\n"
             f"Restored active version: `{previous_id}`\n"
             f"Runtime model: `{restored_model}`"
             + FOOTER
@@ -4015,13 +4911,12 @@ async def model_rollback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "✅ **Model Rollback Applied**\n\n"
+        "\u2705 **Model Rollback Applied**\n\n"
         f"From: `{previous_id}`\n"
         f"To: `{target_record.version_id}`\n"
         f"Runtime model: `{Path(reloaded_source.model_dir).expanduser()}`"
         + FOOTER
     )
-
 
 async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -4055,8 +4950,8 @@ async def revoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             try:
                 await context.bot.send_message(target_id, "⛔ Your access has been revoked by the administrator.")
-            except:
-                pass 
+            except Exception:
+                pass
         else:
             await update.message.reply_text("❌ User not found." + FOOTER)
         session.close()
@@ -4086,7 +4981,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "then `/start_live`"
                 )
                 await context.bot.send_message(target_id, approve_msg)
-            except:
+            except Exception:
                 pass
         else:
             await update.message.reply_text("❌ User not found." + FOOTER)
@@ -4434,6 +5329,7 @@ def main():
     if not token:
         print("Error: TELEGRAM_TOKEN environment variable is missing.")
         return
+    _configure_secure_logging(token)
     logger.info("\n%s", _build_startup_health_report())
         
     async def post_init(app):
@@ -4447,6 +5343,7 @@ def main():
     application.add_handler(CommandHandler('commands', help_command))
     
     application.add_handler(CommandHandler('approve', approve))
+    application.add_handler(CommandHandler('review_transition', review_transition))
     application.add_handler(CommandHandler('revoke', revoke))
     application.add_handler(CommandHandler('model_active', model_active))
     application.add_handler(CommandHandler('model_versions', model_versions))
@@ -4454,8 +5351,12 @@ def main():
     application.add_handler(CommandHandler('model_eval', model_eval))
     application.add_handler(CommandHandler('model_eval_detail', model_eval_detail))
     application.add_handler(CommandHandler('model_auto_promote', model_auto_promote))
+    application.add_handler(CommandHandler('model_approve', model_approve))
+    application.add_handler(CommandHandler('model_events', model_events))
     application.add_handler(CommandHandler('model_promote', model_promote))
     application.add_handler(CommandHandler('model_quarantine', model_quarantine))
+    application.add_handler(CommandHandler('model_reject', model_reject))
+    application.add_handler(CommandHandler('model_expire', model_expire))
     application.add_handler(CommandHandler('model_rollback', model_rollback))
     application.add_handler(CommandHandler('setup', setup))
     application.add_handler(CommandHandler('start_demo', start_demo))
@@ -4470,6 +5371,7 @@ def main():
     application.add_handler(CommandHandler('set_stop_loss', set_stoploss))
     application.add_handler(CommandHandler('stop', stop_trading))
     application.add_handler(CommandHandler('reset_demo', reset_demo))
+    application.add_handler(CommandHandler('flatten_demo', flatten_demo))
     application.add_handler(CommandHandler('prepare_update', prepare_update))
     application.add_handler(CommandHandler('update_complete', update_complete))
     application.add_handler(CommandHandler('status', status))

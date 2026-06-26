@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from quant_v2.contracts import OrderPlan
+from quant_v2.accounting import AccountingStore, LedgerProjection, LedgerReconciliationReport
 
 
 def reconcile_target_exposures(
@@ -51,3 +52,27 @@ def reconcile_target_exposures(
         )
 
     return tuple(plans)
+
+
+def reconcile_ledger_state(
+    account_id: int,
+    *,
+    store: AccountingStore,
+    adapter_positions: dict[str, float],
+    checkpoint: LedgerProjection | None = None,
+    symbol_tolerances: dict[str, float] | None = None,
+    cash_tolerance: float = 0.01,
+    equity_tolerance: float = 0.01,
+    open_orders: dict[str, float] | None = None,
+) -> LedgerReconciliationReport:
+    """Compare ledger projection against external adapter state."""
+
+    return store.reconcile(
+        account_id,
+        adapter_positions=adapter_positions,
+        checkpoint=checkpoint,
+        symbol_tolerances=symbol_tolerances,
+        cash_tolerance=cash_tolerance,
+        equity_tolerance=equity_tolerance,
+        open_orders=open_orders,
+    )

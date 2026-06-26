@@ -57,6 +57,12 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
 
     # Skip if funding rate data not available
     if "funding_rate_raw" not in out.columns:
+        out["funding_rate"] = 0.0
+        out["funding_rate_ma8"] = 0.0
+        out["funding_rate_zscore"] = 0.0
+        out["funding_rate_extreme"] = 0.0
+        out["funding_cumulative_24h"] = 0.0
+        out["funding_momentum"] = 0.0
         return out
 
     fr = out["funding_rate_raw"]

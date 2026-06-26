@@ -21,6 +21,35 @@ STREAM_CONSUMER_GROUP = "execution_consumer_group"
 STREAM_CONSUMER_NAME = "execution_engine"
 
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _stream_id_age_seconds(stream_id: str, *, now_ms: int | None = None) -> float | None:
+    raw = str(stream_id or "").strip()
+    if not raw or "-" not in raw:
+        return None
+
+    head = raw.split("-", 1)[0]
+    try:
+        entry_ms = int(head)
+    except ValueError:
+        return None
+
+    current_ms = now_ms if now_ms is not None else int(datetime.now(timezone.utc).timestamp() * 1000.0)
+    return max((current_ms - entry_ms) / 1000.0, 0.0)
+
+
 @dataclass(frozen=True)
 class BusMessage:
     """Envelope for inter-service messages."""
@@ -347,6 +376,109 @@ class RedisStreamCommandBus:
             "Stream enqueue: action=%s id=%s", msg.action, entry_id
         )
         return entry_id
+
+    async def get_queue_health(self, *, stale_after_seconds: float = 120.0) -> dict[str, Any]:
+        """Summarize Redis stream backlog and pending-ack freshness."""
+
+        if not self._redis:
+            raise RuntimeError("RedisStreamCommandBus is not connected")
+
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000.0)
+
+        stream_info: dict[str, Any] = {}
+        try:
+            raw_stream_info = await self._redis.xinfo_stream(self._stream_key)
+        except Exception:
+            raw_stream_info = {}
+        if isinstance(raw_stream_info, dict):
+            stream_info = raw_stream_info
+
+        groups: list[dict[str, Any]] = []
+        try:
+            raw_groups = await self._redis.xinfo_groups(self._stream_key)
+        except Exception:
+            raw_groups = []
+        if isinstance(raw_groups, list):
+            groups = [group for group in raw_groups if isinstance(group, dict)]
+
+        group_info = next(
+            (
+                group
+                for group in groups
+                if str(group.get("name", "") or "") == self._consumer_group
+            ),
+            {},
+        )
+
+        pending_count = _coerce_int(group_info.get("pending", 0))
+        lag_entries = _coerce_int(group_info.get("lag", 0))
+        consumer_count = _coerce_int(group_info.get("consumers", 0))
+        entries_read = _coerce_int(group_info.get("entries-read", 0), default=-1)
+        last_delivered_id = str(group_info.get("last-delivered-id", "") or "")
+
+        try:
+            pending_entries = await self._redis.xpending_range(
+                self._stream_key,
+                self._consumer_group,
+                min="-",
+                max="+",
+                count=100,
+            )
+        except Exception:
+            pending_entries = []
+
+        pending_ages: list[float] = []
+        pending_deliveries: list[int] = []
+        if isinstance(pending_entries, list):
+            for item in pending_entries:
+                if not isinstance(item, dict):
+                    continue
+                pending_ages.append(_coerce_float(item.get("time_since_delivered", 0.0)) / 1000.0)
+                pending_deliveries.append(_coerce_int(item.get("times_delivered", 0)))
+
+        max_pending_age_seconds = max(pending_ages) if pending_ages else 0.0
+        min_pending_age_seconds = min(pending_ages) if pending_ages else 0.0
+        oldest_pending_age_seconds = max_pending_age_seconds
+        newest_pending_age_seconds = min_pending_age_seconds
+
+        entry_count = _coerce_int(stream_info.get("length", 0))
+        last_generated_id = str(stream_info.get("last-generated-id", "") or "")
+        stream_backlog = max(pending_count + lag_entries, 0)
+        stream_age_seconds = _stream_id_age_seconds(last_generated_id, now_ms=now_ms)
+        delivered_age_seconds = _stream_id_age_seconds(last_delivered_id, now_ms=now_ms)
+
+        status = "unknown"
+        if entry_count > 0 or pending_count > 0 or lag_entries > 0:
+            status = "healthy"
+        if stream_backlog > 0:
+            status = "warning"
+        if max_pending_age_seconds >= stale_after_seconds:
+            status = "degraded"
+        elif stream_backlog > 0 and max_pending_age_seconds >= max(stale_after_seconds / 2.0, 1.0):
+            status = "warning"
+
+        return {
+            "status": status,
+            "stream_key": self._stream_key,
+            "consumer_group": self._consumer_group,
+            "consumer_name": self._consumer_name,
+            "stream_entry_count": entry_count,
+            "stream_backlog_count": stream_backlog,
+            "pending_count": pending_count,
+            "lag_entries": lag_entries,
+            "consumer_count": consumer_count,
+            "entries_read": entries_read,
+            "last_delivered_id": last_delivered_id,
+            "last_generated_id": last_generated_id,
+            "stream_age_seconds": stream_age_seconds,
+            "delivered_age_seconds": delivered_age_seconds,
+            "pending_samples": len(pending_ages),
+            "max_pending_age_seconds": max_pending_age_seconds,
+            "oldest_pending_age_seconds": oldest_pending_age_seconds,
+            "newest_pending_age_seconds": newest_pending_age_seconds,
+            "max_times_delivered": max(pending_deliveries) if pending_deliveries else 0,
+            "stale_after_seconds": float(stale_after_seconds),
+        }
 
     async def start_consuming(
         self,

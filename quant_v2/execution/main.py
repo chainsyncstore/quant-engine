@@ -17,17 +17,27 @@ import asyncio
 import logging
 import os
 import signal
+from time import perf_counter
+from datetime import datetime, timezone
+from typing import Callable
 
 from quant_v2.execution.redis_bus import (
     BusMessage,
-    EVT_TG_CHANNEL,
     RedisCommandBus,
     RedisStreamCommandBus,
 )
-from quant_v2.execution.service import RoutedExecutionService, SessionRequest
-from quant_v2.execution.state_wal import RedisWAL, WALEntry
+from quant_v2.execution.adapters import ExecutionResult
+from quant_v2.execution.outcomes import ExecutionOutcome
+from quant_v2.execution.service import (
+    ExecutionStageTelemetry,
+    RoutedExecutionService,
+    SessionRequest,
+)
+from quant_v2.execution.state_wal import LifecycleStateRecord, RedisWAL, WALEntry
 from quant_v2.execution.watchdog import LifecycleWatchdog, WatchdogAlert
 from quant_v2.monitoring.kill_switch import MonitoringSnapshot
+from quant_v2.monitoring.health_dashboard import build_runtime_resource_health
+from quant_v2.monitoring.runtime_probes import record_runtime_boot_marker
 from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
 
 logger = logging.getLogger(__name__)
@@ -47,8 +57,10 @@ class ExecutionEngineServer:
         redis_url: str,
         *,
         risk_policy: PortfolioRiskPolicy | None = None,
+        stage_telemetry_callback: Callable[[ExecutionStageTelemetry], None] | None = None,
     ) -> None:
         self._redis_url = redis_url
+        self._stage_telemetry_callback = stage_telemetry_callback
 
         # FIX-2: Guaranteed command bus replaces fire-and-forget Pub/Sub for incoming cmds.
         self._stream_bus = RedisStreamCommandBus(redis_url)
@@ -70,6 +82,7 @@ class ExecutionEngineServer:
         self._service = RoutedExecutionService(
             risk_policy=risk_policy,
             allow_live_execution=True,
+            stage_telemetry_callback=stage_telemetry_callback,
         )
 
         # Session-state mutex: serialises concurrent mutations from the
@@ -79,6 +92,9 @@ class ExecutionEngineServer:
 
         self._shutting_down = False
         self._reconciliation_task: asyncio.Task | None = None
+        self._last_reconciliation_started_at: datetime | None = None
+        self._last_reconciliation_completed_at: datetime | None = None
+        self._last_reconciliation_error_at: datetime | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -86,6 +102,10 @@ class ExecutionEngineServer:
 
     async def start(self) -> None:
         """Initialize connections, replay WAL, then start processing."""
+        try:
+            record_runtime_boot_marker()
+        except Exception as exc:
+            logger.warning("Failed recording runtime boot marker: %s", exc)
         # 1. Connect infrastructure
         await self._stream_bus.connect()
         await self._event_bus.connect()
@@ -186,6 +206,55 @@ class ExecutionEngineServer:
             connectivity_error_rate=cls._bounded_rate(raw.get("connectivity_error_rate", 0.0)),
             hard_risk_breach=bool(raw.get("hard_risk_breach", False)),
         )
+
+    async def _persist_lifecycle_state(
+        self,
+        user_id: int,
+        *,
+        previous_state: LifecycleStateRecord | None,
+    ) -> LifecycleStateRecord | None:
+        """Persist the current lifecycle state when the service has advanced."""
+
+        current_state = None
+        get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+        if callable(get_lifecycle_state):
+            current_state = get_lifecycle_state(user_id)
+        if current_state is None or current_state == previous_state:
+            return current_state
+        await self._wal.log_lifecycle_transition(user_id, record=current_state)
+        return current_state
+
+    def _emit_stage_telemetry(
+        self,
+        *,
+        user_id: int,
+        stage: str,
+        started_at: float,
+        correlation_id: str = "",
+        status: str = "",
+        detail: str = "",
+    ) -> None:
+        callback = getattr(self, "_stage_telemetry_callback", None)
+        if callback is None:
+            return
+        event = ExecutionStageTelemetry(
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+            stage=str(stage or ""),
+            duration_ms=max((perf_counter() - started_at) * 1000.0, 0.0),
+            correlation_id=str(correlation_id or ""),
+            status=str(status or ""),
+            detail=str(detail or ""),
+        )
+        try:
+            callback(event)
+        except Exception as exc:
+            logger.warning(
+                "Stage-telemetry callback failed for user %s stage=%s: %s",
+                user_id,
+                stage,
+                exc,
+            )
 
     async def _execute_stale_feed_circuit_breaker(
         self,
@@ -296,6 +365,55 @@ class ExecutionEngineServer:
         accepted = sum(1 for result in flatten_results if getattr(result, "accepted", False))
         rejected = sum(1 for result in flatten_results if not getattr(result, "accepted", False))
 
+        set_lifecycle_state = getattr(self._service, "set_lifecycle_state", None)
+        if callable(set_lifecycle_state):
+            try:
+                current_positions = {}
+                if callable(get_positions):
+                    refreshed_positions = await asyncio.to_thread(get_positions)
+                    if isinstance(refreshed_positions, dict):
+                        for symbol, qty in refreshed_positions.items():
+                            clean_symbol = str(symbol).strip().upper()
+                            clean_qty = float(qty)
+                            if clean_symbol and abs(clean_qty) > 1e-12:
+                                current_positions[clean_symbol] = clean_qty
+
+                current_lifecycle = None
+                get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+                if callable(get_lifecycle_state):
+                    current_lifecycle = get_lifecycle_state(user_id)
+
+                if flatten_error:
+                    next_state = "INCIDENT"
+                    reason_text = f"stale_feed_circuit_breaker:{flatten_error}"
+                elif current_positions:
+                    next_state = "FLATTENING"
+                    reason_text = f"stale_feed_circuit_breaker:{reason}"
+                else:
+                    next_state = "FLAT_CONFIRMED"
+                    reason_text = f"stale_feed_circuit_breaker:{reason}"
+
+                try:
+                    set_lifecycle_state(
+                        user_id,
+                        state=next_state,
+                        owner="liquidation_supervisor",
+                        reason=reason_text,
+                        policy_version=(
+                            current_lifecycle.policy_version
+                            if current_lifecycle is not None
+                            else ""
+                        ),
+                    )
+                except ValueError:
+                    pass
+            except Exception as exc:
+                logger.debug(
+                    "Lifecycle state update during stale-feed flatten failed for user %s: %s",
+                    user_id,
+                    exc,
+                )
+
         return {
             "user_id": user_id,
             "reason": reason,
@@ -306,6 +424,16 @@ class ExecutionEngineServer:
             "flatten_orders_rejected": rejected,
             "error": flatten_error,
         }
+
+    async def _circuit_breaker_flatten(
+        self,
+        user_id: int,
+        *,
+        reason: str,
+    ) -> dict:
+        """Compatibility alias for the shutdown flatten path."""
+
+        return await self._execute_stale_feed_circuit_breaker(user_id, reason=reason)
 
     # ------------------------------------------------------------------
     # FIX-3: WAL Replay  --  reconstruct session state on boot
@@ -321,6 +449,7 @@ class ExecutionEngineServer:
         """
         rebuilt = 0
         latest_checkpoints: dict[int, dict] = {}
+        pending_lifecycle: dict[int, list[LifecycleStateRecord]] = {}
 
         for entry in entries:
             if entry.event_type == "session_started":
@@ -333,6 +462,16 @@ class ExecutionEngineServer:
                 )
                 started = await self._service.start_session(req)
                 if started:
+                    lifecycle_payload = payload.get("lifecycle_state")
+                    if isinstance(lifecycle_payload, dict):
+                        record = LifecycleStateRecord.from_payload(lifecycle_payload)
+                        restore_lifecycle_state = getattr(self._service, "restore_lifecycle_state", None)
+                        if callable(restore_lifecycle_state):
+                            restore_lifecycle_state(user_id, record)
+                    for record in pending_lifecycle.pop(user_id, []):
+                        restore_lifecycle_state = getattr(self._service, "restore_lifecycle_state", None)
+                        if callable(restore_lifecycle_state):
+                            restore_lifecycle_state(user_id, record)
                     self._watchdog.register_session(
                         user_id,
                         is_live=req.live,
@@ -353,6 +492,56 @@ class ExecutionEngineServer:
                     self._watchdog.deregister_session(user_id)
                     rebuilt = max(0, rebuilt - 1)
                 latest_checkpoints.pop(user_id, None)
+
+            elif entry.event_type == "lifecycle_changed":
+                record = LifecycleStateRecord.from_payload(entry.payload)
+                restore_lifecycle_state = getattr(self._service, "restore_lifecycle_state", None)
+                if callable(restore_lifecycle_state):
+                    if self._service.is_running(entry.user_id) or self._service.get_lifecycle_state(entry.user_id) is not None:
+                        try:
+                            restore_lifecycle_state(entry.user_id, record)
+                        except KeyError:
+                            pending_lifecycle.setdefault(entry.user_id, []).append(record)
+                    else:
+                        pending_lifecycle.setdefault(entry.user_id, []).append(record)
+
+            elif entry.event_type == "order_executed":
+                payload = entry.payload
+                outcome_raw = str(payload.get("outcome", "") or "").strip()
+                try:
+                    outcome = ExecutionOutcome(outcome_raw) if outcome_raw else ExecutionOutcome.NEW_FILL
+                except ValueError:
+                    outcome = ExecutionOutcome.UNKNOWN_REQUIRES_RECONCILIATION
+                try:
+                    result = ExecutionResult(
+                        accepted=True,
+                        order_id=str(payload.get("venue_order_id") or payload.get("order_id") or ""),
+                        idempotency_key=str(payload.get("request_id") or payload.get("idempotency_key") or ""),
+                        symbol=str(payload.get("symbol", "")),
+                        side=str(payload.get("side", "BUY")),
+                        requested_qty=float(payload.get("quantity", 0.0) or 0.0),
+                        filled_qty=float(payload.get("quantity", 0.0) or 0.0),
+                        avg_price=float(payload.get("avg_price", 0.0) or 0.0),
+                        status=str(payload.get("status", "filled")),
+                        created_at=str(payload.get("created_at") or entry.timestamp or ""),
+                        reason="replayed_from_wal",
+                        risk_policy_version=str(payload.get("risk_policy_version", "") or ""),
+                        request_id=str(payload.get("request_id") or payload.get("idempotency_key") or ""),
+                        venue_order_id=str(payload.get("venue_order_id") or payload.get("order_id") or ""),
+                        fill_id=str(payload.get("fill_id") or payload.get("venue_order_id") or payload.get("order_id") or ""),
+                        accounting_transaction_id=str(payload.get("accounting_transaction_id") or ""),
+                        original_order_id=str(payload.get("original_order_id") or payload.get("venue_order_id") or payload.get("order_id") or ""),
+                        original_fill_id=str(payload.get("original_fill_id") or payload.get("fill_id") or payload.get("venue_order_id") or payload.get("order_id") or ""),
+                        outcome=outcome,
+                        newly_filled_qty=float(payload.get("newly_filled_qty", payload.get("quantity", 0.0)) or 0.0),
+                        replayed_at=str(payload.get("replayed_at") or ""),
+                    )
+                except Exception as exc:
+                    logger.warning("WAL replay: failed restoring order result for user %s: %s", entry.user_id, exc)
+                else:
+                    restore_order_result = getattr(self._service, "restore_order_result", None)
+                    if callable(restore_order_result):
+                        restore_order_result(entry.user_id, result)
 
             elif entry.event_type == "state_checkpoint":
                 latest_checkpoints[entry.user_id] = entry.payload
@@ -396,6 +585,7 @@ class ExecutionEngineServer:
         try:
             while not self._shutting_down:
                 await asyncio.sleep(interval_seconds)
+                self._last_reconciliation_started_at = datetime.now(timezone.utc)
                 live_ids = self._service.get_live_session_ids()
                 for user_id in live_ids:
                     try:
@@ -404,8 +594,157 @@ class ExecutionEngineServer:
                         logger.error(
                             "Reconciliation failed for user %d: %s", user_id, exc
                         )
+                self._last_reconciliation_completed_at = datetime.now(timezone.utc)
         except asyncio.CancelledError:
             logger.debug("Reconciliation loop cancelled")
+        except Exception:
+            self._last_reconciliation_error_at = datetime.now(timezone.utc)
+            logger.exception("Reconciliation loop crashed")
+
+    async def get_operational_health(self) -> dict:
+        """Return live execution backlog and reconciliation freshness."""
+
+        captured_at = datetime.now(timezone.utc)
+
+        stream_health: dict = {}
+        try:
+            stream_health = await self._stream_bus.get_queue_health()
+        except Exception as exc:
+            stream_health = {
+                "status": "unknown",
+                "error": str(exc),
+            }
+
+        wal_health: dict = {}
+        try:
+            wal_health = await self._wal.get_stream_health()
+        except Exception as exc:
+            wal_health = {
+                "status": "unknown",
+                "error": str(exc),
+            }
+
+        runtime_health = build_runtime_resource_health()
+
+        redis_memory: dict = {}
+        redis_clients = (
+            getattr(self._stream_bus, "_redis", None),
+            getattr(self._wal, "_redis", None),
+        )
+        for redis_client in redis_clients:
+            info = getattr(redis_client, "info", None)
+            if not callable(info):
+                continue
+            try:
+                raw_info = await info("memory")
+            except Exception:
+                continue
+            if isinstance(raw_info, dict):
+                redis_memory = raw_info
+                break
+
+        redis_used_memory_bytes = 0
+        redis_maxmemory_bytes = 0
+        try:
+            redis_used_memory_bytes = int(redis_memory.get("used_memory", 0) or 0)
+        except (TypeError, ValueError):
+            redis_used_memory_bytes = 0
+        try:
+            redis_maxmemory_bytes = int(redis_memory.get("maxmemory", 0) or 0)
+        except (TypeError, ValueError):
+            redis_maxmemory_bytes = 0
+
+        redis_memory_used_mb = max(redis_used_memory_bytes / (1024.0 * 1024.0), 0.0) if redis_used_memory_bytes else 0.0
+        redis_memory_max_mb = max(redis_maxmemory_bytes / (1024.0 * 1024.0), 0.0) if redis_maxmemory_bytes else 0.0
+        redis_memory_fraction = (
+            (redis_used_memory_bytes / redis_maxmemory_bytes)
+            if redis_used_memory_bytes > 0 and redis_maxmemory_bytes > 0
+            else None
+        )
+        redis_memory_status = "unknown"
+        if redis_used_memory_bytes > 0:
+            redis_memory_status = "healthy"
+            if redis_memory_fraction is not None and redis_memory_fraction >= 0.90:
+                redis_memory_status = "degraded"
+            elif redis_memory_fraction is not None and redis_memory_fraction >= 0.75:
+                redis_memory_status = "warning"
+
+        live_session_ids = ()
+        get_live_session_ids = getattr(self._service, "get_live_session_ids", None)
+        if callable(get_live_session_ids):
+            try:
+                live_session_ids = tuple(get_live_session_ids())
+            except Exception:
+                live_session_ids = ()
+
+        recon_reference = self._last_reconciliation_completed_at or self._last_reconciliation_started_at
+        reconciliation_lag_seconds = None
+        if recon_reference is not None:
+            reconciliation_lag_seconds = max(
+                (captured_at - recon_reference).total_seconds(),
+                0.0,
+            )
+
+        reconciliation_status = "unknown"
+        if reconciliation_lag_seconds is not None:
+            reconciliation_status = "healthy"
+            if reconciliation_lag_seconds >= 90.0:
+                reconciliation_status = "warning"
+            if reconciliation_lag_seconds >= 180.0:
+                reconciliation_status = "degraded"
+        if self._last_reconciliation_error_at is not None:
+            error_age = max((captured_at - self._last_reconciliation_error_at).total_seconds(), 0.0)
+            if error_age <= 300.0:
+                reconciliation_status = "degraded"
+
+        statuses = [
+            stream_health.get("status"),
+            wal_health.get("status"),
+            redis_memory_status,
+            runtime_health.get("status"),
+            reconciliation_status,
+        ]
+        overall_status = "unknown"
+        if any(status == "degraded" for status in statuses):
+            overall_status = "degraded"
+        elif any(status == "warning" for status in statuses):
+            overall_status = "warning"
+        elif any(status == "healthy" for status in statuses):
+            overall_status = "healthy"
+
+        return {
+            "status": overall_status,
+            "captured_at": captured_at.isoformat(),
+            "live_session_count": len(live_session_ids),
+            "stream_bus": stream_health,
+            "wal": wal_health,
+            "redis_memory": {
+                "status": redis_memory_status,
+                "used_memory_mb": redis_memory_used_mb,
+                "maxmemory_mb": redis_memory_max_mb,
+                "used_memory_fraction": redis_memory_fraction,
+            },
+            "runtime_health": runtime_health,
+            "reconciliation": {
+                "status": reconciliation_status,
+                "lag_seconds": reconciliation_lag_seconds,
+                "last_started_at": (
+                    self._last_reconciliation_started_at.isoformat()
+                    if self._last_reconciliation_started_at is not None
+                    else ""
+                ),
+                "last_completed_at": (
+                    self._last_reconciliation_completed_at.isoformat()
+                    if self._last_reconciliation_completed_at is not None
+                    else ""
+                ),
+                "last_error_at": (
+                    self._last_reconciliation_error_at.isoformat()
+                    if self._last_reconciliation_error_at is not None
+                    else ""
+                ),
+            },
+        }
 
     async def _reconcile_session(self, user_id: int) -> None:
         """Compare exchange vs local positions for a single session."""
@@ -509,7 +848,7 @@ class ExecutionEngineServer:
                 elif action == "stop_session":
                     result = await self._cmd_stop_session(payload)
                 elif action == "route_signals":
-                    result = await self._cmd_route_signals(payload)
+                    result = await self._cmd_route_signals(payload, correlation_id=correlation_id)
                 elif action == "get_snapshot":
                     result = await self._cmd_get_snapshot(payload)
                 elif action == "set_lifecycle":
@@ -546,8 +885,15 @@ class ExecutionEngineServer:
 
         if success:
             # OpSec: WAL must NEVER contain API keys.
+            lifecycle_state = None
+            get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+            if callable(get_lifecycle_state):
+                lifecycle_state = get_lifecycle_state(user_id)
             await self._wal.log_session_started(
-                user_id, live=live, strategy_profile=req.strategy_profile
+                user_id,
+                live=live,
+                strategy_profile=req.strategy_profile,
+                lifecycle_state=lifecycle_state,
             )
             self._watchdog.register_session(
                 user_id, is_live=live, initial_equity_usd=10_000.0
@@ -562,17 +908,26 @@ class ExecutionEngineServer:
 
     async def _cmd_stop_session(self, payload: dict) -> dict:
         user_id = int(payload["user_id"])
+        previous_lifecycle = None
+        get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+        if callable(get_lifecycle_state):
+            previous_lifecycle = get_lifecycle_state(user_id)
         success = await self._service.stop_session(user_id)
 
         if success:
+            await self._persist_lifecycle_state(
+                user_id,
+                previous_state=previous_lifecycle,
+            )
             await self._wal.log_session_stopped(user_id)
             self._watchdog.deregister_session(user_id)
 
         return {"success": success, "user_id": user_id}
 
-    async def _cmd_route_signals(self, payload: dict) -> dict:
+    async def _cmd_route_signals(self, payload: dict, *, correlation_id: str = "") -> dict:
         from quant_v2.contracts import StrategySignal
 
+        command_started = perf_counter()
         user_id = int(payload["user_id"])
         prices = payload.get("prices", {})
         normalized_prices: dict[str, float] = {}
@@ -605,15 +960,41 @@ class ExecutionEngineServer:
         # Fresh non-zero prices imply a successful market-data pull.
         if normalized_prices:
             self._watchdog.record_tick(user_id)
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="command_parse",
+            started_at=command_started,
+            correlation_id=correlation_id,
+            detail=f"signals={len(signals)} prices={len(normalized_prices)}",
+        )
 
+        previous_lifecycle = None
+        get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+        if callable(get_lifecycle_state):
+            previous_lifecycle = get_lifecycle_state(user_id)
+        routing_started = perf_counter()
         results = await self._service.route_signals(
             user_id,
             signals=signals,
             prices=normalized_prices,
             monitoring_snapshot=monitoring_snapshot,
+            correlation_id=correlation_id,
+        )
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="routing_call",
+            started_at=routing_started,
+            correlation_id=correlation_id,
+            status="ok",
+            detail=f"results={len(results)}",
+        )
+        await self._persist_lifecycle_state(
+            user_id,
+            previous_state=previous_lifecycle,
         )
 
         # Log position updates to WAL
+        ledger_started = perf_counter()
         for r in results:
             if r.accepted:
                 await self._wal.log_order_executed(
@@ -623,9 +1004,28 @@ class ExecutionEngineServer:
                     quantity=r.filled_qty,
                     avg_price=r.avg_price,
                     status=r.status,
+                    risk_policy_version=r.risk_policy_version,
+                    outcome=getattr(r.outcome, "value", str(r.outcome)),
+                    newly_filled_qty=float(getattr(r, "newly_filled_qty", r.filled_qty) or 0.0),
+                    request_id=str(getattr(r, "request_id", "") or ""),
+                    venue_order_id=str(getattr(r, "venue_order_id", "") or ""),
+                    fill_id=str(getattr(r, "fill_id", "") or ""),
+                    accounting_transaction_id=str(getattr(r, "accounting_transaction_id", "") or ""),
+                    original_order_id=str(getattr(r, "original_order_id", "") or ""),
+                    original_fill_id=str(getattr(r, "original_fill_id", "") or ""),
+                    replayed_at=str(getattr(r, "replayed_at", "") or ""),
+                    correlation_id=correlation_id,
                 )
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="ledger_commit",
+            started_at=ledger_started,
+            correlation_id=correlation_id,
+            detail=f"accepted={sum(1 for result in results if result.accepted)}",
+        )
 
         # Update watchdog with latest equity
+        refresh_started = perf_counter()
         snap = self._service.get_portfolio_snapshot(user_id)
         if snap:
             self._watchdog.update_mtm_equity(user_id, snap.equity_usd)
@@ -643,6 +1043,13 @@ class ExecutionEngineServer:
                 )
             except Exception as exc:
                 logger.warning("WAL state checkpoint failed for user %d: %s", user_id, exc)
+        self._emit_stage_telemetry(
+            user_id=user_id,
+            stage="post_fill_refresh",
+            started_at=refresh_started,
+            correlation_id=correlation_id,
+            detail=f"snapshot={bool(snap)} checkpoint={bool(paper_state is not None)}",
+        )
 
         return {
             "user_id": user_id,
@@ -735,6 +1142,11 @@ class ExecutionEngineServer:
                     exc,
                 )
 
+            previous_lifecycle = None
+            get_lifecycle_state = getattr(self._service, "get_lifecycle_state", None)
+            if callable(get_lifecycle_state):
+                previous_lifecycle = get_lifecycle_state(alert.user_id)
+
             reasons: tuple[str, ...] = (alert.alert_type,)
             monitoring_snapshot: MonitoringSnapshot | None = None
 
@@ -774,10 +1186,18 @@ class ExecutionEngineServer:
                             alert.user_id,
                             exc,
                         )
+                await self._persist_lifecycle_state(
+                    alert.user_id,
+                    previous_state=previous_lifecycle,
+                )
 
             flatten_result = await self._execute_stale_feed_circuit_breaker(
                 alert.user_id,
                 reason=alert.alert_type,
+            )
+            await self._persist_lifecycle_state(
+                alert.user_id,
+                previous_state=previous_lifecycle,
             )
             try:
                 await self._event_bus.send_event(

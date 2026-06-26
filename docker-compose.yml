@@ -3,14 +3,48 @@ version: '3.8'
 
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: quant_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    cpus: 0.50
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=999,gid=999
+      - /data:rw,noexec,nosuid,size=64m
+    expose:
+      - "6379"
+    environment:
+      - REDIS_ACL_USERNAME=${REDIS_ACL_USERNAME:-quant_app}
+    secrets:
+      - source: redis_password
+        target: redis_password
+        uid: "999"
+        gid: "999"
+        mode: 0440
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        password="$$(cat /run/secrets/redis_password)"
+        username="$${REDIS_ACL_USERNAME}"
+        case "$$password" in ''|*[!A-Za-z0-9_-]*) echo 'Invalid Redis password format' >&2; exit 1;; esac
+        case "$$username" in ''|*[!A-Za-z0-9_-]*) echo 'Invalid Redis ACL username format' >&2; exit 1;; esac
+        printf 'user default off\nuser %s on >%s ~stream:* ~wal:* &cmd:* &evt:* +ping +publish +subscribe +unsubscribe +psubscribe +punsubscribe +xadd +xgroup +xreadgroup +xpending +xrange +xack +xtrim\n' "$$username" "$$password" > /tmp/users.acl
+        unset password username
+        exec redis-server --appendonly no --dir /data --aclfile /tmp/users.acl
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli --user "$${REDIS_ACL_USERNAME}" ping | grep -q '^PONG$$'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     logging:
       driver: json-file
       options:
@@ -18,15 +52,27 @@ services:
         max-file: "3"
 
   telegram_bot:
-    build: .
-    image: quant_bot:latest
+    image: ${QUANT_IMAGE:?Set QUANT_IMAGE to registry/repository@sha256 digest}
     container_name: quant_telegram
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    cpus: 1.00
+    mem_limit: 2g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+      - /home/quantbot/.cache:rw,noexec,nosuid,size=512m,uid=10001,gid=10001
     command: python -m quant.telebot.main
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./models:/app/models
+      - ./quant:/app/quant:ro
+      - ./quant_v2:/app/quant_v2:ro
       - ./state:/state
       - ./signal_log.json:/app/signal_log.json
     logging:
@@ -35,7 +81,6 @@ services:
         max-size: "20m"
         max-file: "3"
     environment:
-      - REDIS_URL=redis://redis:6379
       - BOT_DB_PATH=/state/quant_bot.db
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
@@ -59,15 +104,27 @@ services:
       - BOT_ENABLE_CHRONOS=${BOT_ENABLE_CHRONOS:-0}
 
   retrain_scheduler:
-    build: .
-    image: quant_bot:latest
+    image: ${QUANT_IMAGE:?Set QUANT_IMAGE to registry/repository@sha256 digest}
     container_name: quant_retrain
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 512
+    cpus: 1.50
+    mem_limit: 3g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001
+      - /home/quantbot/.cache:rw,noexec,nosuid,size=1g,uid=10001,gid=10001
     command: python -m quant_v2.research.scheduled_retrain
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./models:/app/models
+      - ./quant:/app/quant:ro
+      - ./quant_v2:/app/quant_v2:ro
     logging:
       driver: json-file
       options:
@@ -82,19 +139,31 @@ services:
       - RETRAIN_STARTUP_DELAY_SECONDS=${RETRAIN_STARTUP_DELAY_SECONDS:-90}
 
   model_evaluator:
-    build: .
-    image: quant_bot:latest
+    image: ${QUANT_IMAGE:?Set QUANT_IMAGE to registry/repository@sha256 digest}
     container_name: quant_model_eval
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    cpus: 1.00
+    mem_limit: 2g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+      - /home/quantbot/.cache:rw,noexec,nosuid,size=512m,uid=10001,gid=10001
     command: python -m quant_v2.research.model_evaluator
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     dns:
       - 1.1.1.1
       - 8.8.8.8
     volumes:
       - ./models:/app/models
       - ./state:/state
+      - ./quant:/app/quant:ro
+      - ./quant_v2:/app/quant_v2:ro
     logging:
       driver: json-file
       options:
@@ -114,5 +183,6 @@ services:
       - MODEL_EVAL_MIN_ACTIONABLE_DECISIONS=${MODEL_EVAL_MIN_ACTIONABLE_DECISIONS:-30}
       - MODEL_EVAL_MIN_EDGE_BPS=${MODEL_EVAL_MIN_EDGE_BPS:-25}
 
-volumes:
-  redis_data:
+secrets:
+  redis_password:
+    file: ${REDIS_PASSWORD_FILE:?Set REDIS_PASSWORD_FILE to an operator-managed secret file}

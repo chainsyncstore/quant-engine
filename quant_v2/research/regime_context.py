@@ -17,9 +17,11 @@ def add_regime_context_features(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     ts = out.index.get_level_values("timestamp")
 
-    ret_1h = out.groupby(level="symbol")["close"].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    ret_1h = out.groupby(level="symbol")["close"].pct_change().replace([np.inf, -np.inf], np.nan)
     mkt_ret_mean = ret_1h.groupby(ts).transform("mean")
-    mkt_ret_std = ret_1h.groupby(ts).transform(lambda values: float(values.std(ddof=0))).fillna(0.0)
+    mkt_ret_std = ret_1h.groupby(ts).transform(
+        lambda values: float(values.std(ddof=0)) if values.notna().any() else np.nan
+    )
     mkt_ret_abs = ret_1h.abs().groupby(ts).transform("mean")
 
     log_vol = np.log1p(out["volume"].clip(lower=0.0))
@@ -35,14 +37,16 @@ def add_regime_context_features(df: pd.DataFrame) -> pd.DataFrame:
         }
     ).sort_index()
 
-    grouped["regime_trend_24h"] = grouped["mkt_ret_mean"].rolling(24, min_periods=3).mean().fillna(0.0)
-    grouped["regime_volatility_24h"] = grouped["mkt_ret_std"].rolling(24, min_periods=3).mean().fillna(0.0)
-    grouped["regime_stress_24h"] = grouped["mkt_ret_abs"].rolling(24, min_periods=3).mean().fillna(0.0)
+    grouped["regime_trend_24h"] = grouped["mkt_ret_mean"].rolling(24, min_periods=3).mean()
+    grouped["regime_volatility_24h"] = grouped["mkt_ret_std"].rolling(24, min_periods=3).mean()
+    grouped["regime_stress_24h"] = grouped["mkt_ret_abs"].rolling(24, min_periods=3).mean()
 
     vol_threshold = grouped["regime_volatility_24h"].rolling(96, min_periods=10).quantile(0.80)
-    grouped["regime_high_vol_flag"] = (
-        grouped["regime_volatility_24h"] >= vol_threshold.fillna(grouped["regime_volatility_24h"])
-    ).astype(float)
+    grouped["regime_high_vol_flag"] = np.where(
+        grouped["regime_volatility_24h"].notna() & vol_threshold.notna(),
+        (grouped["regime_volatility_24h"] >= vol_threshold).astype(float),
+        np.nan,
+    )
 
     merge_cols = grouped[
         [
@@ -54,20 +58,4 @@ def add_regime_context_features(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     out = out.join(merge_cols, on="timestamp")
-    out[
-        [
-            "regime_trend_24h",
-            "regime_volatility_24h",
-            "regime_stress_24h",
-            "regime_high_vol_flag",
-        ]
-    ] = out[
-        [
-            "regime_trend_24h",
-            "regime_volatility_24h",
-            "regime_stress_24h",
-            "regime_high_vol_flag",
-        ]
-    ].fillna(0.0)
-
     return out

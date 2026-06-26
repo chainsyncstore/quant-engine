@@ -21,6 +21,17 @@ _DEFAULT_UNIVERSE = (
 )
 
 
+def _parse_universe_symbols(raw: str | None) -> tuple[str, ...]:
+    if raw is None or not raw.strip():
+        return _DEFAULT_UNIVERSE
+    symbols: list[str] = []
+    for item in raw.split(","):
+        symbol = item.strip().upper()
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    return tuple(symbols) or _DEFAULT_UNIVERSE
+
+
 @dataclass(frozen=True)
 class UniverseConfig:
     """Universe and timeframe defaults for the initial v2 release."""
@@ -90,6 +101,9 @@ def get_runtime_profile() -> RuntimeProfile:
     profile = RuntimeProfile(
         project_root=project_root,
         model_registry_root=registry_root,
+        universe=UniverseConfig(
+            symbols=_parse_universe_symbols(os.getenv("BOT_V2_UNIVERSE_SYMBOLS")),
+        ),
     )
     profile.validate()
     return profile

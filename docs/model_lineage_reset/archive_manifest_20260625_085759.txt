@@ -1,0 +1,16 @@
+Model lineage reset archive manifest
+created_at=2026-06-25T08:00:49Z
+archive=/home/admin-4arm/hypothesis-research-engine/models/archive/failed_retrains_20260625_085759
+
+Moved paths:
+/repo/models/production/model_20260520_152721 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260520_152721
+/repo/models/production/model_20260520_152824 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260520_152824
+/repo/models/production/model_20260520_153214 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260520_153214
+/repo/models/production/model_20260520_153215 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260520_153215
+/repo/models/production/model_20260520_153627 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260520_153627
+/repo/models/production/model_20260606_084711 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260606_084711
+/repo/models/production/model_20260624_220737 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260624_220737
+/repo/models/production/model_20260624_221344 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260624_221344
+/repo/models/production/model_20260624_221949 -> /repo/models/archive/failed_retrains_20260625_085759/model_20260624_221949
+
+Remaining empty production model dirs:

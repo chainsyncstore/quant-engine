@@ -29,7 +29,6 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
     atr = tr.rolling(14).mean()
 
     # Price move magnitude
-    price_roc = out["close"].pct_change(1).abs()
     price_move = (out["close"] - out["close"].shift(1)).abs()
 
     # Volume ratio (current bar vs 20-bar MA)
@@ -52,5 +51,7 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         out["liquidation_candle"].shift(i) for i in range(1, 5)
     ], axis=1)
     out["post_liquidation_flag"] = liq_shifted.max(axis=1)
+    out["liquidations_long_vol"] = 0.0
+    out["liquidations_short_vol"] = 0.0
 
     return out

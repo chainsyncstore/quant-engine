@@ -1,0 +1,1 @@
+UPDATE user_context SET hard_risk_paused = 0, hard_risk_pause_reason = NULL, hard_risk_pause_triggered_at = NULL, hard_risk_pause_breach_type = NULL, hard_risk_pause_details = NULL WHERE telegram_id = '6268794073';

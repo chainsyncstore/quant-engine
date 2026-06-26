@@ -12,7 +12,7 @@ import hmac
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import urlencode
 
@@ -28,6 +28,7 @@ class BinanceClient:
     """Client for Binance Futures REST API (read-only + authenticated trading)."""
 
     # Binance rate limit: 2400 weight/min. Klines = 2 weight each.
+    _WEIGHT_LIMIT_1M = 2400
     _MIN_REQUEST_INTERVAL = 0.1  # 100ms between requests
     _BACKOFF_MAX_RETRIES = 5
     _BACKOFF_BASE_DELAY = 1.0
@@ -60,6 +61,40 @@ class BinanceClient:
                 self._used_weight_1m = int(weight_str)
             except ValueError:
                 pass
+
+    def get_rate_limit_snapshot(self) -> dict[str, Any]:
+        """Return a small observability snapshot of current request-weight state."""
+
+        used_weight = max(int(self._used_weight_1m), 0)
+        weight_limit = int(self._WEIGHT_LIMIT_1M)
+        throttle_threshold = int(self._WEIGHT_THROTTLE_THRESHOLD)
+        pressure_fraction = (used_weight / weight_limit) if weight_limit > 0 else 0.0
+        headroom = max(weight_limit - used_weight, 0)
+        last_request_age_seconds = None
+        if self._last_request_time > 0.0:
+            last_request_age_seconds = max(time.time() - self._last_request_time, 0.0)
+
+        status = "healthy"
+        if used_weight >= weight_limit:
+            status = "degraded"
+        elif used_weight >= throttle_threshold:
+            status = "warning"
+
+        return {
+            "provider_name": "binance_futures_rest",
+            "status": status,
+            "used_weight_1m": used_weight,
+            "weight_limit_1m": weight_limit,
+            "throttle_threshold_1m": throttle_threshold,
+            "headroom_1m": headroom,
+            "pressure_fraction": pressure_fraction,
+            "throttle_interval_seconds": (
+                self._WEIGHT_ELEVATED_INTERVAL
+                if used_weight >= throttle_threshold
+                else self._MIN_REQUEST_INTERVAL
+            ),
+            "last_request_age_seconds": last_request_age_seconds,
+        }
 
     def _request_with_backoff(
         self,

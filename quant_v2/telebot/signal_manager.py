@@ -84,7 +84,7 @@ class V2SignalManager:
         on_model_rotated: Callable[[str, str], None] | None = None,
     ) -> None:
         from quant_v2.model_registry import ModelRegistry
-        from quant_v2.models.trainer import load_model, TrainedModel
+        from quant_v2.models.trainer import TrainedModel
         
         self.model_dir = Path(model_dir).expanduser()
         self.registry_root = (
@@ -1092,6 +1092,30 @@ class V2SignalManager:
         )
         payload["v2_signal"] = self._attach_native_v2_fields(payload)["v2_signal"]
 
+    def _model_threshold_floor(self) -> float | None:
+        model = getattr(self, "active_model", None)
+        if model is None:
+            return None
+
+        manifest = dict(getattr(model, "artifact_manifest", {}) or {})
+        training = manifest.get("training") or {}
+        if isinstance(training, dict):
+            threshold_policy = training.get("threshold_policy") or {}
+            if isinstance(threshold_policy, dict):
+                selected_threshold = threshold_policy.get("selected_threshold")
+                if selected_threshold is not None:
+                    try:
+                        return float(selected_threshold)
+                    except (TypeError, ValueError):
+                        return None
+            selected_threshold = training.get("threshold")
+            if selected_threshold is not None:
+                try:
+                    return float(selected_threshold)
+                except (TypeError, ValueError):
+                    return None
+        return None
+
     def _resolve_regime_thresholds(
         self,
         *,
@@ -1099,6 +1123,9 @@ class V2SignalManager:
         regime_risk: float,
     ) -> tuple[float, float, str]:
         base_buy = min(0.90, 0.55 + 0.08 * regime_risk)
+        model_floor = self._model_threshold_floor()
+        if model_floor is not None:
+            base_buy = min(0.90, max(base_buy, model_floor))
         base_sell = max(0.10, 1.0 - base_buy)
 
         if int(regime) != 2:
@@ -1638,8 +1665,15 @@ class V2SignalManager:
             return last_row.reset_index(drop=True)
 
         missing = [name for name in feature_names if name not in last_row.columns]
-        for name in missing:
-            last_row[name] = 0.0
+        if missing:
+            raise ValueError(f"Missing model feature columns: {sorted(missing)}")
+        value_missing = [
+            name
+            for name in feature_names
+            if pd.isna(last_row.iloc[0][name])
+        ]
+        if value_missing:
+            raise ValueError(f"Missing model feature values: {sorted(value_missing)}")
 
         return last_row[feature_names].reset_index(drop=True)
 

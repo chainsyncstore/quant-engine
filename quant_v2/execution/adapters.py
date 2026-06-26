@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from quant_v2.contracts import OrderPlan
+from quant_v2.execution.outcomes import ExecutionOutcome, make_replay_result
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,52 @@ class ExecutionResult:
     status: str
     created_at: str
     reason: str = ""
+    risk_policy_version: str = ""
+    request_id: str = ""
+    venue_order_id: str = ""
+    fill_id: str = ""
+    accounting_transaction_id: str = ""
+    original_order_id: str = ""
+    original_fill_id: str = ""
+    outcome: ExecutionOutcome = ExecutionOutcome.NEW_FILL
+    newly_filled_qty: float = 0.0
+    replayed_at: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.request_id:
+            object.__setattr__(self, "request_id", str(self.idempotency_key or self.order_id or ""))
+        if not self.venue_order_id:
+            object.__setattr__(self, "venue_order_id", str(self.order_id or ""))
+        if not self.fill_id:
+            object.__setattr__(self, "fill_id", str(self.venue_order_id or self.order_id or ""))
+        if not self.original_order_id:
+            object.__setattr__(self, "original_order_id", str(self.venue_order_id or self.order_id or ""))
+        if not self.original_fill_id:
+            object.__setattr__(self, "original_fill_id", str(self.fill_id or self.order_id or ""))
+        if self.accepted and self.outcome != ExecutionOutcome.IDEMPOTENT_REPLAY and self.newly_filled_qty <= 0.0:
+            object.__setattr__(self, "newly_filled_qty", float(self.filled_qty))
+        if self.outcome == ExecutionOutcome.IDEMPOTENT_REPLAY and self.newly_filled_qty < 0.0:
+            object.__setattr__(self, "newly_filled_qty", 0.0)
+        if not self.accepted and self.outcome == ExecutionOutcome.NEW_FILL:
+            status = str(self.status or "").strip().lower()
+            if status == "skipped":
+                inferred = ExecutionOutcome.BLOCKED_PRE_ROUTE
+            elif status == "cancelled":
+                inferred = ExecutionOutcome.CANCELLED
+            elif status in {"rejected", "no_position", "residual_supervision_required", "chase_exhausted", "error"}:
+                inferred = ExecutionOutcome.ADAPTER_REJECTED
+            else:
+                inferred = ExecutionOutcome.UNKNOWN_REQUIRES_RECONCILIATION
+            object.__setattr__(self, "outcome", inferred)
+
+    @property
+    def economic_filled_qty(self) -> float:
+        if self.outcome == ExecutionOutcome.IDEMPOTENT_REPLAY:
+            return max(0.0, float(self.newly_filled_qty))
+        return max(0.0, float(self.newly_filled_qty or self.filled_qty))
+
+    def replay_copy(self) -> "ExecutionResult":
+        return make_replay_result(self)
 
 
 class ExecutionAdapter(Protocol):
@@ -70,7 +117,7 @@ class InMemoryPaperAdapter:
     ) -> ExecutionResult:
         existing = self._orders_by_key.get(idempotency_key)
         if existing is not None:
-            return existing
+            return existing.replay_copy()
 
         current_pos = float(self._positions.get(plan.symbol, 0.0))
         side_sign = 1.0 if plan.side == "BUY" else -1.0
@@ -107,6 +154,12 @@ class InMemoryPaperAdapter:
             status="filled" if accepted and filled_qty > 0.0 else "rejected",
             created_at=datetime.now(timezone.utc).isoformat(),
             reason=reason,
+            request_id=idempotency_key,
+            venue_order_id=f"paper-{self._seq}",
+            fill_id=f"paper-{self._seq}:0",
+            accounting_transaction_id=f"acct-paper-{self._seq}",
+            outcome=ExecutionOutcome.NEW_FILL if accepted and filled_qty > 0.0 else ExecutionOutcome.ADAPTER_REJECTED,
+            newly_filled_qty=float(filled_qty if accepted else 0.0),
         )
         self._orders_by_key[idempotency_key] = result
         return result
