@@ -2,10 +2,19 @@ version: '3.8'
 
 services:
   quant_bot:
-    build: .
-    image: quant_bot:latest
+    image: ${QUANT_IMAGE:?Set QUANT_IMAGE to registry/repository@sha256 digest}
     container_name: quant_bot
     restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    cpus: 1.00
+    mem_limit: 2g
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+      - /home/quantbot/.cache:rw,noexec,nosuid,size=512m,uid=10001,gid=10001
     volumes:
       - ./models:/app/models
       - ./quant_bot.db:/app/quant_bot.db

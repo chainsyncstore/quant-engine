@@ -98,7 +98,6 @@ class TestCloseBoundedEscalation:
     def test_close_position_bounded_chase_exhausted_on_timeout(self):
         client = FakeBinanceClientForBounded()
         # Make the limit order return as NEW (not filled)
-        original_place_limit = client.place_limit_order
 
         def unfilled_limit(symbol, side, qty, price, post_only=False, **kwargs):
             client.limit_calls.append((symbol, side, qty, price))
@@ -113,7 +112,6 @@ class TestCloseBoundedEscalation:
 
         client.place_limit_order = unfilled_limit
         # cancel_order clears open orders so chase can proceed
-        original_cancel = client.cancel_order
         def verified_cancel(symbol, order_id):
             client.cancel_calls.append((symbol, order_id))
             client._open_orders = []
@@ -150,3 +148,15 @@ class TestReduceOnlyPathUsesBoundedExit:
         assert "bounded" in result.reason or result.reason == "bounded_limit_exit"
         assert len(client.limit_calls) == 1
         assert len(client.market_calls) == 0
+
+    def test_reduce_only_partial_quantity_does_not_flatten_full_position(self):
+        client = FakeBinanceClientForBounded()
+        adapter = BinanceExecutionAdapter(client)
+
+        plan = OrderPlan(symbol="BTCUSDT", side="SELL", quantity=0.2, reduce_only=True)
+        result = adapter.place_order(plan, idempotency_key="ro_partial")
+
+        assert result.accepted is True
+        assert result.requested_qty == 0.2
+        assert result.filled_qty == 0.2
+        assert client.limit_calls[0][2] == 0.2

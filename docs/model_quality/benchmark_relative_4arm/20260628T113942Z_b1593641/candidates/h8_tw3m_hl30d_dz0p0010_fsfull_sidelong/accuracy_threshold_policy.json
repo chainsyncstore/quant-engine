@@ -1,0 +1,9 @@
+{
+  "samples": 22073,
+  "selected_accuracy": 0.5582838762288769,
+  "selected_threshold": 0.5,
+  "source": "oof_dev_predictions",
+  "threshold_max": 0.8,
+  "threshold_min": 0.5,
+  "threshold_step": 0.05
+}

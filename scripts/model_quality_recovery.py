@@ -18,6 +18,7 @@ from quant_v2.research.model_quality_recovery import (  # noqa: E402
     generate_quality_recovery_bundle,
     fetch_quality_recovery_dataset,
 )
+from quant_v2.research.model_recovery_experiments import run_phase4_research_input_repair  # noqa: E402
 
 
 def _parse_csv(raw: str | None) -> tuple[str, ...]:
@@ -39,6 +40,11 @@ def main() -> None:
     parser.add_argument("--symbols", type=str, default="", help="Comma-separated symbols")
     parser.add_argument("--interval", type=str, default="", help="Market interval, default runtime anchor interval")
     parser.add_argument("--failed-record-path", type=str, default="", help="Optional specific failed retrain record")
+    parser.add_argument("--phase4-repair", action="store_true", help="Run the Phase 4 research-input repair suite")
+    parser.add_argument("--label-mode", choices=("directional_return", "trade_outcome"), default="directional_return", help="Label mode for recovery experiments")
+    parser.add_argument("--trade-profit-target-bps", type=float, default=20.0, help="Trade-outcome profit target in bps")
+    parser.add_argument("--trade-stop-loss-bps", type=float, default=30.0, help="Trade-outcome stop loss in bps")
+    parser.add_argument("--trade-round-trip-cost-bps", type=float, default=8.0, help="Trade-outcome round-trip cost in bps")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -64,22 +70,44 @@ def main() -> None:
             interval=interval,
         )
 
-    bundle, paths = generate_quality_recovery_bundle(
-        model_root=model_root,
-        registry_root=registry_root,
-        dataset=dataset,
-        output_dir=output_dir,
-        failed_record_path=failed_record_path,
-    )
+    if args.phase4_repair:
+        result = run_phase4_research_input_repair(
+            dataset,
+            snapshot_path=Path(args.snapshot_path).expanduser() if args.snapshot_path else output_dir / "snapshot.parquet",
+            output_root=output_dir / "phase4",
+            docs_output_dir=output_dir,
+            label_mode=str(args.label_mode),
+            trade_outcome_profit_target_bps=float(args.trade_profit_target_bps),
+            trade_outcome_stop_loss_bps=float(args.trade_stop_loss_bps),
+            trade_outcome_round_trip_cost_bps=float(args.trade_round_trip_cost_bps),
+        )
+        summary = {
+            "model_root": str(model_root),
+            "registry_root": str(registry_root),
+            "output_dir": str(output_dir),
+            "phase4_output_dir": str(result.output_dir),
+            "recommendation": result.summary.get("recommendation"),
+            "selected_variant_id": result.summary.get("selected_variant_id"),
+            "selected_candidate_id": result.summary.get("selected_candidate_id"),
+            "diagnostics_path": str(output_dir / "research_input_diagnostics.md"),
+        }
+    else:
+        bundle, paths = generate_quality_recovery_bundle(
+            model_root=model_root,
+            registry_root=registry_root,
+            dataset=dataset,
+            output_dir=output_dir,
+            failed_record_path=failed_record_path,
+        )
 
-    summary = {
-        "model_root": str(model_root),
-        "registry_root": str(registry_root),
-        "output_dir": str(output_dir),
-        "paths": {name: str(path) for name, path in paths.items()},
-        "recommendation": bundle.candidate_selection.get("recommendation"),
-        "best_actor": bundle.candidate_selection.get("benchmark_best_actor"),
-    }
+        summary = {
+            "model_root": str(model_root),
+            "registry_root": str(registry_root),
+            "output_dir": str(output_dir),
+            "paths": {name: str(path) for name, path in paths.items()},
+            "recommendation": bundle.candidate_selection.get("recommendation"),
+            "best_actor": bundle.candidate_selection.get("benchmark_best_actor"),
+        }
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 

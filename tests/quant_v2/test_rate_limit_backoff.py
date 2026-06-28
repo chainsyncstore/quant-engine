@@ -112,3 +112,20 @@ class TestWeightThrottling:
         resp = _mock_response(200, headers={"X-MBX-USED-WEIGHT-1M": "1900"})
         client._update_rate_limit_weight(resp)
         assert client._used_weight_1m == 1900
+
+    @patch("quant.data.binance_client.time.time", return_value=1000.0)
+    def test_rate_limit_snapshot_reflects_weight_pressure(self, _mock_time):
+        client = _make_client()
+        client._used_weight_1m = 2200
+        client._last_request_time = 995.0
+
+        snapshot = client.get_rate_limit_snapshot()
+
+        assert snapshot["provider_name"] == "binance_futures_rest"
+        assert snapshot["status"] == "warning"
+        assert snapshot["used_weight_1m"] == 2200
+        assert snapshot["weight_limit_1m"] == 2400
+        assert snapshot["headroom_1m"] == 200
+        assert snapshot["pressure_fraction"] == pytest.approx(2200 / 2400, abs=1e-9)
+        assert snapshot["throttle_interval_seconds"] == 0.5
+        assert snapshot["last_request_age_seconds"] == pytest.approx(5.0, abs=1e-9)

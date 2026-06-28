@@ -1,0 +1,702 @@
+{
+  "barrier_counts": {
+    "insufficient_lookahead": 20,
+    "same_bar_stop_loss": 11641,
+    "stop_loss": 12523,
+    "take_profit": 17748,
+    "time_exit": 1268
+  },
+  "by_symbol": {
+    "ADAUSDT": {
+      "ambiguous_count": 8,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1588,
+        "stop_loss": 1135,
+        "take_profit": 1579,
+        "time_exit": 16
+      },
+      "net_return_bps": {
+        "mean": -19.640503658069605,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2733,
+      "take_count": 1579
+    },
+    "AVAXUSDT": {
+      "ambiguous_count": 12,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1375,
+        "stop_loss": 1252,
+        "take_profit": 1660,
+        "time_exit": 31
+      },
+      "net_return_bps": {
+        "mean": -18.636736244919806,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2648,
+      "take_count": 1660
+    },
+    "BNBUSDT": {
+      "ambiguous_count": 142,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 643,
+        "stop_loss": 1359,
+        "take_profit": 2020,
+        "time_exit": 296
+      },
+      "net_return_bps": {
+        "mean": -13.139670972027314,
+        "median": -18.665336612378784
+      },
+      "rows": 4320,
+      "skip_count": 2156,
+      "take_count": 2022
+    },
+    "BTCUSDT": {
+      "ambiguous_count": 173,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 732,
+        "stop_loss": 1301,
+        "take_profit": 1890,
+        "time_exit": 395
+      },
+      "net_return_bps": {
+        "mean": -14.158829661364173,
+        "median": -25.0447052617706
+      },
+      "rows": 4320,
+      "skip_count": 2255,
+      "take_count": 1892
+    },
+    "DOGEUSDT": {
+      "ambiguous_count": 15,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1352,
+        "stop_loss": 1239,
+        "take_profit": 1687,
+        "time_exit": 40
+      },
+      "net_return_bps": {
+        "mean": -18.29226711642836,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2618,
+      "take_count": 1687
+    },
+    "ETHUSDT": {
+      "ambiguous_count": 90,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1130,
+        "stop_loss": 1206,
+        "take_profit": 1797,
+        "time_exit": 185
+      },
+      "net_return_bps": {
+        "mean": -16.316680077721184,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2433,
+      "take_count": 1797
+    },
+    "LINKUSDT": {
+      "ambiguous_count": 19,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1357,
+        "stop_loss": 1229,
+        "take_profit": 1696,
+        "time_exit": 36
+      },
+      "net_return_bps": {
+        "mean": -18.19778407936779,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2605,
+      "take_count": 1696
+    },
+    "LTCUSDT": {
+      "ambiguous_count": 44,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 977,
+        "stop_loss": 1354,
+        "take_profit": 1898,
+        "time_exit": 89
+      },
+      "net_return_bps": {
+        "mean": -15.599150760442075,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2378,
+      "take_count": 1898
+    },
+    "SOLUSDT": {
+      "ambiguous_count": 23,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1365,
+        "stop_loss": 1161,
+        "take_profit": 1729,
+        "time_exit": 63
+      },
+      "net_return_bps": {
+        "mean": -17.697422989576474,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2568,
+      "take_count": 1729
+    },
+    "XRPUSDT": {
+      "ambiguous_count": 49,
+      "first_barriers": {
+        "insufficient_lookahead": 2,
+        "same_bar_stop_loss": 1122,
+        "stop_loss": 1287,
+        "take_profit": 1792,
+        "time_exit": 117
+      },
+      "net_return_bps": {
+        "mean": -16.73524320356102,
+        "median": -38.0
+      },
+      "rows": 4320,
+      "skip_count": 2479,
+      "take_count": 1792
+    }
+  },
+  "dataset": {
+    "end": "2026-06-26 14:00:00+00:00",
+    "rows": 43200,
+    "start": "2025-12-28 15:00:00+00:00",
+    "symbols": [
+      "ADAUSDT",
+      "AVAXUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "LINKUSDT",
+      "LTCUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ]
+  },
+  "feature_set": "full",
+  "holding_bars": {
+    "mean": 1.0861700879765397,
+    "median": 1.0
+  },
+  "label_counts": {
+    "ambiguous": 575,
+    "labelled": 42625,
+    "skip": 24873,
+    "take": 17752
+  },
+  "label_mode": "trade_outcome",
+  "mae_bps": {
+    "mean": -70.62404825863408,
+    "p95": -3.547357218872671
+  },
+  "mfe_bps": {
+    "mean": 65.46878671532755,
+    "p95": 203.73661185590151
+  },
+  "net_return_bps": {
+    "mean": -16.864553158806643,
+    "median": -38.0,
+    "p25": -38.0,
+    "p75": 12.0
+  },
+  "policy_version": "trade_outcome_labels_v1",
+  "recency_half_life_days": 30,
+  "trade_outcome_report": {
+    "config": {
+      "dead_zone_bps": 10.0,
+      "funding_bps_per_8h": 0.0,
+      "horizon_bars": 2,
+      "label_mode": "binary",
+      "prefer_stop_on_same_bar": true,
+      "profit_target_bps": 20.0,
+      "round_trip_cost_bps": 8.0,
+      "stop_loss_bps": 30.0
+    },
+    "dataset": {
+      "end": "2026-06-26 14:00:00+00:00",
+      "rows": 43200,
+      "start": "2025-12-28 15:00:00+00:00",
+      "symbols": [
+        "ADAUSDT",
+        "AVAXUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "LTCUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    },
+    "long": {
+      "barrier_counts": {
+        "insufficient_lookahead": 20,
+        "same_bar_stop_loss": 11641,
+        "stop_loss": 12523,
+        "take_profit": 17748,
+        "time_exit": 1268
+      },
+      "by_symbol": {
+        "ADAUSDT": {
+          "ambiguous_count": 8,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1588,
+            "stop_loss": 1135,
+            "take_profit": 1579,
+            "time_exit": 16
+          },
+          "net_return_bps": {
+            "mean": -19.640503658069605,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2733,
+          "take_count": 1579
+        },
+        "AVAXUSDT": {
+          "ambiguous_count": 12,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1375,
+            "stop_loss": 1252,
+            "take_profit": 1660,
+            "time_exit": 31
+          },
+          "net_return_bps": {
+            "mean": -18.636736244919806,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2648,
+          "take_count": 1660
+        },
+        "BNBUSDT": {
+          "ambiguous_count": 142,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 643,
+            "stop_loss": 1359,
+            "take_profit": 2020,
+            "time_exit": 296
+          },
+          "net_return_bps": {
+            "mean": -13.139670972027314,
+            "median": -18.665336612378784
+          },
+          "rows": 4320,
+          "skip_count": 2156,
+          "take_count": 2022
+        },
+        "BTCUSDT": {
+          "ambiguous_count": 173,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 732,
+            "stop_loss": 1301,
+            "take_profit": 1890,
+            "time_exit": 395
+          },
+          "net_return_bps": {
+            "mean": -14.158829661364173,
+            "median": -25.0447052617706
+          },
+          "rows": 4320,
+          "skip_count": 2255,
+          "take_count": 1892
+        },
+        "DOGEUSDT": {
+          "ambiguous_count": 15,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1352,
+            "stop_loss": 1239,
+            "take_profit": 1687,
+            "time_exit": 40
+          },
+          "net_return_bps": {
+            "mean": -18.29226711642836,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2618,
+          "take_count": 1687
+        },
+        "ETHUSDT": {
+          "ambiguous_count": 90,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1130,
+            "stop_loss": 1206,
+            "take_profit": 1797,
+            "time_exit": 185
+          },
+          "net_return_bps": {
+            "mean": -16.316680077721184,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2433,
+          "take_count": 1797
+        },
+        "LINKUSDT": {
+          "ambiguous_count": 19,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1357,
+            "stop_loss": 1229,
+            "take_profit": 1696,
+            "time_exit": 36
+          },
+          "net_return_bps": {
+            "mean": -18.19778407936779,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2605,
+          "take_count": 1696
+        },
+        "LTCUSDT": {
+          "ambiguous_count": 44,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 977,
+            "stop_loss": 1354,
+            "take_profit": 1898,
+            "time_exit": 89
+          },
+          "net_return_bps": {
+            "mean": -15.599150760442075,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2378,
+          "take_count": 1898
+        },
+        "SOLUSDT": {
+          "ambiguous_count": 23,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1365,
+            "stop_loss": 1161,
+            "take_profit": 1729,
+            "time_exit": 63
+          },
+          "net_return_bps": {
+            "mean": -17.697422989576474,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2568,
+          "take_count": 1729
+        },
+        "XRPUSDT": {
+          "ambiguous_count": 49,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1122,
+            "stop_loss": 1287,
+            "take_profit": 1792,
+            "time_exit": 117
+          },
+          "net_return_bps": {
+            "mean": -16.73524320356102,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2479,
+          "take_count": 1792
+        }
+      },
+      "dataset": {
+        "end": "2026-06-26 14:00:00+00:00",
+        "rows": 43200,
+        "start": "2025-12-28 15:00:00+00:00",
+        "symbols": [
+          "ADAUSDT",
+          "AVAXUSDT",
+          "BNBUSDT",
+          "BTCUSDT",
+          "DOGEUSDT",
+          "ETHUSDT",
+          "LINKUSDT",
+          "LTCUSDT",
+          "SOLUSDT",
+          "XRPUSDT"
+        ]
+      },
+      "holding_bars": {
+        "mean": 1.0861700879765397,
+        "median": 1.0
+      },
+      "label_counts": {
+        "ambiguous": 575,
+        "labelled": 42625,
+        "skip": 24873,
+        "take": 17752
+      },
+      "mae_bps": {
+        "mean": -70.62404825863408,
+        "p95": -3.547357218872671
+      },
+      "mfe_bps": {
+        "mean": 65.46878671532755,
+        "p95": 203.73661185590151
+      },
+      "net_return_bps": {
+        "mean": -16.864553158806643,
+        "median": -38.0,
+        "p25": -38.0,
+        "p75": 12.0
+      }
+    },
+    "policy_version": "trade_outcome_labels_v1",
+    "short": {
+      "barrier_counts": {
+        "insufficient_lookahead": 20,
+        "same_bar_stop_loss": 11395,
+        "stop_loss": 11727,
+        "take_profit": 18723,
+        "time_exit": 1335
+      },
+      "by_symbol": {
+        "ADAUSDT": {
+          "ambiguous_count": 7,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1554,
+            "stop_loss": 1053,
+            "take_profit": 1700,
+            "time_exit": 11
+          },
+          "net_return_bps": {
+            "mean": -18.26369074973324,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2613,
+          "take_count": 1700
+        },
+        "AVAXUSDT": {
+          "ambiguous_count": 11,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1351,
+            "stop_loss": 1127,
+            "take_profit": 1811,
+            "time_exit": 29
+          },
+          "net_return_bps": {
+            "mean": -16.90601665332061,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2498,
+          "take_count": 1811
+        },
+        "BNBUSDT": {
+          "ambiguous_count": 125,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 587,
+            "stop_loss": 1342,
+            "take_profit": 2088,
+            "time_exit": 301
+          },
+          "net_return_bps": {
+            "mean": -12.37363361490528,
+            "median": -11.397508493772072
+          },
+          "rows": 4320,
+          "skip_count": 2107,
+          "take_count": 2088
+        },
+        "BTCUSDT": {
+          "ambiguous_count": 188,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 727,
+            "stop_loss": 1183,
+            "take_profit": 1973,
+            "time_exit": 435
+          },
+          "net_return_bps": {
+            "mean": -13.029049132517942,
+            "median": -17.187326614878977
+          },
+          "rows": 4320,
+          "skip_count": 2159,
+          "take_count": 1973
+        },
+        "DOGEUSDT": {
+          "ambiguous_count": 17,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1321,
+            "stop_loss": 1127,
+            "take_profit": 1843,
+            "time_exit": 27
+          },
+          "net_return_bps": {
+            "mean": -16.524443359466513,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2460,
+          "take_count": 1843
+        },
+        "ETHUSDT": {
+          "ambiguous_count": 84,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1089,
+            "stop_loss": 1151,
+            "take_profit": 1876,
+            "time_exit": 202
+          },
+          "net_return_bps": {
+            "mean": -15.321389705373743,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2360,
+          "take_count": 1876
+        },
+        "LINKUSDT": {
+          "ambiguous_count": 19,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1315,
+            "stop_loss": 1166,
+            "take_profit": 1791,
+            "time_exit": 46
+          },
+          "net_return_bps": {
+            "mean": -17.0520436327365,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2510,
+          "take_count": 1791
+        },
+        "LTCUSDT": {
+          "ambiguous_count": 43,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1002,
+            "stop_loss": 1256,
+            "take_profit": 1961,
+            "time_exit": 99
+          },
+          "net_return_bps": {
+            "mean": -14.850566524671308,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2316,
+          "take_count": 1961
+        },
+        "SOLUSDT": {
+          "ambiguous_count": 24,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1331,
+            "stop_loss": 1137,
+            "take_profit": 1778,
+            "time_exit": 72
+          },
+          "net_return_bps": {
+            "mean": -17.080963351647743,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2518,
+          "take_count": 1778
+        },
+        "XRPUSDT": {
+          "ambiguous_count": 42,
+          "first_barriers": {
+            "insufficient_lookahead": 2,
+            "same_bar_stop_loss": 1118,
+            "stop_loss": 1185,
+            "take_profit": 1902,
+            "time_exit": 113
+          },
+          "net_return_bps": {
+            "mean": -15.458655168152674,
+            "median": -38.0
+          },
+          "rows": 4320,
+          "skip_count": 2376,
+          "take_count": 1902
+        }
+      },
+      "dataset": {
+        "end": "2026-06-26 14:00:00+00:00",
+        "rows": 43200,
+        "start": "2025-12-28 15:00:00+00:00",
+        "symbols": [
+          "ADAUSDT",
+          "AVAXUSDT",
+          "BNBUSDT",
+          "BTCUSDT",
+          "DOGEUSDT",
+          "ETHUSDT",
+          "LINKUSDT",
+          "LTCUSDT",
+          "SOLUSDT",
+          "XRPUSDT"
+        ]
+      },
+      "holding_bars": {
+        "mean": 1.086843339587242,
+        "median": 1.0
+      },
+      "label_counts": {
+        "ambiguous": 560,
+        "labelled": 42640,
+        "skip": 23917,
+        "take": 18723
+      },
+      "mae_bps": {
+        "mean": -64.48649413826955,
+        "p95": -3.1713102162321833
+      },
+      "mfe_bps": {
+        "mean": 71.8340791332018,
+        "p95": 219.60360646302124
+      },
+      "net_return_bps": {
+        "mean": -15.706789226525611,
+        "median": -38.0,
+        "p25": -38.0,
+        "p75": 12.0
+      }
+    }
+  },
+  "trade_outcome_side": "long",
+  "training_window_months": 3
+}

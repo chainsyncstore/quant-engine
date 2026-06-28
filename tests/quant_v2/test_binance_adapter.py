@@ -109,6 +109,74 @@ def test_binance_adapter_reduce_only_paths() -> None:
     assert no_pos.reason == "reduce_only_no_position"
 
 
+def test_binance_adapter_reduce_only_respects_partial_quantity() -> None:
+    client = FakeBinanceClient()
+    adapter = BinanceExecutionAdapter(client)
+
+    result = adapter.place_order(
+        OrderPlan(symbol="BTCUSDT", side="SELL", quantity=0.10, reduce_only=True),
+        idempotency_key="r3",
+    )
+
+    assert result.accepted is True
+    assert result.requested_qty == 0.10
+    assert result.filled_qty == 0.10
+    assert client.place_calls[-1][:3] == ("BTCUSDT", "SELL", 0.10)
+
+
+def test_binance_adapter_reduce_only_triggers_residual_supervision_on_step_size_truncation() -> None:
+    client = FakeBinanceClient()
+    client.symbol_filters["BTCUSDT"] = {
+        "step_size": 0.02,
+        "min_qty": 0.01,
+        "min_notional": 1.0,
+    }
+    adapter = BinanceExecutionAdapter(client)
+
+    result = adapter.place_order(
+        OrderPlan(symbol="BTCUSDT", side="SELL", quantity=0.055, reduce_only=True),
+        idempotency_key="r4",
+    )
+
+    assert result.accepted is True
+    assert result.status == "filled"
+    assert result.reason == "bounded_limit_exit:supervised_residual_position_required:step_size"
+    assert client.place_calls[-1][:3] == ("BTCUSDT", "SELL", 0.04)
+
+
+def test_binance_adapter_reduce_only_triggers_residual_supervision_on_min_notional_floor() -> None:
+    client = FakeBinanceClient()
+    client.get_positions = lambda symbol=None: [  # type: ignore[assignment]
+        {
+            "symbol": "BTCUSDT",
+            "positionAmt": "0.05",
+            "entryPrice": "100.0",
+            "unrealizedProfit": "0.0",
+            "markPrice": "100.0",
+        }
+    ]
+    client.get_orderbook = lambda symbol, limit=5: {  # type: ignore[assignment]
+        "bids": [["100.0", "1.0"]],
+        "asks": [["101.0", "1.0"]],
+    }
+    client.symbol_filters["BTCUSDT"] = {
+        "step_size": 0.01,
+        "min_qty": 0.01,
+        "min_notional": 10.0,
+    }
+    adapter = BinanceExecutionAdapter(client)
+
+    result = adapter.place_order(
+        OrderPlan(symbol="BTCUSDT", side="SELL", quantity=0.05, reduce_only=True),
+        idempotency_key="r5",
+    )
+
+    assert result.accepted is False
+    assert result.status == "residual_supervision_required"
+    assert result.reason == "supervised_residual_position_required:min_notional"
+    assert client.place_calls == []
+
+
 def test_binance_adapter_get_positions_mapping() -> None:
     client = FakeBinanceClient()
     adapter = BinanceExecutionAdapter(client)

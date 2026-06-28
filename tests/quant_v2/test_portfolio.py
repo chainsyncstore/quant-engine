@@ -4,7 +4,12 @@ import pytest
 
 from quant_v2.contracts import MarketRiskSnapshot, ModelSourceDetails, StrategySignal
 from quant_v2.portfolio.allocation import allocate_signals
-from quant_v2.portfolio.risk_policy import PortfolioRiskPolicy
+from quant_v2.portfolio.risk_policy import (
+    HardRiskLimits,
+    OperatingRiskLimits,
+    PortfolioRiskPolicy,
+    build_dynamic_operating_limits,
+)
 
 
 def _signal(
@@ -853,3 +858,49 @@ def test_portfolio_risk_policy_validate_args() -> None:
 
     with pytest.raises(ValueError):
         PortfolioRiskPolicy(max_gross_exposure_frac=0.1, max_net_exposure_frac=0.2)
+
+
+def test_operating_risk_limits_require_hard_limit_and_clamp_downward() -> None:
+    hard = HardRiskLimits(
+        max_symbol_exposure_frac=0.15,
+        max_gross_exposure_frac=0.50,
+        max_net_exposure_frac=0.20,
+        correlation_bucket_caps={"majors": 0.30},
+    )
+    operating = OperatingRiskLimits.from_hard_limits(
+        hard,
+        max_symbol_exposure_frac=0.25,
+        max_gross_exposure_frac=0.40,
+        max_net_exposure_frac=0.30,
+        correlation_bucket_caps={"majors": 0.35},
+        target_headroom_ratio=0.85,
+        fee_reserve_frac=0.01,
+        slippage_reserve_frac=0.01,
+    )
+
+    assert operating.max_symbol_exposure_frac == pytest.approx(0.15)
+    assert operating.max_gross_exposure_frac == pytest.approx(0.40)
+    assert operating.max_net_exposure_frac == pytest.approx(0.20)
+    assert operating.correlation_bucket_caps["majors"] == pytest.approx(0.30)
+    assert operating.hard_limits is hard
+    assert operating.effective_headroom_ratio == pytest.approx(0.833)
+
+
+def test_dynamic_operating_limits_are_monotonic_in_volatility() -> None:
+    hard = HardRiskLimits(
+        max_symbol_exposure_frac=0.15,
+        max_gross_exposure_frac=0.60,
+        max_net_exposure_frac=0.25,
+    )
+    low_vol = build_dynamic_operating_limits(hard_limits=hard, sigma_60=0.8)
+    high_vol = build_dynamic_operating_limits(hard_limits=hard, sigma_60=1.6)
+
+    assert low_vol is not None and high_vol is not None
+    assert high_vol.max_symbol_exposure_frac <= low_vol.max_symbol_exposure_frac
+    assert high_vol.max_gross_exposure_frac <= low_vol.max_gross_exposure_frac
+    assert high_vol.max_net_exposure_frac <= low_vol.max_net_exposure_frac
+
+
+def test_operating_risk_limits_default_to_conservative_headroom() -> None:
+    operating = OperatingRiskLimits.from_hard_limits(HardRiskLimits())
+    assert operating.target_headroom_ratio == pytest.approx(0.85)

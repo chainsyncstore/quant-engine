@@ -27,4 +27,7 @@ def test_add_regime_context_features_appends_expected_columns() -> None:
     assert "regime_volatility_24h" in out.columns
     assert "regime_stress_24h" in out.columns
     assert "regime_high_vol_flag" in out.columns
-    assert out["regime_high_vol_flag"].between(0.0, 1.0).all()
+    assert out.iloc[:4][["regime_trend_24h", "regime_volatility_24h", "regime_stress_24h"]].isna().any().any()
+    assert out.iloc[12:][["regime_trend_24h", "regime_volatility_24h", "regime_stress_24h"]].notna().all().all()
+    assert out["regime_high_vol_flag"].dropna().between(0.0, 1.0).all()
+    assert out["regime_high_vol_flag"].isna().any()

@@ -94,6 +94,41 @@ def test_prepare_multi_symbol_dataset(monkeypatch) -> None:
     assert "xs_ret_1h_z" in prepared.columns
     assert "xs_volume_rank" in prepared.columns
     assert "xs_dispersion_ret_1h" in prepared.columns
+    assert not prepared.filter(regex="^(xs_|regime_)").isna().any().any()
+
+
+def test_prepare_multi_symbol_dataset_is_point_in_time_under_future_perturbation(monkeypatch) -> None:
+    raw = _build_raw_df(n_ts=48)
+    perturbed = raw.copy()
+    future_mask = (
+        (perturbed.index.get_level_values("symbol") == "ETHUSDT")
+        & (perturbed.index.get_level_values("timestamp") >= pd.Timestamp("2025-01-02T12:00:00Z"))
+    )
+    perturbed.loc[future_mask, "close"] = perturbed.loc[future_mask, "close"] + 500.0
+
+    def fake_build_features(df: pd.DataFrame) -> pd.DataFrame:
+        out = df.copy()
+        out["f1"] = out["close"].pct_change().fillna(0.0)
+        return out
+
+    def fake_add_labels(df: pd.DataFrame, horizons):
+        out = df.copy()
+        for h in horizons:
+            out[f"label_{h}m"] = 1
+        return out
+
+    monkeypatch.setattr(gv, "build_features", fake_build_features)
+    monkeypatch.setattr(gv, "add_labels", fake_add_labels)
+
+    baseline = gv.prepare_multi_symbol_dataset(raw, horizons=[1])
+    shifted = gv.prepare_multi_symbol_dataset(perturbed, horizons=[1])
+
+    ts = pd.Timestamp("2025-01-02T08:00:00Z")
+    base_row = baseline.loc[(ts, "BTCUSDT")]
+    shifted_row = shifted.loc[(ts, "BTCUSDT")]
+
+    assert base_row["f1"] == pytest.approx(shifted_row["f1"])
+    assert base_row["xs_ret_1h_z"] == pytest.approx(shifted_row["xs_ret_1h_z"])
 
 
 def test_run_group_purged_validation(monkeypatch) -> None:
@@ -127,9 +162,12 @@ def test_run_group_purged_validation(monkeypatch) -> None:
 
     assert result.validation_mode == "group_purged_cpcv"
     assert len(result.folds) > 0
+    assert result.trial_count == len(result.folds)
     assert result.overall["n_trades"] > 0
     assert "deflated_sharpe_ratio" in result.robustness
     assert result.split_summary["n_splits"] >= len(result.folds)
+    assert "spread_adjusted_ev" in result.fold_dispersion
+    assert "base" in result.cost_sensitivity
 
 
 def test_run_group_purged_validation_uses_injected_train_predict() -> None:

@@ -31,7 +31,7 @@ def test_resolve_model_dir_prefers_registry_active_version(tmp_path: Path) -> No
     assert resolved.warning == ""
 
 
-def test_resolve_model_dir_falls_back_when_active_artifact_invalid(tmp_path: Path) -> None:
+def test_resolve_model_dir_fails_closed_when_active_artifact_invalid(tmp_path: Path) -> None:
     model_root = tmp_path / "models"
     fallback = model_root / "model_20260220_020000"
     _write_model_config(fallback)
@@ -45,10 +45,10 @@ def test_resolve_model_dir_falls_back_when_active_artifact_invalid(tmp_path: Pat
 
     resolved = resolve_model_dir(model_root, registry.root)
 
-    assert resolved.model_dir == fallback.resolve()
-    assert resolved.source == "latest"
+    assert resolved.model_dir is None
+    assert resolved.source == "registry_invalid"
     assert resolved.active_version_id == "broken"
-    assert "falling back" in resolved.warning
+    assert "refusing to fall back" in resolved.warning
 
 
 def test_resolve_model_dir_returns_none_when_no_registry_or_fallback(tmp_path: Path) -> None:
@@ -67,3 +67,13 @@ def test_find_latest_model_prefers_root_config(tmp_path: Path) -> None:
     _write_model_config(direct_root)
 
     assert find_latest_model(direct_root) == direct_root.resolve()
+
+
+def test_find_latest_model_ignores_invalid_newest_directory(tmp_path: Path) -> None:
+    model_root = tmp_path / "production"
+    older = model_root / "model_20260220_010000"
+    newest = model_root / "model_20260220_020000"
+    _write_model_config(older)
+    newest.mkdir(parents=True, exist_ok=True)
+
+    assert find_latest_model(model_root, allow_legacy_fallback=True) == older.resolve()

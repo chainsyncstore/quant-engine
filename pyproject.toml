@@ -7,35 +7,38 @@ name = "quant-research-engine"
 version = "1.0.0"
 description = "Statistically defensible short-horizon directional prediction engine for crypto markets"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11.9,<3.12"
 authors = [
     {name = "QRE Team"}
 ]
 dependencies = [
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
-    "scipy>=1.10.0",
-    "pydantic>=2.0.0",
-    "lightgbm>=4.0.0",
-    "scikit-learn>=1.3.0",
-    "requests>=2.31.0",
-    "joblib>=1.3.0",
-    "python-dotenv>=1.0.0",
-    "pyarrow>=14.0.0",
-    "python-telegram-bot>=20.0.0",
-    "sqlalchemy>=2.0.0",
-    "cryptography>=41.0.0",
-    "redis>=5.0.0",
-    "chronos-forecasting>=1.0",
-    "torch>=2.0",
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "scipy==1.16.3",
+    "pydantic==2.12.5",
+    "lightgbm==4.6.0",
+    "scikit-learn==1.8.0",
+    "requests==2.32.5",
+    "joblib==1.5.3",
+    "python-dotenv==1.2.1",
+    "pyarrow==22.0.0",
+    "python-telegram-bot==22.5",
+    "sqlalchemy==2.0.45",
+    "cryptography==46.0.3",
+    "redis==7.1.0",
+    "aiosqlite==0.22.1",
+    "chronos-forecasting==2.3.0",
+    "torch==2.9.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "pyyaml>=6.0.0",
-    "ruff>=0.1.0",
+    "hypothesis==6.155.7",
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "pyyaml==6.0.3",
+    "ruff==0.14.10",
 ]
 
 [tool.pytest.ini_options]

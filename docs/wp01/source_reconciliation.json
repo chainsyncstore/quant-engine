@@ -1,0 +1,3548 @@
+[
+  {
+    "classification": "host_only_deployment_source",
+    "path": "Dockerfile",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "5a8e08f99de5bff126600992c9cd07e6833d00fc3237977d096ab364d1ba024f",
+        "sha256": "5a8e08f99de5bff126600992c9cd07e6833d00fc3237977d096ab364d1ba024f",
+        "size": 1440
+      },
+      "local_worktree": {
+        "normalized_sha256": "5a8e08f99de5bff126600992c9cd07e6833d00fc3237977d096ab364d1ba024f",
+        "sha256": "5a8e08f99de5bff126600992c9cd07e6833d00fc3237977d096ab364d1ba024f",
+        "size": 1440
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "5a8e08f99de5bff126600992c9cd07e6833d00fc3237977d096ab364d1ba024f",
+        "sha256": "e7bb9449947a3ee1241b8f276e87a6e6bea3944612e8b2b0dc6899cbe2091a12",
+        "size": 1494
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "bootstrap_registry.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "size": 3571
+      },
+      "local_worktree": {
+        "normalized_sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "size": 3571
+      },
+      "running_container": {
+        "normalized_sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "sha256": "3b9a5d8ab6cc025ef9576dd87edee29ba80812232323353408932dd794af0c25",
+        "size": 3678
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "50b6cbf74cf1994dc51e0759583bfa3066ab57331ab8503cf8ed7a7e3b6517bc",
+        "sha256": "3b9a5d8ab6cc025ef9576dd87edee29ba80812232323353408932dd794af0c25",
+        "size": 3678
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/dead_mans_switch.sh",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f8ba6be8ad63402d753d1e1d43110090e2fc20c1dc862cea19b57fe4c92564ad",
+        "sha256": "f8ba6be8ad63402d753d1e1d43110090e2fc20c1dc862cea19b57fe4c92564ad",
+        "size": 2172
+      },
+      "local_worktree": {
+        "normalized_sha256": "f8ba6be8ad63402d753d1e1d43110090e2fc20c1dc862cea19b57fe4c92564ad",
+        "sha256": "f8ba6be8ad63402d753d1e1d43110090e2fc20c1dc862cea19b57fe4c92564ad",
+        "size": 2172
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "f8ba6be8ad63402d753d1e1d43110090e2fc20c1dc862cea19b57fe4c92564ad",
+        "sha256": "c2f01441df73091ef888a3780a542dd8b0f59f5ba70131d8ccfb1a78009ab30a",
+        "size": 2233
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/ec2_bootstrap.sh",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "05b7e4fd7c2ded01256fe3e408022d772d52281a920ba7873b763ec083af0319",
+        "sha256": "05b7e4fd7c2ded01256fe3e408022d772d52281a920ba7873b763ec083af0319",
+        "size": 1873
+      },
+      "local_worktree": {
+        "normalized_sha256": "05b7e4fd7c2ded01256fe3e408022d772d52281a920ba7873b763ec083af0319",
+        "sha256": "05b7e4fd7c2ded01256fe3e408022d772d52281a920ba7873b763ec083af0319",
+        "size": 1873
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "05b7e4fd7c2ded01256fe3e408022d772d52281a920ba7873b763ec083af0319",
+        "sha256": "07b2e2d10f4c1054822040927f220bd3d094339aed3fdd53cf0d2e808057176b",
+        "size": 1920
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/flatten_on_shutdown.sh",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e9dccd6df458d612b7d84d35a83fbb2c74639fed25e1da9482bac6c06715bdd6",
+        "sha256": "e9dccd6df458d612b7d84d35a83fbb2c74639fed25e1da9482bac6c06715bdd6",
+        "size": 2333
+      },
+      "local_worktree": {
+        "normalized_sha256": "e9dccd6df458d612b7d84d35a83fbb2c74639fed25e1da9482bac6c06715bdd6",
+        "sha256": "e9dccd6df458d612b7d84d35a83fbb2c74639fed25e1da9482bac6c06715bdd6",
+        "size": 2333
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "e9dccd6df458d612b7d84d35a83fbb2c74639fed25e1da9482bac6c06715bdd6",
+        "sha256": "b5c9badbee63cef7843610be3750190350a23268f2e5b3c379badf98b792a30a",
+        "size": 2394
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/quant_bot_flatten.service",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e41e167e0a39309a053c53e63a1e7dfc779094ebcc8ee4037a602781d5074085",
+        "sha256": "e41e167e0a39309a053c53e63a1e7dfc779094ebcc8ee4037a602781d5074085",
+        "size": 385
+      },
+      "local_worktree": {
+        "normalized_sha256": "e41e167e0a39309a053c53e63a1e7dfc779094ebcc8ee4037a602781d5074085",
+        "sha256": "e41e167e0a39309a053c53e63a1e7dfc779094ebcc8ee4037a602781d5074085",
+        "size": 385
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "e41e167e0a39309a053c53e63a1e7dfc779094ebcc8ee4037a602781d5074085",
+        "sha256": "ce85b9a6128ca04b25394e5ce9edf861039bfd5c7ba5e3d46a36ca4166aabe7e",
+        "size": 402
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/setup_cloudwatch.sh",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "885d9b2e56dda4f8a9e6c9d682ffaae13b07a669fb1bebc34a557dd4f5357123",
+        "sha256": "885d9b2e56dda4f8a9e6c9d682ffaae13b07a669fb1bebc34a557dd4f5357123",
+        "size": 3376
+      },
+      "local_worktree": {
+        "normalized_sha256": "885d9b2e56dda4f8a9e6c9d682ffaae13b07a669fb1bebc34a557dd4f5357123",
+        "sha256": "885d9b2e56dda4f8a9e6c9d682ffaae13b07a669fb1bebc34a557dd4f5357123",
+        "size": 3376
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "885d9b2e56dda4f8a9e6c9d682ffaae13b07a669fb1bebc34a557dd4f5357123",
+        "sha256": "16d17fa4cae4218b2b61a0741369c04d646616db143d1cc9b8680540e2a9a548",
+        "size": 3489
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "deploy/setup_swap.sh",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7dfe5d19eb253df35e6015f89e8afaac6dde155194c6806b0ad678a04581996e",
+        "sha256": "7dfe5d19eb253df35e6015f89e8afaac6dde155194c6806b0ad678a04581996e",
+        "size": 887
+      },
+      "local_worktree": {
+        "normalized_sha256": "7dfe5d19eb253df35e6015f89e8afaac6dde155194c6806b0ad678a04581996e",
+        "sha256": "7dfe5d19eb253df35e6015f89e8afaac6dde155194c6806b0ad678a04581996e",
+        "size": 887
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "7dfe5d19eb253df35e6015f89e8afaac6dde155194c6806b0ad678a04581996e",
+        "sha256": "936921747006b1e8a8e25af7f0ea1c165f71f08e6a76315034ce795d7721b41f",
+        "size": 920
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "docker-compose.override.yml",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "8d7ed4ba615b7105a4838cfe1ff3f36613594abba24367ac53ca30a10bb52e1a",
+        "sha256": "8d7ed4ba615b7105a4838cfe1ff3f36613594abba24367ac53ca30a10bb52e1a",
+        "size": 1008
+      },
+      "local_worktree": {
+        "normalized_sha256": "de1f5563b92c70f226a2a2c1a5316ae8f29f2ad632f746e2abd6bc3cddbe79e6",
+        "sha256": "de1f5563b92c70f226a2a2c1a5316ae8f29f2ad632f746e2abd6bc3cddbe79e6",
+        "size": 1078
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "8d7ed4ba615b7105a4838cfe1ff3f36613594abba24367ac53ca30a10bb52e1a",
+        "sha256": "4875ed715b7dde17def16d8dcd783427a7cb049eb03c2f4de18fdd8a1dc717f0",
+        "size": 1039
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "docker-compose.prod.yml",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "1ab8761e42b794cb8004948a8106103a043699f01d73d4ad45f8eb66dd323ec6",
+        "sha256": "1ab8761e42b794cb8004948a8106103a043699f01d73d4ad45f8eb66dd323ec6",
+        "size": 295
+      },
+      "local_worktree": {
+        "normalized_sha256": "1ab8761e42b794cb8004948a8106103a043699f01d73d4ad45f8eb66dd323ec6",
+        "sha256": "012ec054ca4f7593e9fe797327c9a8ad81f1c0ab8df8bd8d7d9b1a23c730e2ef",
+        "size": 309
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "1ab8761e42b794cb8004948a8106103a043699f01d73d4ad45f8eb66dd323ec6",
+        "sha256": "012ec054ca4f7593e9fe797327c9a8ad81f1c0ab8df8bd8d7d9b1a23c730e2ef",
+        "size": 309
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "docker-compose.yml",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "15450e5d13b775ec072fbe2e1d103256e0f282fb516ae290a40f9ac43ba13bb0",
+        "sha256": "15450e5d13b775ec072fbe2e1d103256e0f282fb516ae290a40f9ac43ba13bb0",
+        "size": 4018
+      },
+      "local_worktree": {
+        "normalized_sha256": "7df811c33e90b7c338f64f647207446b1a9edb7a63ffdd3f5f17596aa6ef23f9",
+        "sha256": "0643b2b959dd7d3061594cec4429a91c58239e2aea90ab475eb80261c5f78c3f",
+        "size": 5320
+      },
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "15450e5d13b775ec072fbe2e1d103256e0f282fb516ae290a40f9ac43ba13bb0",
+        "sha256": "5960809500d36b224bf817aab4041eee780ab96fb7155da2f9ed4ab9363cb12f",
+        "size": 4136
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "pyproject.toml",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "19d3447afb6d397f62035be6dca7ed7251227e4243217e3b0aad38a7e789b970",
+        "sha256": "19d3447afb6d397f62035be6dca7ed7251227e4243217e3b0aad38a7e789b970",
+        "size": 1170
+      },
+      "local_worktree": {
+        "normalized_sha256": "19d3447afb6d397f62035be6dca7ed7251227e4243217e3b0aad38a7e789b970",
+        "sha256": "880b8e5a7f51ec25908fd26bf82f5a0c278ec2bf5f46dbfe2010b9ee1b293b9c",
+        "size": 1218
+      },
+      "running_container": {
+        "normalized_sha256": "19d3447afb6d397f62035be6dca7ed7251227e4243217e3b0aad38a7e789b970",
+        "sha256": "dd9d923978c00c245786f039712e0d8536b4c2d3e1fe504dfc06b31078855506",
+        "size": 1226
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "19d3447afb6d397f62035be6dca7ed7251227e4243217e3b0aad38a7e789b970",
+        "sha256": "dd9d923978c00c245786f039712e0d8536b4c2d3e1fe504dfc06b31078855506",
+        "size": 1226
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9dee3fedadfefcf75a9ff88246603d69fd7dea55c129562f4e501ba63569a3f5",
+        "sha256": "9dee3fedadfefcf75a9ff88246603d69fd7dea55c129562f4e501ba63569a3f5",
+        "size": 77
+      },
+      "local_worktree": {
+        "normalized_sha256": "9dee3fedadfefcf75a9ff88246603d69fd7dea55c129562f4e501ba63569a3f5",
+        "sha256": "618e661352f63ef0e4f2e226515e641264775ad10ea773b8d28f93a83d9da4e3",
+        "size": 78
+      },
+      "running_container": {
+        "normalized_sha256": "9dee3fedadfefcf75a9ff88246603d69fd7dea55c129562f4e501ba63569a3f5",
+        "sha256": "618e661352f63ef0e4f2e226515e641264775ad10ea773b8d28f93a83d9da4e3",
+        "size": 78
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9dee3fedadfefcf75a9ff88246603d69fd7dea55c129562f4e501ba63569a3f5",
+        "sha256": "618e661352f63ef0e4f2e226515e641264775ad10ea773b8d28f93a83d9da4e3",
+        "size": 78
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/config.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9e2172d6950a88954352a3925cdf6af407d8b3cce300f23ae7f6492206d06c9d",
+        "sha256": "9e2172d6950a88954352a3925cdf6af407d8b3cce300f23ae7f6492206d06c9d",
+        "size": 5320
+      },
+      "local_worktree": {
+        "normalized_sha256": "9e2172d6950a88954352a3925cdf6af407d8b3cce300f23ae7f6492206d06c9d",
+        "sha256": "e8e426e605470ae93579c3f11b407c5b9b67fc2cb9d47c027350d6187e8017ce",
+        "size": 5469
+      },
+      "running_container": {
+        "normalized_sha256": "9e2172d6950a88954352a3925cdf6af407d8b3cce300f23ae7f6492206d06c9d",
+        "sha256": "e8e426e605470ae93579c3f11b407c5b9b67fc2cb9d47c027350d6187e8017ce",
+        "size": 5469
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9e2172d6950a88954352a3925cdf6af407d8b3cce300f23ae7f6492206d06c9d",
+        "sha256": "e8e426e605470ae93579c3f11b407c5b9b67fc2cb9d47c027350d6187e8017ce",
+        "size": 5469
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/data/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "2370622f9a9cca7a172650cb8aa3e7ab9d1a3364d88f0f8354f9aec9464eafdd",
+        "sha256": "2370622f9a9cca7a172650cb8aa3e7ab9d1a3364d88f0f8354f9aec9464eafdd",
+        "size": 48
+      },
+      "local_worktree": {
+        "normalized_sha256": "2370622f9a9cca7a172650cb8aa3e7ab9d1a3364d88f0f8354f9aec9464eafdd",
+        "sha256": "6768b26a733a1d8dd96551548f112bb8b13aa03d66b2b540ceb59b6a059a6da8",
+        "size": 49
+      },
+      "running_container": {
+        "normalized_sha256": "2370622f9a9cca7a172650cb8aa3e7ab9d1a3364d88f0f8354f9aec9464eafdd",
+        "sha256": "6768b26a733a1d8dd96551548f112bb8b13aa03d66b2b540ceb59b6a059a6da8",
+        "size": 49
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "2370622f9a9cca7a172650cb8aa3e7ab9d1a3364d88f0f8354f9aec9464eafdd",
+        "sha256": "6768b26a733a1d8dd96551548f112bb8b13aa03d66b2b540ceb59b6a059a6da8",
+        "size": 49
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/data/binance_client.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "16487f320bbb0777a39b896e1831ab88ec654b250143c75af1b672d5d4e410a5",
+        "sha256": "16487f320bbb0777a39b896e1831ab88ec654b250143c75af1b672d5d4e410a5",
+        "size": 30448
+      },
+      "local_worktree": {
+        "normalized_sha256": "16487f320bbb0777a39b896e1831ab88ec654b250143c75af1b672d5d4e410a5",
+        "sha256": "2f8b45bcf213de8d957a512cb79d89768a915344f324a5a19119de962aced8e4",
+        "size": 31270
+      },
+      "running_container": {
+        "normalized_sha256": "16487f320bbb0777a39b896e1831ab88ec654b250143c75af1b672d5d4e410a5",
+        "sha256": "2f8b45bcf213de8d957a512cb79d89768a915344f324a5a19119de962aced8e4",
+        "size": 31270
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "16487f320bbb0777a39b896e1831ab88ec654b250143c75af1b672d5d4e410a5",
+        "sha256": "2f8b45bcf213de8d957a512cb79d89768a915344f324a5a19119de962aced8e4",
+        "size": 31270
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/data/capital_client.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "bbbc5dcec1fceb5e6f2f22cc4c18c0a6ad41dddb9ea11b7d0034d24e9cd525cd",
+        "sha256": "bbbc5dcec1fceb5e6f2f22cc4c18c0a6ad41dddb9ea11b7d0034d24e9cd525cd",
+        "size": 651
+      },
+      "local_worktree": {
+        "normalized_sha256": "bbbc5dcec1fceb5e6f2f22cc4c18c0a6ad41dddb9ea11b7d0034d24e9cd525cd",
+        "sha256": "29c399a6da8b247a50cbc57afbdd59c4d011e6425dc57fff5128e39838cca8f6",
+        "size": 673
+      },
+      "running_container": {
+        "normalized_sha256": "bbbc5dcec1fceb5e6f2f22cc4c18c0a6ad41dddb9ea11b7d0034d24e9cd525cd",
+        "sha256": "29c399a6da8b247a50cbc57afbdd59c4d011e6425dc57fff5128e39838cca8f6",
+        "size": 673
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "bbbc5dcec1fceb5e6f2f22cc4c18c0a6ad41dddb9ea11b7d0034d24e9cd525cd",
+        "sha256": "29c399a6da8b247a50cbc57afbdd59c4d011e6425dc57fff5128e39838cca8f6",
+        "size": 673
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/data/session_filter.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e77b5beaabf316649987f175b64bb27ed446a73a3f34e503f7e9c16216ee10fa",
+        "sha256": "e77b5beaabf316649987f175b64bb27ed446a73a3f34e503f7e9c16216ee10fa",
+        "size": 554
+      },
+      "local_worktree": {
+        "normalized_sha256": "e77b5beaabf316649987f175b64bb27ed446a73a3f34e503f7e9c16216ee10fa",
+        "sha256": "45b0682c9b981dd18a8beb1865005b4b052edb3e6a8b16bc7e99fc7da3ba6f6b",
+        "size": 580
+      },
+      "running_container": {
+        "normalized_sha256": "e77b5beaabf316649987f175b64bb27ed446a73a3f34e503f7e9c16216ee10fa",
+        "sha256": "45b0682c9b981dd18a8beb1865005b4b052edb3e6a8b16bc7e99fc7da3ba6f6b",
+        "size": 580
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e77b5beaabf316649987f175b64bb27ed446a73a3f34e503f7e9c16216ee10fa",
+        "sha256": "45b0682c9b981dd18a8beb1865005b4b052edb3e6a8b16bc7e99fc7da3ba6f6b",
+        "size": 580
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/data/storage.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "712806b06b106036db5150e3b9ecca0f5143c17194406e1429e9044e4b56bf78",
+        "sha256": "712806b06b106036db5150e3b9ecca0f5143c17194406e1429e9044e4b56bf78",
+        "size": 5486
+      },
+      "local_worktree": {
+        "normalized_sha256": "712806b06b106036db5150e3b9ecca0f5143c17194406e1429e9044e4b56bf78",
+        "sha256": "885776fab5e56cb5de8bdb5d0ca4b328bc0c1d6db2133512851793fc11b6b6cb",
+        "size": 5673
+      },
+      "running_container": {
+        "normalized_sha256": "712806b06b106036db5150e3b9ecca0f5143c17194406e1429e9044e4b56bf78",
+        "sha256": "885776fab5e56cb5de8bdb5d0ca4b328bc0c1d6db2133512851793fc11b6b6cb",
+        "size": 5673
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "712806b06b106036db5150e3b9ecca0f5143c17194406e1429e9044e4b56bf78",
+        "sha256": "885776fab5e56cb5de8bdb5d0ca4b328bc0c1d6db2133512851793fc11b6b6cb",
+        "size": 5673
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/experiment/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9e5c3bccf23cc9c043cd1f2b1482cf3c13f65c71cb53e7a8ddfce142ad98eca7",
+        "sha256": "9e5c3bccf23cc9c043cd1f2b1482cf3c13f65c71cb53e7a8ddfce142ad98eca7",
+        "size": 27
+      },
+      "local_worktree": {
+        "normalized_sha256": "9e5c3bccf23cc9c043cd1f2b1482cf3c13f65c71cb53e7a8ddfce142ad98eca7",
+        "sha256": "bad692af2532b0e1974183ef3ef8c52a09d1407a8d4a2cebbfed188b4b928793",
+        "size": 28
+      },
+      "running_container": {
+        "normalized_sha256": "9e5c3bccf23cc9c043cd1f2b1482cf3c13f65c71cb53e7a8ddfce142ad98eca7",
+        "sha256": "bad692af2532b0e1974183ef3ef8c52a09d1407a8d4a2cebbfed188b4b928793",
+        "size": 28
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9e5c3bccf23cc9c043cd1f2b1482cf3c13f65c71cb53e7a8ddfce142ad98eca7",
+        "sha256": "bad692af2532b0e1974183ef3ef8c52a09d1407a8d4a2cebbfed188b4b928793",
+        "size": 28
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/experiment/logger.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "c862a934278089f7155e316731c89268bec792eddd2d6863135b0c18bfead5ec",
+        "sha256": "c862a934278089f7155e316731c89268bec792eddd2d6863135b0c18bfead5ec",
+        "size": 5464
+      },
+      "local_worktree": {
+        "normalized_sha256": "c862a934278089f7155e316731c89268bec792eddd2d6863135b0c18bfead5ec",
+        "sha256": "4a9ffa4e2eaaa75e1502583588c16ef2eaae6548dc7cbdcb45b2a4a4ff318f4e",
+        "size": 5625
+      },
+      "running_container": {
+        "normalized_sha256": "c862a934278089f7155e316731c89268bec792eddd2d6863135b0c18bfead5ec",
+        "sha256": "4a9ffa4e2eaaa75e1502583588c16ef2eaae6548dc7cbdcb45b2a4a4ff318f4e",
+        "size": 5625
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "c862a934278089f7155e316731c89268bec792eddd2d6863135b0c18bfead5ec",
+        "sha256": "4a9ffa4e2eaaa75e1502583588c16ef2eaae6548dc7cbdcb45b2a4a4ff318f4e",
+        "size": 5625
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9a20be7d8483b3593f7f89c4a10eca23ab5027a9b01413b9aa60ef546ffe046e",
+        "sha256": "9a20be7d8483b3593f7f89c4a10eca23ab5027a9b01413b9aa60ef546ffe046e",
+        "size": 35
+      },
+      "local_worktree": {
+        "normalized_sha256": "9a20be7d8483b3593f7f89c4a10eca23ab5027a9b01413b9aa60ef546ffe046e",
+        "sha256": "bc4744c689b565a9ba388d1a41d6e77752be6be174ccecdac31440ccbe7ecb03",
+        "size": 36
+      },
+      "running_container": {
+        "normalized_sha256": "9a20be7d8483b3593f7f89c4a10eca23ab5027a9b01413b9aa60ef546ffe046e",
+        "sha256": "bc4744c689b565a9ba388d1a41d6e77752be6be174ccecdac31440ccbe7ecb03",
+        "size": 36
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9a20be7d8483b3593f7f89c4a10eca23ab5027a9b01413b9aa60ef546ffe046e",
+        "sha256": "bc4744c689b565a9ba388d1a41d6e77752be6be174ccecdac31440ccbe7ecb03",
+        "size": 36
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/candle_geometry.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "0ba8a4226f1540ef1449ef85a364813fbcad31de928abc1ed087dd85cc1a3823",
+        "sha256": "0ba8a4226f1540ef1449ef85a364813fbcad31de928abc1ed087dd85cc1a3823",
+        "size": 2306
+      },
+      "local_worktree": {
+        "normalized_sha256": "0ba8a4226f1540ef1449ef85a364813fbcad31de928abc1ed087dd85cc1a3823",
+        "sha256": "973ad7ada2ee117b1f87fe3e6d5e8aeacde70a8bfb389ae22fdb79e104dfdb96",
+        "size": 2379
+      },
+      "running_container": {
+        "normalized_sha256": "0ba8a4226f1540ef1449ef85a364813fbcad31de928abc1ed087dd85cc1a3823",
+        "sha256": "973ad7ada2ee117b1f87fe3e6d5e8aeacde70a8bfb389ae22fdb79e104dfdb96",
+        "size": 2379
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "0ba8a4226f1540ef1449ef85a364813fbcad31de928abc1ed087dd85cc1a3823",
+        "sha256": "973ad7ada2ee117b1f87fe3e6d5e8aeacde70a8bfb389ae22fdb79e104dfdb96",
+        "size": 2379
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/cross_pair.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "size": 2062
+      },
+      "local_worktree": {
+        "normalized_sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "size": 2062
+      },
+      "running_container": {
+        "normalized_sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "sha256": "d920842dcec4a12a969a96027020c656546309e021b102651936233bd23b646a",
+        "size": 2123
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "74295b9202d086b8ef5e2920f37ccc65787e3554aea2b2052182adf4ed5fb410",
+        "sha256": "d920842dcec4a12a969a96027020c656546309e021b102651936233bd23b646a",
+        "size": 2123
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/cross_timeframe.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7f48d416718225d324f1f37b09ce59cdae68e5c5ed462b436f36f51c852d82c6",
+        "sha256": "7f48d416718225d324f1f37b09ce59cdae68e5c5ed462b436f36f51c852d82c6",
+        "size": 2842
+      },
+      "local_worktree": {
+        "normalized_sha256": "7f48d416718225d324f1f37b09ce59cdae68e5c5ed462b436f36f51c852d82c6",
+        "sha256": "b3d610ed99be46082c648562dda0f101081d5e5384a5215cd802aefc0e1d7f0f",
+        "size": 2930
+      },
+      "running_container": {
+        "normalized_sha256": "7f48d416718225d324f1f37b09ce59cdae68e5c5ed462b436f36f51c852d82c6",
+        "sha256": "b3d610ed99be46082c648562dda0f101081d5e5384a5215cd802aefc0e1d7f0f",
+        "size": 2930
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "7f48d416718225d324f1f37b09ce59cdae68e5c5ed462b436f36f51c852d82c6",
+        "sha256": "b3d610ed99be46082c648562dda0f101081d5e5384a5215cd802aefc0e1d7f0f",
+        "size": 2930
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/crypto_session.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "c1bc73e5bf0a2918502416cdaa8d61cfe083a917166d64d8a7f29632d62838e7",
+        "sha256": "c1bc73e5bf0a2918502416cdaa8d61cfe083a917166d64d8a7f29632d62838e7",
+        "size": 1583
+      },
+      "local_worktree": {
+        "normalized_sha256": "c1bc73e5bf0a2918502416cdaa8d61cfe083a917166d64d8a7f29632d62838e7",
+        "sha256": "279e0e0c32f5ed808e4a74c9c5ca6b57655e62ed913379ccb65373e6d330c743",
+        "size": 1630
+      },
+      "running_container": {
+        "normalized_sha256": "c1bc73e5bf0a2918502416cdaa8d61cfe083a917166d64d8a7f29632d62838e7",
+        "sha256": "279e0e0c32f5ed808e4a74c9c5ca6b57655e62ed913379ccb65373e6d330c743",
+        "size": 1630
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "c1bc73e5bf0a2918502416cdaa8d61cfe083a917166d64d8a7f29632d62838e7",
+        "sha256": "279e0e0c32f5ed808e4a74c9c5ca6b57655e62ed913379ccb65373e6d330c743",
+        "size": 1630
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/feature_selector.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "6f2c670be597407d665c35dc832a7f55dab9f8f06f0b00c44bad051b1cc52cdf",
+        "sha256": "6f2c670be597407d665c35dc832a7f55dab9f8f06f0b00c44bad051b1cc52cdf",
+        "size": 2428
+      },
+      "local_worktree": {
+        "normalized_sha256": "6f2c670be597407d665c35dc832a7f55dab9f8f06f0b00c44bad051b1cc52cdf",
+        "sha256": "2515917345e424f32f625c7e956d0bcd5b21c27b36fb6c52f30fa29bb6b4b257",
+        "size": 2513
+      },
+      "running_container": {
+        "normalized_sha256": "6f2c670be597407d665c35dc832a7f55dab9f8f06f0b00c44bad051b1cc52cdf",
+        "sha256": "2515917345e424f32f625c7e956d0bcd5b21c27b36fb6c52f30fa29bb6b4b257",
+        "size": 2513
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "6f2c670be597407d665c35dc832a7f55dab9f8f06f0b00c44bad051b1cc52cdf",
+        "sha256": "2515917345e424f32f625c7e956d0bcd5b21c27b36fb6c52f30fa29bb6b4b257",
+        "size": 2513
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/funding_rate.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "afb04f2cf6af474f8a28486fee887858bb0a2d03068a9a6b77f0d890b9f81f13",
+        "sha256": "afb04f2cf6af474f8a28486fee887858bb0a2d03068a9a6b77f0d890b9f81f13",
+        "size": 2586
+      },
+      "local_worktree": {
+        "normalized_sha256": "afb04f2cf6af474f8a28486fee887858bb0a2d03068a9a6b77f0d890b9f81f13",
+        "sha256": "e07d64f877edbe7c2c442e07f5a710dc023e98d1cfef6a4b0f49c860fad22152",
+        "size": 2671
+      },
+      "running_container": {
+        "normalized_sha256": "afb04f2cf6af474f8a28486fee887858bb0a2d03068a9a6b77f0d890b9f81f13",
+        "sha256": "e07d64f877edbe7c2c442e07f5a710dc023e98d1cfef6a4b0f49c860fad22152",
+        "size": 2671
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "afb04f2cf6af474f8a28486fee887858bb0a2d03068a9a6b77f0d890b9f81f13",
+        "sha256": "e07d64f877edbe7c2c442e07f5a710dc023e98d1cfef6a4b0f49c860fad22152",
+        "size": 2671
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/liquidation.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f311305ddeb9cbdc5aa12330b95e0c05de0735455c3eb08a8a271253bb5b44ec",
+        "sha256": "f311305ddeb9cbdc5aa12330b95e0c05de0735455c3eb08a8a271253bb5b44ec",
+        "size": 1946
+      },
+      "local_worktree": {
+        "normalized_sha256": "f311305ddeb9cbdc5aa12330b95e0c05de0735455c3eb08a8a271253bb5b44ec",
+        "sha256": "9600ab7560324876e458157ed25ad409ab76911de7b2d1fbd33e3b4923b1c974",
+        "size": 2002
+      },
+      "running_container": {
+        "normalized_sha256": "f311305ddeb9cbdc5aa12330b95e0c05de0735455c3eb08a8a271253bb5b44ec",
+        "sha256": "9600ab7560324876e458157ed25ad409ab76911de7b2d1fbd33e3b4923b1c974",
+        "size": 2002
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "f311305ddeb9cbdc5aa12330b95e0c05de0735455c3eb08a8a271253bb5b44ec",
+        "sha256": "9600ab7560324876e458157ed25ad409ab76911de7b2d1fbd33e3b4923b1c974",
+        "size": 2002
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/liquidation_proximity.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "size": 1970
+      },
+      "local_worktree": {
+        "normalized_sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "size": 1970
+      },
+      "running_container": {
+        "normalized_sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "sha256": "22643edc5eeff74c4f996d0eab2e6a5f5d57a55a2f9057acb4e8f4b431f3e6ed",
+        "size": 2024
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e2aa973e59ff045c9ceb184782088cfaff849e1c7e09198cab6ce1826a7a6bcc",
+        "sha256": "22643edc5eeff74c4f996d0eab2e6a5f5d57a55a2f9057acb4e8f4b431f3e6ed",
+        "size": 2024
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/microstructure.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "44b11a85e630837dc2c7318172595cdee2803e7f714587265e60311939bd826e",
+        "sha256": "44b11a85e630837dc2c7318172595cdee2803e7f714587265e60311939bd826e",
+        "size": 2740
+      },
+      "local_worktree": {
+        "normalized_sha256": "44b11a85e630837dc2c7318172595cdee2803e7f714587265e60311939bd826e",
+        "sha256": "b047583666864adc2e606770ace8ac56c7793b2af71b0f205015ebecd81c1c5d",
+        "size": 2813
+      },
+      "running_container": {
+        "normalized_sha256": "44b11a85e630837dc2c7318172595cdee2803e7f714587265e60311939bd826e",
+        "sha256": "b047583666864adc2e606770ace8ac56c7793b2af71b0f205015ebecd81c1c5d",
+        "size": 2813
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "44b11a85e630837dc2c7318172595cdee2803e7f714587265e60311939bd826e",
+        "sha256": "b047583666864adc2e606770ace8ac56c7793b2af71b0f205015ebecd81c1c5d",
+        "size": 2813
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/momentum.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "aadf988dc3a4dfc5e55968ffdbd781857d4707c64dfcf3690b1b18de0ba271c4",
+        "sha256": "aadf988dc3a4dfc5e55968ffdbd781857d4707c64dfcf3690b1b18de0ba271c4",
+        "size": 1237
+      },
+      "local_worktree": {
+        "normalized_sha256": "aadf988dc3a4dfc5e55968ffdbd781857d4707c64dfcf3690b1b18de0ba271c4",
+        "sha256": "b4d3b1e53143d12a2a45ea505cde15a11b71cc8cb1f197526675a3cdd3c9c47e",
+        "size": 1286
+      },
+      "running_container": {
+        "normalized_sha256": "aadf988dc3a4dfc5e55968ffdbd781857d4707c64dfcf3690b1b18de0ba271c4",
+        "sha256": "b4d3b1e53143d12a2a45ea505cde15a11b71cc8cb1f197526675a3cdd3c9c47e",
+        "size": 1286
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "aadf988dc3a4dfc5e55968ffdbd781857d4707c64dfcf3690b1b18de0ba271c4",
+        "sha256": "b4d3b1e53143d12a2a45ea505cde15a11b71cc8cb1f197526675a3cdd3c9c47e",
+        "size": 1286
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/open_interest.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "820754c631255b980953dbee8212cc51b02d1a0e74b528c0705c03e64dcd3dcf",
+        "sha256": "820754c631255b980953dbee8212cc51b02d1a0e74b528c0705c03e64dcd3dcf",
+        "size": 1350
+      },
+      "local_worktree": {
+        "normalized_sha256": "820754c631255b980953dbee8212cc51b02d1a0e74b528c0705c03e64dcd3dcf",
+        "sha256": "b5ea5a8b5d6c5a1afe59785b9fcd537a76987af10c38ca1dd02eed44b3148972",
+        "size": 1398
+      },
+      "running_container": {
+        "normalized_sha256": "820754c631255b980953dbee8212cc51b02d1a0e74b528c0705c03e64dcd3dcf",
+        "sha256": "b5ea5a8b5d6c5a1afe59785b9fcd537a76987af10c38ca1dd02eed44b3148972",
+        "size": 1398
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "820754c631255b980953dbee8212cc51b02d1a0e74b528c0705c03e64dcd3dcf",
+        "sha256": "b5ea5a8b5d6c5a1afe59785b9fcd537a76987af10c38ca1dd02eed44b3148972",
+        "size": 1398
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/order_book.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "size": 4639
+      },
+      "local_worktree": {
+        "normalized_sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "size": 4639
+      },
+      "running_container": {
+        "normalized_sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "sha256": "594242d5d1c35d2e331b4b92a10305531e9200c90a93a7d44045e71febaee31b",
+        "size": 4766
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "6e9e0179e7de2c4931d7e29b692262821806d8b4c0f84f18ef596962458959b4",
+        "sha256": "594242d5d1c35d2e331b4b92a10305531e9200c90a93a7d44045e71febaee31b",
+        "size": 4766
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/order_flow.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "66ec98478b1588b4127314126270afe8992c1f1fa1554af30bed3365aba8a181",
+        "sha256": "66ec98478b1588b4127314126270afe8992c1f1fa1554af30bed3365aba8a181",
+        "size": 1909
+      },
+      "local_worktree": {
+        "normalized_sha256": "66ec98478b1588b4127314126270afe8992c1f1fa1554af30bed3365aba8a181",
+        "sha256": "f54fdf5f186772dc4eb4dcdf547c3a89c6be2e3ae54a44445f51a0bed13f60c8",
+        "size": 1967
+      },
+      "running_container": {
+        "normalized_sha256": "66ec98478b1588b4127314126270afe8992c1f1fa1554af30bed3365aba8a181",
+        "sha256": "f54fdf5f186772dc4eb4dcdf547c3a89c6be2e3ae54a44445f51a0bed13f60c8",
+        "size": 1967
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "66ec98478b1588b4127314126270afe8992c1f1fa1554af30bed3365aba8a181",
+        "sha256": "f54fdf5f186772dc4eb4dcdf547c3a89c6be2e3ae54a44445f51a0bed13f60c8",
+        "size": 1967
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/pipeline.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "34abe3d8911e1e3343d0110c028ce0842c09c82488e26802e8fa00dd776182d6",
+        "sha256": "34abe3d8911e1e3343d0110c028ce0842c09c82488e26802e8fa00dd776182d6",
+        "size": 5807
+      },
+      "local_worktree": {
+        "normalized_sha256": "34abe3d8911e1e3343d0110c028ce0842c09c82488e26802e8fa00dd776182d6",
+        "sha256": "69c61cea33a2e7e7cfed26a5e780e4a0817ca6dd03bcef2126bcc0e68280c64d",
+        "size": 6033
+      },
+      "running_container": {
+        "normalized_sha256": "34abe3d8911e1e3343d0110c028ce0842c09c82488e26802e8fa00dd776182d6",
+        "sha256": "69c61cea33a2e7e7cfed26a5e780e4a0817ca6dd03bcef2126bcc0e68280c64d",
+        "size": 6033
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "34abe3d8911e1e3343d0110c028ce0842c09c82488e26802e8fa00dd776182d6",
+        "sha256": "69c61cea33a2e7e7cfed26a5e780e4a0817ca6dd03bcef2126bcc0e68280c64d",
+        "size": 6033
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/session_context.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "bdf95b6218197586f7cc2465a4bc9df3778af5e4d8cf0c2b9f32d8b8a1bdd238",
+        "sha256": "bdf95b6218197586f7cc2465a4bc9df3778af5e4d8cf0c2b9f32d8b8a1bdd238",
+        "size": 2565
+      },
+      "local_worktree": {
+        "normalized_sha256": "bdf95b6218197586f7cc2465a4bc9df3778af5e4d8cf0c2b9f32d8b8a1bdd238",
+        "sha256": "5ebf6b4b614d6251fe85216e7da5f77524962410a196ccb2d8218bf56a358b31",
+        "size": 2642
+      },
+      "running_container": {
+        "normalized_sha256": "bdf95b6218197586f7cc2465a4bc9df3778af5e4d8cf0c2b9f32d8b8a1bdd238",
+        "sha256": "5ebf6b4b614d6251fe85216e7da5f77524962410a196ccb2d8218bf56a358b31",
+        "size": 2642
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "bdf95b6218197586f7cc2465a4bc9df3778af5e4d8cf0c2b9f32d8b8a1bdd238",
+        "sha256": "5ebf6b4b614d6251fe85216e7da5f77524962410a196ccb2d8218bf56a358b31",
+        "size": 2642
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/spread_features.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "3b053c83542915496b2615dfe11c7ea85eb8bf0c199db904d577edc14d3cc76c",
+        "sha256": "3b053c83542915496b2615dfe11c7ea85eb8bf0c199db904d577edc14d3cc76c",
+        "size": 2411
+      },
+      "local_worktree": {
+        "normalized_sha256": "3b053c83542915496b2615dfe11c7ea85eb8bf0c199db904d577edc14d3cc76c",
+        "sha256": "ae82359c80c4b1f7a200001352f397cfd7059c41bfc1ae3e8231637e731c0108",
+        "size": 2488
+      },
+      "running_container": {
+        "normalized_sha256": "3b053c83542915496b2615dfe11c7ea85eb8bf0c199db904d577edc14d3cc76c",
+        "sha256": "ae82359c80c4b1f7a200001352f397cfd7059c41bfc1ae3e8231637e731c0108",
+        "size": 2488
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "3b053c83542915496b2615dfe11c7ea85eb8bf0c199db904d577edc14d3cc76c",
+        "sha256": "ae82359c80c4b1f7a200001352f397cfd7059c41bfc1ae3e8231637e731c0108",
+        "size": 2488
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/time_encoding.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "956b1d2354544dab47a2d59e49fca955cdb7b1eb551af8e7eb490a8e8e7ee926",
+        "sha256": "956b1d2354544dab47a2d59e49fca955cdb7b1eb551af8e7eb490a8e8e7ee926",
+        "size": 1092
+      },
+      "local_worktree": {
+        "normalized_sha256": "956b1d2354544dab47a2d59e49fca955cdb7b1eb551af8e7eb490a8e8e7ee926",
+        "sha256": "cdf01c0ee2facc71c019e7d2e2d3df3b3f4000b9ecb0c09319a0e2910cc9b95e",
+        "size": 1135
+      },
+      "running_container": {
+        "normalized_sha256": "956b1d2354544dab47a2d59e49fca955cdb7b1eb551af8e7eb490a8e8e7ee926",
+        "sha256": "cdf01c0ee2facc71c019e7d2e2d3df3b3f4000b9ecb0c09319a0e2910cc9b95e",
+        "size": 1135
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "956b1d2354544dab47a2d59e49fca955cdb7b1eb551af8e7eb490a8e8e7ee926",
+        "sha256": "cdf01c0ee2facc71c019e7d2e2d3df3b3f4000b9ecb0c09319a0e2910cc9b95e",
+        "size": 1135
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/trend.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d019fef00e3637f838ca982b2f219a2926be6f9265381ddf2f36f8ab239e3d8b",
+        "sha256": "d019fef00e3637f838ca982b2f219a2926be6f9265381ddf2f36f8ab239e3d8b",
+        "size": 1273
+      },
+      "local_worktree": {
+        "normalized_sha256": "d019fef00e3637f838ca982b2f219a2926be6f9265381ddf2f36f8ab239e3d8b",
+        "sha256": "03b2334bb2ede6e0b1d5fd31e9df10fcdb0ced94c5592353125b806aeb073c66",
+        "size": 1320
+      },
+      "running_container": {
+        "normalized_sha256": "d019fef00e3637f838ca982b2f219a2926be6f9265381ddf2f36f8ab239e3d8b",
+        "sha256": "03b2334bb2ede6e0b1d5fd31e9df10fcdb0ced94c5592353125b806aeb073c66",
+        "size": 1320
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d019fef00e3637f838ca982b2f219a2926be6f9265381ddf2f36f8ab239e3d8b",
+        "sha256": "03b2334bb2ede6e0b1d5fd31e9df10fcdb0ced94c5592353125b806aeb073c66",
+        "size": 1320
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/volatility.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "6bbbf8318c2621dbd55b5bd6d4cbdd7dfdf4e3beb8d432a857fc5ca34146221b",
+        "sha256": "6bbbf8318c2621dbd55b5bd6d4cbdd7dfdf4e3beb8d432a857fc5ca34146221b",
+        "size": 2773
+      },
+      "local_worktree": {
+        "normalized_sha256": "6bbbf8318c2621dbd55b5bd6d4cbdd7dfdf4e3beb8d432a857fc5ca34146221b",
+        "sha256": "3b2643d5db008739659ee9e130923d8cfd4948c6c25ef8f16e74a7f2ee68e491",
+        "size": 2862
+      },
+      "running_container": {
+        "normalized_sha256": "6bbbf8318c2621dbd55b5bd6d4cbdd7dfdf4e3beb8d432a857fc5ca34146221b",
+        "sha256": "3b2643d5db008739659ee9e130923d8cfd4948c6c25ef8f16e74a7f2ee68e491",
+        "size": 2862
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "6bbbf8318c2621dbd55b5bd6d4cbdd7dfdf4e3beb8d432a857fc5ca34146221b",
+        "sha256": "3b2643d5db008739659ee9e130923d8cfd4948c6c25ef8f16e74a7f2ee68e491",
+        "size": 2862
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/features/volume.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7049cb299a26e4dd2612ad99f8ae3c4cce0e2419e6f20770d122d68fb3b2af62",
+        "sha256": "7049cb299a26e4dd2612ad99f8ae3c4cce0e2419e6f20770d122d68fb3b2af62",
+        "size": 1519
+      },
+      "local_worktree": {
+        "normalized_sha256": "7049cb299a26e4dd2612ad99f8ae3c4cce0e2419e6f20770d122d68fb3b2af62",
+        "sha256": "149736dd6521c37e255840f93489bd8cae75cacfd1a401415bf8e1b0a03b2783",
+        "size": 1572
+      },
+      "running_container": {
+        "normalized_sha256": "7049cb299a26e4dd2612ad99f8ae3c4cce0e2419e6f20770d122d68fb3b2af62",
+        "sha256": "149736dd6521c37e255840f93489bd8cae75cacfd1a401415bf8e1b0a03b2783",
+        "size": 1572
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "7049cb299a26e4dd2612ad99f8ae3c4cce0e2419e6f20770d122d68fb3b2af62",
+        "sha256": "149736dd6521c37e255840f93489bd8cae75cacfd1a401415bf8e1b0a03b2783",
+        "size": 1572
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/labels/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "ee676019e2038536bf6b5424f454c11bfe6be9646a21e8952abdc556682f1976",
+        "sha256": "ee676019e2038536bf6b5424f454c11bfe6be9646a21e8952abdc556682f1976",
+        "size": 23
+      },
+      "local_worktree": {
+        "normalized_sha256": "ee676019e2038536bf6b5424f454c11bfe6be9646a21e8952abdc556682f1976",
+        "sha256": "48238b90d662370b00a08c31e76b94369df6d5b1c01d05ec34fff21b26946112",
+        "size": 24
+      },
+      "running_container": {
+        "normalized_sha256": "ee676019e2038536bf6b5424f454c11bfe6be9646a21e8952abdc556682f1976",
+        "sha256": "48238b90d662370b00a08c31e76b94369df6d5b1c01d05ec34fff21b26946112",
+        "size": 24
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "ee676019e2038536bf6b5424f454c11bfe6be9646a21e8952abdc556682f1976",
+        "sha256": "48238b90d662370b00a08c31e76b94369df6d5b1c01d05ec34fff21b26946112",
+        "size": 24
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/labels/labeler.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "652c0ba29fc4314b71571182d1f4cfd3f23d78b831f4e975e01c0771c7f54ee8",
+        "sha256": "652c0ba29fc4314b71571182d1f4cfd3f23d78b831f4e975e01c0771c7f54ee8",
+        "size": 2439
+      },
+      "local_worktree": {
+        "normalized_sha256": "652c0ba29fc4314b71571182d1f4cfd3f23d78b831f4e975e01c0771c7f54ee8",
+        "sha256": "cc769feae5caa204b1bf6607d4baf5330f007e3462922e58bc7ee19e2ff4a6bc",
+        "size": 2519
+      },
+      "running_container": {
+        "normalized_sha256": "652c0ba29fc4314b71571182d1f4cfd3f23d78b831f4e975e01c0771c7f54ee8",
+        "sha256": "cc769feae5caa204b1bf6607d4baf5330f007e3462922e58bc7ee19e2ff4a6bc",
+        "size": 2519
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "652c0ba29fc4314b71571182d1f4cfd3f23d78b831f4e975e01c0771c7f54ee8",
+        "sha256": "cc769feae5caa204b1bf6607d4baf5330f007e3462922e58bc7ee19e2ff4a6bc",
+        "size": 2519
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/live/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "local_worktree": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "running_container": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/live/signal_generator.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "672e09f60a05688a81a895bc6af2e38f9690c4cd677e54778815880401f345c1",
+        "sha256": "672e09f60a05688a81a895bc6af2e38f9690c4cd677e54778815880401f345c1",
+        "size": 36099
+      },
+      "local_worktree": {
+        "normalized_sha256": "672e09f60a05688a81a895bc6af2e38f9690c4cd677e54778815880401f345c1",
+        "sha256": "a3ef17cceb7a4c423b073661ff8102486cb9eaf6fc71d4645365a879639283a8",
+        "size": 37064
+      },
+      "running_container": {
+        "normalized_sha256": "672e09f60a05688a81a895bc6af2e38f9690c4cd677e54778815880401f345c1",
+        "sha256": "a3ef17cceb7a4c423b073661ff8102486cb9eaf6fc71d4645365a879639283a8",
+        "size": 37064
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "672e09f60a05688a81a895bc6af2e38f9690c4cd677e54778815880401f345c1",
+        "sha256": "a3ef17cceb7a4c423b073661ff8102486cb9eaf6fc71d4645365a879639283a8",
+        "size": 37064
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/live/train_models.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "394caec9d83035175ebcf36939700eb990675c005791162319b97208daa90ac6",
+        "sha256": "394caec9d83035175ebcf36939700eb990675c005791162319b97208daa90ac6",
+        "size": 7653
+      },
+      "local_worktree": {
+        "normalized_sha256": "394caec9d83035175ebcf36939700eb990675c005791162319b97208daa90ac6",
+        "sha256": "ccf3ad490c65ba4de3b53c4af12782d490148445032f35c59fa868a73ac18dd3",
+        "size": 7880
+      },
+      "running_container": {
+        "normalized_sha256": "394caec9d83035175ebcf36939700eb990675c005791162319b97208daa90ac6",
+        "sha256": "ccf3ad490c65ba4de3b53c4af12782d490148445032f35c59fa868a73ac18dd3",
+        "size": 7880
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "394caec9d83035175ebcf36939700eb990675c005791162319b97208daa90ac6",
+        "sha256": "ccf3ad490c65ba4de3b53c4af12782d490148445032f35c59fa868a73ac18dd3",
+        "size": 7880
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/models/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "bb7198a1bfcd3a9331d757a933ad28d310af55aba12b320ea4d5300b148759d7",
+        "sha256": "bb7198a1bfcd3a9331d757a933ad28d310af55aba12b320ea4d5300b148759d7",
+        "size": 36
+      },
+      "local_worktree": {
+        "normalized_sha256": "bb7198a1bfcd3a9331d757a933ad28d310af55aba12b320ea4d5300b148759d7",
+        "sha256": "61599b1e14768110b7cdec0fa73a72c249b96aefbb054d8eaecc9ea15157a418",
+        "size": 37
+      },
+      "running_container": {
+        "normalized_sha256": "bb7198a1bfcd3a9331d757a933ad28d310af55aba12b320ea4d5300b148759d7",
+        "sha256": "61599b1e14768110b7cdec0fa73a72c249b96aefbb054d8eaecc9ea15157a418",
+        "size": 37
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "bb7198a1bfcd3a9331d757a933ad28d310af55aba12b320ea4d5300b148759d7",
+        "sha256": "61599b1e14768110b7cdec0fa73a72c249b96aefbb054d8eaecc9ea15157a418",
+        "size": 37
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/models/ensemble.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "059c8e07287ecad2e7d68823f8bd192d08cbcc19f6cc4af08aeb78bf63d7232d",
+        "sha256": "059c8e07287ecad2e7d68823f8bd192d08cbcc19f6cc4af08aeb78bf63d7232d",
+        "size": 5343
+      },
+      "local_worktree": {
+        "normalized_sha256": "059c8e07287ecad2e7d68823f8bd192d08cbcc19f6cc4af08aeb78bf63d7232d",
+        "sha256": "dbfe8020c62a49871f087b626565989dd6ecb1da7a517b7ef361f25a84cf8378",
+        "size": 5504
+      },
+      "running_container": {
+        "normalized_sha256": "059c8e07287ecad2e7d68823f8bd192d08cbcc19f6cc4af08aeb78bf63d7232d",
+        "sha256": "dbfe8020c62a49871f087b626565989dd6ecb1da7a517b7ef361f25a84cf8378",
+        "size": 5504
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "059c8e07287ecad2e7d68823f8bd192d08cbcc19f6cc4af08aeb78bf63d7232d",
+        "sha256": "dbfe8020c62a49871f087b626565989dd6ecb1da7a517b7ef361f25a84cf8378",
+        "size": 5504
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/models/optimizer.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "2f439e51440d66195ce1b80aa284b5b79855a828e478a5da9bf1f54eb9418dc2",
+        "sha256": "2f439e51440d66195ce1b80aa284b5b79855a828e478a5da9bf1f54eb9418dc2",
+        "size": 5522
+      },
+      "local_worktree": {
+        "normalized_sha256": "2f439e51440d66195ce1b80aa284b5b79855a828e478a5da9bf1f54eb9418dc2",
+        "sha256": "3315085595df4c718e8162abea58204ce9282ad0b1ae796a7f4b8ce7467437e2",
+        "size": 5695
+      },
+      "running_container": {
+        "normalized_sha256": "2f439e51440d66195ce1b80aa284b5b79855a828e478a5da9bf1f54eb9418dc2",
+        "sha256": "3315085595df4c718e8162abea58204ce9282ad0b1ae796a7f4b8ce7467437e2",
+        "size": 5695
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "2f439e51440d66195ce1b80aa284b5b79855a828e478a5da9bf1f54eb9418dc2",
+        "sha256": "3315085595df4c718e8162abea58204ce9282ad0b1ae796a7f4b8ce7467437e2",
+        "size": 5695
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/models/predictor.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "62d0495b64fbce3f11b6917abde8258328ab2feb363d263f9442cfa5b0e048dc",
+        "sha256": "62d0495b64fbce3f11b6917abde8258328ab2feb363d263f9442cfa5b0e048dc",
+        "size": 1147
+      },
+      "local_worktree": {
+        "normalized_sha256": "62d0495b64fbce3f11b6917abde8258328ab2feb363d263f9442cfa5b0e048dc",
+        "sha256": "ffbc0d78d2e796bec3a925663d5c1d929b01fd5565a85c833476f978342051e9",
+        "size": 1187
+      },
+      "running_container": {
+        "normalized_sha256": "62d0495b64fbce3f11b6917abde8258328ab2feb363d263f9442cfa5b0e048dc",
+        "sha256": "ffbc0d78d2e796bec3a925663d5c1d929b01fd5565a85c833476f978342051e9",
+        "size": 1187
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "62d0495b64fbce3f11b6917abde8258328ab2feb363d263f9442cfa5b0e048dc",
+        "sha256": "ffbc0d78d2e796bec3a925663d5c1d929b01fd5565a85c833476f978342051e9",
+        "size": 1187
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/models/trainer.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "a67cb1b66592002fd58789b2ed97228919d5a795bac6c90cef72d11c92c38705",
+        "sha256": "a67cb1b66592002fd58789b2ed97228919d5a795bac6c90cef72d11c92c38705",
+        "size": 5502
+      },
+      "local_worktree": {
+        "normalized_sha256": "a67cb1b66592002fd58789b2ed97228919d5a795bac6c90cef72d11c92c38705",
+        "sha256": "45e56cf1eddc88b9dcd3094ead47edda23c74a006e5f22b500fd2b1826cdae31",
+        "size": 5663
+      },
+      "running_container": {
+        "normalized_sha256": "a67cb1b66592002fd58789b2ed97228919d5a795bac6c90cef72d11c92c38705",
+        "sha256": "45e56cf1eddc88b9dcd3094ead47edda23c74a006e5f22b500fd2b1826cdae31",
+        "size": 5663
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "a67cb1b66592002fd58789b2ed97228919d5a795bac6c90cef72d11c92c38705",
+        "sha256": "45e56cf1eddc88b9dcd3094ead47edda23c74a006e5f22b500fd2b1826cdae31",
+        "size": 5663
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/regime/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "4bb532f0b4676c4267b3c56274a8a0119c8444782480d8748798294c9fe6185c",
+        "sha256": "4bb532f0b4676c4267b3c56274a8a0119c8444782480d8748798294c9fe6185c",
+        "size": 31
+      },
+      "local_worktree": {
+        "normalized_sha256": "4bb532f0b4676c4267b3c56274a8a0119c8444782480d8748798294c9fe6185c",
+        "sha256": "e275ce682282e1fe592812ddfc64fe667197c4e70e56ef6f2155b1e76dee3b9e",
+        "size": 32
+      },
+      "running_container": {
+        "normalized_sha256": "4bb532f0b4676c4267b3c56274a8a0119c8444782480d8748798294c9fe6185c",
+        "sha256": "e275ce682282e1fe592812ddfc64fe667197c4e70e56ef6f2155b1e76dee3b9e",
+        "size": 32
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "4bb532f0b4676c4267b3c56274a8a0119c8444782480d8748798294c9fe6185c",
+        "sha256": "e275ce682282e1fe592812ddfc64fe667197c4e70e56ef6f2155b1e76dee3b9e",
+        "size": 32
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/regime/gmm_regime.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "b1b445a21bd27871164c38d9fede58aa034c4acd5856a0d50177099389b16862",
+        "sha256": "b1b445a21bd27871164c38d9fede58aa034c4acd5856a0d50177099389b16862",
+        "size": 4349
+      },
+      "local_worktree": {
+        "normalized_sha256": "b1b445a21bd27871164c38d9fede58aa034c4acd5856a0d50177099389b16862",
+        "sha256": "212f3eaed8ff7b4fa17bb1ad4d50993844ac77bd9ce6ab3f6300d0996ab50fa7",
+        "size": 4518
+      },
+      "running_container": {
+        "normalized_sha256": "b1b445a21bd27871164c38d9fede58aa034c4acd5856a0d50177099389b16862",
+        "sha256": "212f3eaed8ff7b4fa17bb1ad4d50993844ac77bd9ce6ab3f6300d0996ab50fa7",
+        "size": 4518
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "b1b445a21bd27871164c38d9fede58aa034c4acd5856a0d50177099389b16862",
+        "sha256": "212f3eaed8ff7b4fa17bb1ad4d50993844ac77bd9ce6ab3f6300d0996ab50fa7",
+        "size": 4518
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e9e51def81e9821e19df2e14e092c1c3626860c2abdad047fed17a0561bef7d2",
+        "sha256": "e9e51def81e9821e19df2e14e092c1c3626860c2abdad047fed17a0561bef7d2",
+        "size": 21
+      },
+      "local_worktree": {
+        "normalized_sha256": "e9e51def81e9821e19df2e14e092c1c3626860c2abdad047fed17a0561bef7d2",
+        "sha256": "268edbd77af2ed3ce3d1909a2e7cff781f622edfe845b67a7e8261b2616170eb",
+        "size": 22
+      },
+      "running_container": {
+        "normalized_sha256": "e9e51def81e9821e19df2e14e092c1c3626860c2abdad047fed17a0561bef7d2",
+        "sha256": "268edbd77af2ed3ce3d1909a2e7cff781f622edfe845b67a7e8261b2616170eb",
+        "size": 22
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e9e51def81e9821e19df2e14e092c1c3626860c2abdad047fed17a0561bef7d2",
+        "sha256": "268edbd77af2ed3ce3d1909a2e7cff781f622edfe845b67a7e8261b2616170eb",
+        "size": 22
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/cost_model.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "39ea81b21c682a9b140ae2b1b0633a1c7ae9bed45d8f6483e6c693f2f3e069cb",
+        "sha256": "39ea81b21c682a9b140ae2b1b0633a1c7ae9bed45d8f6483e6c693f2f3e069cb",
+        "size": 1400
+      },
+      "local_worktree": {
+        "normalized_sha256": "39ea81b21c682a9b140ae2b1b0633a1c7ae9bed45d8f6483e6c693f2f3e069cb",
+        "sha256": "7e18e607e7bd6a423152bf73354ad40607acd3533e1da93d51037c161b0bc914",
+        "size": 1444
+      },
+      "running_container": {
+        "normalized_sha256": "39ea81b21c682a9b140ae2b1b0633a1c7ae9bed45d8f6483e6c693f2f3e069cb",
+        "sha256": "7e18e607e7bd6a423152bf73354ad40607acd3533e1da93d51037c161b0bc914",
+        "size": 1444
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "39ea81b21c682a9b140ae2b1b0633a1c7ae9bed45d8f6483e6c693f2f3e069cb",
+        "sha256": "7e18e607e7bd6a423152bf73354ad40607acd3533e1da93d51037c161b0bc914",
+        "size": 1444
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/guardrails.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "1a8e7e6560a21cf5c3162cc87c7f841f5deb855608fb385c0360d17f278767ab",
+        "sha256": "1a8e7e6560a21cf5c3162cc87c7f841f5deb855608fb385c0360d17f278767ab",
+        "size": 5909
+      },
+      "local_worktree": {
+        "normalized_sha256": "1a8e7e6560a21cf5c3162cc87c7f841f5deb855608fb385c0360d17f278767ab",
+        "sha256": "4661bbd45f1a7f6a151625442e13602c6e29fa1b568dca759c235357aca0f18f",
+        "size": 6076
+      },
+      "running_container": {
+        "normalized_sha256": "1a8e7e6560a21cf5c3162cc87c7f841f5deb855608fb385c0360d17f278767ab",
+        "sha256": "4661bbd45f1a7f6a151625442e13602c6e29fa1b568dca759c235357aca0f18f",
+        "size": 6076
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "1a8e7e6560a21cf5c3162cc87c7f841f5deb855608fb385c0360d17f278767ab",
+        "sha256": "4661bbd45f1a7f6a151625442e13602c6e29fa1b568dca759c235357aca0f18f",
+        "size": 6076
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/monte_carlo.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "3868d3448ad9c7949873c5b1e529fa3811a50ab264ec0963a2a59e263b986b5f",
+        "sha256": "3868d3448ad9c7949873c5b1e529fa3811a50ab264ec0963a2a59e263b986b5f",
+        "size": 3962
+      },
+      "local_worktree": {
+        "normalized_sha256": "3868d3448ad9c7949873c5b1e529fa3811a50ab264ec0963a2a59e263b986b5f",
+        "sha256": "8970e6b77caff2a064d7861f8c9a074874261dec41307c705b4119eeafdc2d04",
+        "size": 4098
+      },
+      "running_container": {
+        "normalized_sha256": "3868d3448ad9c7949873c5b1e529fa3811a50ab264ec0963a2a59e263b986b5f",
+        "sha256": "8970e6b77caff2a064d7861f8c9a074874261dec41307c705b4119eeafdc2d04",
+        "size": 4098
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "3868d3448ad9c7949873c5b1e529fa3811a50ab264ec0963a2a59e263b986b5f",
+        "sha256": "8970e6b77caff2a064d7861f8c9a074874261dec41307c705b4119eeafdc2d04",
+        "size": 4098
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/position_sizing.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "ed645f53ac5032841032ad4aab24b891c1f86d3c4b5d9a42ccff887a8f386f82",
+        "sha256": "ed645f53ac5032841032ad4aab24b891c1f86d3c4b5d9a42ccff887a8f386f82",
+        "size": 3883
+      },
+      "local_worktree": {
+        "normalized_sha256": "ed645f53ac5032841032ad4aab24b891c1f86d3c4b5d9a42ccff887a8f386f82",
+        "sha256": "42f899c592b4d4a7fade4a2327bc02e13697bc6edf0524cae18cd70ae50f5ad8",
+        "size": 4015
+      },
+      "running_container": {
+        "normalized_sha256": "ed645f53ac5032841032ad4aab24b891c1f86d3c4b5d9a42ccff887a8f386f82",
+        "sha256": "42f899c592b4d4a7fade4a2327bc02e13697bc6edf0524cae18cd70ae50f5ad8",
+        "size": 4015
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "ed645f53ac5032841032ad4aab24b891c1f86d3c4b5d9a42ccff887a8f386f82",
+        "sha256": "42f899c592b4d4a7fade4a2327bc02e13697bc6edf0524cae18cd70ae50f5ad8",
+        "size": 4015
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/risk/volatility_guard.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "042d730f3d24b12dfc7d38a8dbec6e48b7de3d71b8588038c03f04c22ca261c9",
+        "sha256": "042d730f3d24b12dfc7d38a8dbec6e48b7de3d71b8588038c03f04c22ca261c9",
+        "size": 1494
+      },
+      "local_worktree": {
+        "normalized_sha256": "042d730f3d24b12dfc7d38a8dbec6e48b7de3d71b8588038c03f04c22ca261c9",
+        "sha256": "75b117e041ac8c5fc31f5af1519ac70652ba7301a0876bb3aed2d210f7cf5416",
+        "size": 1539
+      },
+      "running_container": {
+        "normalized_sha256": "042d730f3d24b12dfc7d38a8dbec6e48b7de3d71b8588038c03f04c22ca261c9",
+        "sha256": "75b117e041ac8c5fc31f5af1519ac70652ba7301a0876bb3aed2d210f7cf5416",
+        "size": 1539
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "042d730f3d24b12dfc7d38a8dbec6e48b7de3d71b8588038c03f04c22ca261c9",
+        "sha256": "75b117e041ac8c5fc31f5af1519ac70652ba7301a0876bb3aed2d210f7cf5416",
+        "size": 1539
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/run_research.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "57b241dbe321f48d90ab259bda6687df98ad5f29799830f5d0078dc5e516cf05",
+        "sha256": "57b241dbe321f48d90ab259bda6687df98ad5f29799830f5d0078dc5e516cf05",
+        "size": 11196
+      },
+      "local_worktree": {
+        "normalized_sha256": "57b241dbe321f48d90ab259bda6687df98ad5f29799830f5d0078dc5e516cf05",
+        "sha256": "1bee7ed40249841d3f5b9a0837b90a22cba9d0a16ea1dfd885a890a19a0d2e39",
+        "size": 11538
+      },
+      "running_container": {
+        "normalized_sha256": "57b241dbe321f48d90ab259bda6687df98ad5f29799830f5d0078dc5e516cf05",
+        "sha256": "1bee7ed40249841d3f5b9a0837b90a22cba9d0a16ea1dfd885a890a19a0d2e39",
+        "size": 11538
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "57b241dbe321f48d90ab259bda6687df98ad5f29799830f5d0078dc5e516cf05",
+        "sha256": "1bee7ed40249841d3f5b9a0837b90a22cba9d0a16ea1dfd885a890a19a0d2e39",
+        "size": 11538
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/selection/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "1d7620afd591fd3b842a01c3f7c2626124237c7d5b8a87d4abd40593ed87ad7a",
+        "sha256": "1d7620afd591fd3b842a01c3f7c2626124237c7d5b8a87d4abd40593ed87ad7a",
+        "size": 29
+      },
+      "local_worktree": {
+        "normalized_sha256": "1d7620afd591fd3b842a01c3f7c2626124237c7d5b8a87d4abd40593ed87ad7a",
+        "sha256": "6f34c63fd1ca164ea5bc7b7d4277835b44656e24f0a8e4c53a250040536eb469",
+        "size": 30
+      },
+      "running_container": {
+        "normalized_sha256": "1d7620afd591fd3b842a01c3f7c2626124237c7d5b8a87d4abd40593ed87ad7a",
+        "sha256": "6f34c63fd1ca164ea5bc7b7d4277835b44656e24f0a8e4c53a250040536eb469",
+        "size": 30
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "1d7620afd591fd3b842a01c3f7c2626124237c7d5b8a87d4abd40593ed87ad7a",
+        "sha256": "6f34c63fd1ca164ea5bc7b7d4277835b44656e24f0a8e4c53a250040536eb469",
+        "size": 30
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/selection/threshold_optimizer.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f9266c2831a80744346410975e91a4620621a833316621c7cc5ac0c514604c86",
+        "sha256": "f9266c2831a80744346410975e91a4620621a833316621c7cc5ac0c514604c86",
+        "size": 2544
+      },
+      "local_worktree": {
+        "normalized_sha256": "f9266c2831a80744346410975e91a4620621a833316621c7cc5ac0c514604c86",
+        "sha256": "79d281910a5994aee3bcf9f427859f9c01e1d962bc4dfd4ee09c416a7889478a",
+        "size": 2633
+      },
+      "running_container": {
+        "normalized_sha256": "f9266c2831a80744346410975e91a4620621a833316621c7cc5ac0c514604c86",
+        "sha256": "79d281910a5994aee3bcf9f427859f9c01e1d962bc4dfd4ee09c416a7889478a",
+        "size": 2633
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "f9266c2831a80744346410975e91a4620621a833316621c7cc5ac0c514604c86",
+        "sha256": "79d281910a5994aee3bcf9f427859f9c01e1d962bc4dfd4ee09c416a7889478a",
+        "size": 2633
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "22999bbbe2b943c7733dd90fecd951c0c76f656fef692196addeb5611fa2a9ad",
+        "sha256": "22999bbbe2b943c7733dd90fecd951c0c76f656fef692196addeb5611fa2a9ad",
+        "size": 23
+      },
+      "local_worktree": {
+        "normalized_sha256": "22999bbbe2b943c7733dd90fecd951c0c76f656fef692196addeb5611fa2a9ad",
+        "sha256": "c68e28da03631cc54b89650573bb3844ce71260c2f10649ffef1a0a6f959973c",
+        "size": 24
+      },
+      "running_container": {
+        "normalized_sha256": "22999bbbe2b943c7733dd90fecd951c0c76f656fef692196addeb5611fa2a9ad",
+        "sha256": "c68e28da03631cc54b89650573bb3844ce71260c2f10649ffef1a0a6f959973c",
+        "size": 24
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "22999bbbe2b943c7733dd90fecd951c0c76f656fef692196addeb5611fa2a9ad",
+        "sha256": "c68e28da03631cc54b89650573bb3844ce71260c2f10649ffef1a0a6f959973c",
+        "size": 24
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/auth.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "25f454dd29774c6c16ccea6e36a2d56ab03223751c3a50192a3b0343c07889a0",
+        "sha256": "25f454dd29774c6c16ccea6e36a2d56ab03223751c3a50192a3b0343c07889a0",
+        "size": 853
+      },
+      "local_worktree": {
+        "normalized_sha256": "25f454dd29774c6c16ccea6e36a2d56ab03223751c3a50192a3b0343c07889a0",
+        "sha256": "90eb3bfdf5929fe2ee7b982f7fd62a1ee018e80a012b50c56910ae205fa29896",
+        "size": 882
+      },
+      "running_container": {
+        "normalized_sha256": "25f454dd29774c6c16ccea6e36a2d56ab03223751c3a50192a3b0343c07889a0",
+        "sha256": "90eb3bfdf5929fe2ee7b982f7fd62a1ee018e80a012b50c56910ae205fa29896",
+        "size": 882
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "25f454dd29774c6c16ccea6e36a2d56ab03223751c3a50192a3b0343c07889a0",
+        "sha256": "90eb3bfdf5929fe2ee7b982f7fd62a1ee018e80a012b50c56910ae205fa29896",
+        "size": 882
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/engine.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f0c718043cfe2c8e4081eb538017dab3a0eef75a1efc41533283630ff9497b9b",
+        "sha256": "f0c718043cfe2c8e4081eb538017dab3a0eef75a1efc41533283630ff9497b9b",
+        "size": 3870
+      },
+      "local_worktree": {
+        "normalized_sha256": "f0c718043cfe2c8e4081eb538017dab3a0eef75a1efc41533283630ff9497b9b",
+        "sha256": "c81f9104eafa57d0c585a066dcf33b1bb848b94d38c383e55e0777b50d003c59",
+        "size": 3977
+      },
+      "running_container": {
+        "normalized_sha256": "f0c718043cfe2c8e4081eb538017dab3a0eef75a1efc41533283630ff9497b9b",
+        "sha256": "c81f9104eafa57d0c585a066dcf33b1bb848b94d38c383e55e0777b50d003c59",
+        "size": 3977
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "f0c718043cfe2c8e4081eb538017dab3a0eef75a1efc41533283630ff9497b9b",
+        "sha256": "c81f9104eafa57d0c585a066dcf33b1bb848b94d38c383e55e0777b50d003c59",
+        "size": 3977
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/init_db.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7b4e2b9c3d831c128ac6cea0f4fbc7d5fd32897f275e3d2fcacf427581a753d6",
+        "sha256": "7b4e2b9c3d831c128ac6cea0f4fbc7d5fd32897f275e3d2fcacf427581a753d6",
+        "size": 434
+      },
+      "local_worktree": {
+        "normalized_sha256": "7b4e2b9c3d831c128ac6cea0f4fbc7d5fd32897f275e3d2fcacf427581a753d6",
+        "sha256": "78983737e9f3379e7ebf5a6e382dd2b855133cb6e9ab832e1d1320f249248d44",
+        "size": 448
+      },
+      "running_container": {
+        "normalized_sha256": "7b4e2b9c3d831c128ac6cea0f4fbc7d5fd32897f275e3d2fcacf427581a753d6",
+        "sha256": "78983737e9f3379e7ebf5a6e382dd2b855133cb6e9ab832e1d1320f249248d44",
+        "size": 448
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "7b4e2b9c3d831c128ac6cea0f4fbc7d5fd32897f275e3d2fcacf427581a753d6",
+        "sha256": "78983737e9f3379e7ebf5a6e382dd2b855133cb6e9ab832e1d1320f249248d44",
+        "size": 448
+      }
+    }
+  },
+  {
+    "classification": "replace_with_reviewed_local_change",
+    "path": "quant/telebot/main.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7e4b1c068e827a2d9803a8310b29fd9723c266817d2f9426593a1b470ad1029e",
+        "sha256": "7e4b1c068e827a2d9803a8310b29fd9723c266817d2f9426593a1b470ad1029e",
+        "size": 175813
+      },
+      "local_worktree": {
+        "normalized_sha256": "226c803ce0c6851ba489eb88b7806008ee80d19acdc3a2487272bc2e4e025e2a",
+        "sha256": "6d15b1352cf93f4d7fe5ed20edeeabc7a686ed525d3921a250f7d60d944041bb",
+        "size": 181867
+      },
+      "running_container": {
+        "normalized_sha256": "7e4b1c068e827a2d9803a8310b29fd9723c266817d2f9426593a1b470ad1029e",
+        "sha256": "c75a0e0e8ffae27d346c5ede33ff2cae67aa39815a2136f81251c81f903b368f",
+        "size": 180324
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "7e4b1c068e827a2d9803a8310b29fd9723c266817d2f9426593a1b470ad1029e",
+        "sha256": "c75a0e0e8ffae27d346c5ede33ff2cae67aa39815a2136f81251c81f903b368f",
+        "size": 180324
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/manager.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9b5b706327096748f5344f420810a27762276b6aa2cacbf65d82adecd1f3cd12",
+        "sha256": "9b5b706327096748f5344f420810a27762276b6aa2cacbf65d82adecd1f3cd12",
+        "size": 4592
+      },
+      "local_worktree": {
+        "normalized_sha256": "9b5b706327096748f5344f420810a27762276b6aa2cacbf65d82adecd1f3cd12",
+        "sha256": "0dece3cffd02a45f3a6419325cf10e484c0b2fc5fe5b9920586d913e89b78c95",
+        "size": 4707
+      },
+      "running_container": {
+        "normalized_sha256": "9b5b706327096748f5344f420810a27762276b6aa2cacbf65d82adecd1f3cd12",
+        "sha256": "0dece3cffd02a45f3a6419325cf10e484c0b2fc5fe5b9920586d913e89b78c95",
+        "size": 4707
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9b5b706327096748f5344f420810a27762276b6aa2cacbf65d82adecd1f3cd12",
+        "sha256": "0dece3cffd02a45f3a6419325cf10e484c0b2fc5fe5b9920586d913e89b78c95",
+        "size": 4707
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/model_selection.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "size": 2582
+      },
+      "local_worktree": {
+        "normalized_sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "size": 2582
+      },
+      "running_container": {
+        "normalized_sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "sha256": "1df74110b4bc7a5b4e022ba1c180d337cf008cd3a9d45626a9c53206a32594a0",
+        "size": 2667
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d54618779d863231c87a3497478c08e7fb8b41a8c7f54872788c38d31cb4a70f",
+        "sha256": "1df74110b4bc7a5b4e022ba1c180d337cf008cd3a9d45626a9c53206a32594a0",
+        "size": 2667
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/telebot/models.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d27c39ead02545058304e754f9337821d1caf74a38630ec91b19c3cc4fbb0695",
+        "sha256": "d27c39ead02545058304e754f9337821d1caf74a38630ec91b19c3cc4fbb0695",
+        "size": 4343
+      },
+      "local_worktree": {
+        "normalized_sha256": "d27c39ead02545058304e754f9337821d1caf74a38630ec91b19c3cc4fbb0695",
+        "sha256": "d5aae33323f4dbbed9423b14ce2dba0810493c4b57d8a7c3d0b269c392b1a18f",
+        "size": 4383
+      },
+      "running_container": {
+        "normalized_sha256": "d27c39ead02545058304e754f9337821d1caf74a38630ec91b19c3cc4fbb0695",
+        "sha256": "fb2ac453890fc97f40d85402caf3cd8cb33a6121b08866fe351a144caca5e78f",
+        "size": 4447
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d27c39ead02545058304e754f9337821d1caf74a38630ec91b19c3cc4fbb0695",
+        "sha256": "fb2ac453890fc97f40d85402caf3cd8cb33a6121b08866fe351a144caca5e78f",
+        "size": 4447
+      }
+    }
+  },
+  {
+    "classification": "unresolved_production_only_behavior",
+    "path": "quant/telebot/redaction.py",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": {
+        "normalized_sha256": "51441e47f503f27ebc1ddc9b42fc58097ef6fb7cd6aa07cf7d891688e443d539",
+        "sha256": "51441e47f503f27ebc1ddc9b42fc58097ef6fb7cd6aa07cf7d891688e443d539",
+        "size": 1954
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "51441e47f503f27ebc1ddc9b42fc58097ef6fb7cd6aa07cf7d891688e443d539",
+        "sha256": "51441e47f503f27ebc1ddc9b42fc58097ef6fb7cd6aa07cf7d891688e443d539",
+        "size": 1954
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/validation/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "8647351218cec44d08068cb7a45c7a9014212caaeba2b9033965d28128f50ad6",
+        "sha256": "8647351218cec44d08068cb7a45c7a9014212caaeba2b9033965d28128f50ad6",
+        "size": 43
+      },
+      "local_worktree": {
+        "normalized_sha256": "8647351218cec44d08068cb7a45c7a9014212caaeba2b9033965d28128f50ad6",
+        "sha256": "d7ebe939b3a80bb5ccd34db3cfe5af956dd2daec38d7a7111e9bb7e6c9f5eade",
+        "size": 44
+      },
+      "running_container": {
+        "normalized_sha256": "8647351218cec44d08068cb7a45c7a9014212caaeba2b9033965d28128f50ad6",
+        "sha256": "d7ebe939b3a80bb5ccd34db3cfe5af956dd2daec38d7a7111e9bb7e6c9f5eade",
+        "size": 44
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "8647351218cec44d08068cb7a45c7a9014212caaeba2b9033965d28128f50ad6",
+        "sha256": "d7ebe939b3a80bb5ccd34db3cfe5af956dd2daec38d7a7111e9bb7e6c9f5eade",
+        "size": 44
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/validation/metrics.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "348cd5ad3058c2c6e3b29b11616dc73d1f04e3020fe629442f94fec70471a52b",
+        "sha256": "348cd5ad3058c2c6e3b29b11616dc73d1f04e3020fe629442f94fec70471a52b",
+        "size": 7932
+      },
+      "local_worktree": {
+        "normalized_sha256": "348cd5ad3058c2c6e3b29b11616dc73d1f04e3020fe629442f94fec70471a52b",
+        "sha256": "3c7eb097b48401343b029a4c77a83b5e0a4a42aa063486fae4492863f445ef6e",
+        "size": 8231
+      },
+      "running_container": {
+        "normalized_sha256": "348cd5ad3058c2c6e3b29b11616dc73d1f04e3020fe629442f94fec70471a52b",
+        "sha256": "3c7eb097b48401343b029a4c77a83b5e0a4a42aa063486fae4492863f445ef6e",
+        "size": 8231
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "348cd5ad3058c2c6e3b29b11616dc73d1f04e3020fe629442f94fec70471a52b",
+        "sha256": "3c7eb097b48401343b029a4c77a83b5e0a4a42aa063486fae4492863f445ef6e",
+        "size": 8231
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant/validation/walk_forward.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "66ff817fa239fa466040d0a202b8e7c6955508bbed585953f71df15b3b9d730d",
+        "sha256": "66ff817fa239fa466040d0a202b8e7c6955508bbed585953f71df15b3b9d730d",
+        "size": 29593
+      },
+      "local_worktree": {
+        "normalized_sha256": "66ff817fa239fa466040d0a202b8e7c6955508bbed585953f71df15b3b9d730d",
+        "sha256": "73ce03dc8f92e5c9362bc1dc1fa29664d045ae1cfd93f022b33ea432f33c2501",
+        "size": 30379
+      },
+      "running_container": {
+        "normalized_sha256": "66ff817fa239fa466040d0a202b8e7c6955508bbed585953f71df15b3b9d730d",
+        "sha256": "73ce03dc8f92e5c9362bc1dc1fa29664d045ae1cfd93f022b33ea432f33c2501",
+        "size": 30379
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "66ff817fa239fa466040d0a202b8e7c6955508bbed585953f71df15b3b9d730d",
+        "sha256": "73ce03dc8f92e5c9362bc1dc1fa29664d045ae1cfd93f022b33ea432f33c2501",
+        "size": 30379
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "size": 788
+      },
+      "local_worktree": {
+        "normalized_sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "size": 788
+      },
+      "running_container": {
+        "normalized_sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "sha256": "6fa198b94e225f2491eda548987d6dbcd2ce33453d8e29ab5d2ae4c0c865dea7",
+        "size": 816
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "06516774f65650b164430bedd597294f525ce978a9b113a8b3747b9909b066cb",
+        "sha256": "6fa198b94e225f2491eda548987d6dbcd2ce33453d8e29ab5d2ae4c0c865dea7",
+        "size": 816
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/config.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "size": 2833
+      },
+      "local_worktree": {
+        "normalized_sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "size": 2833
+      },
+      "running_container": {
+        "normalized_sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "sha256": "236cc57fd070f1f81d0a7db85ef7c6e35b2246b68e9da82d3172efbd24f1e5ac",
+        "size": 2934
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "eb0a9e15f3eaba7bba62c13e208256ca45d84638571d8a61c64a51c91f2b4d16",
+        "sha256": "236cc57fd070f1f81d0a7db85ef7c6e35b2246b68e9da82d3172efbd24f1e5ac",
+        "size": 2934
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/contracts.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "size": 8948
+      },
+      "local_worktree": {
+        "normalized_sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "size": 8948
+      },
+      "running_container": {
+        "normalized_sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "sha256": "ea3c09e4e66d722ed4170b01abdf1fc7ba132976e12906e350bdd16f14f7de84",
+        "size": 9174
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e30cc9dc29467c9797106daf9f56b1e9713b55927b17a0ba3ff35e70e68408f4",
+        "sha256": "ea3c09e4e66d722ed4170b01abdf1fc7ba132976e12906e350bdd16f14f7de84",
+        "size": 9174
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/data/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "size": 560
+      },
+      "local_worktree": {
+        "normalized_sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "size": 560
+      },
+      "running_container": {
+        "normalized_sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "sha256": "8425a233201d52607d3276f88924e7b2d7654624139c6a39d763dc52ba00dbf3",
+        "size": 580
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "6c277dbb7c227418d5faa3f76b6a6cbeb409c093c16c4453d126d8a3fcc2cf52",
+        "sha256": "8425a233201d52607d3276f88924e7b2d7654624139c6a39d763dc52ba00dbf3",
+        "size": 580
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/data/multi_symbol_dataset.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "size": 4275
+      },
+      "local_worktree": {
+        "normalized_sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "size": 4275
+      },
+      "running_container": {
+        "normalized_sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "sha256": "6245f65147f4b174ee3b61e202cb200611cd640ce93173c73c9dca3ab7bcb2e6",
+        "size": 4424
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "f2622e6358d87eb6caf21d9de39ab98bdc9eaa32119e470953fe0741ca855960",
+        "sha256": "6245f65147f4b174ee3b61e202cb200611cd640ce93173c73c9dca3ab7bcb2e6",
+        "size": 4424
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/data/news_client.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "size": 9806
+      },
+      "local_worktree": {
+        "normalized_sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "size": 9806
+      },
+      "running_container": {
+        "normalized_sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "sha256": "9ea1eb23649a8098803d6f2418011264dc3c14ddce5214d81f8488140e42047f",
+        "size": 10080
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "66c44a3df7cb79698806b4b02c832af60e04a94a23b71d2c6cef789fee077588",
+        "sha256": "9ea1eb23649a8098803d6f2418011264dc3c14ddce5214d81f8488140e42047f",
+        "size": 10080
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/data/storage.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "size": 8465
+      },
+      "local_worktree": {
+        "normalized_sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "size": 8465
+      },
+      "running_container": {
+        "normalized_sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "sha256": "3240a110d792c60dd5213054a1986a69fa6b99f39fcb50e51bc35bd1e24d5784",
+        "size": 8708
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "9412c8e1bf10787e85a66509ba79a2b0f62b430cb2f20fecf19fa621344fe17e",
+        "sha256": "3240a110d792c60dd5213054a1986a69fa6b99f39fcb50e51bc35bd1e24d5784",
+        "size": 8708
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "size": 1233
+      },
+      "local_worktree": {
+        "normalized_sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "size": 1233
+      },
+      "running_container": {
+        "normalized_sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "sha256": "72db2498bf8c9ca5b0a9ceed3edd99811e7a54e72f9cc80e23b609643a414788",
+        "size": 1275
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e5b597e7fc023978122145d567aa85bb08611722400d0a8c12ee1bf3196976c0",
+        "sha256": "72db2498bf8c9ca5b0a9ceed3edd99811e7a54e72f9cc80e23b609643a414788",
+        "size": 1275
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/adapters.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "size": 3634
+      },
+      "local_worktree": {
+        "normalized_sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "size": 3634
+      },
+      "running_container": {
+        "normalized_sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "sha256": "f2b32893c725926973ed215d6db2158e10b628b7f3971950cdaee563357d279b",
+        "size": 3755
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "ef3558ec712e063e4d49d98a716c7dc183cff2b515d8163f91018d6157efccc9",
+        "sha256": "f2b32893c725926973ed215d6db2158e10b628b7f3971950cdaee563357d279b",
+        "size": 3755
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/binance_adapter.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "size": 20503
+      },
+      "local_worktree": {
+        "normalized_sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "size": 20503
+      },
+      "running_container": {
+        "normalized_sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "sha256": "8bb8b213fc5573337971972647f0c5b3f1fa45ca4021a60c69dbd595f4acdb10",
+        "size": 21039
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "a67beef11e9d53a34abfb888c88f67f2c113b048bdd65a5f5d15fb330b399bbd",
+        "sha256": "8bb8b213fc5573337971972647f0c5b3f1fa45ca4021a60c69dbd595f4acdb10",
+        "size": 21039
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/idempotency.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "size": 1580
+      },
+      "local_worktree": {
+        "normalized_sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "size": 1580
+      },
+      "running_container": {
+        "normalized_sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "sha256": "594ce3225aa6e512d1cac0e87dc61dc7f63bc2cc2e3f020dae1474fe585425ee",
+        "size": 1642
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d73d8723d2b3527acb68c8eb4571e4da8c5f94978a4c0e9bdf78d86e32802da4",
+        "sha256": "594ce3225aa6e512d1cac0e87dc61dc7f63bc2cc2e3f020dae1474fe585425ee",
+        "size": 1642
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/main.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "a6fc1063a138cc06fc5d0029fe82067e6ef09c6b2c71a38ac2127f5a5a7f1d68",
+        "sha256": "a6fc1063a138cc06fc5d0029fe82067e6ef09c6b2c71a38ac2127f5a5a7f1d68",
+        "size": 33709
+      },
+      "local_worktree": {
+        "normalized_sha256": "a6fc1063a138cc06fc5d0029fe82067e6ef09c6b2c71a38ac2127f5a5a7f1d68",
+        "sha256": "afacb95bae7b461b35bba41ab377f0ea381d41273bd618099e8c03e8555bee6f",
+        "size": 34566
+      },
+      "running_container": {
+        "normalized_sha256": "a6fc1063a138cc06fc5d0029fe82067e6ef09c6b2c71a38ac2127f5a5a7f1d68",
+        "sha256": "afacb95bae7b461b35bba41ab377f0ea381d41273bd618099e8c03e8555bee6f",
+        "size": 34566
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "a6fc1063a138cc06fc5d0029fe82067e6ef09c6b2c71a38ac2127f5a5a7f1d68",
+        "sha256": "afacb95bae7b461b35bba41ab377f0ea381d41273bd618099e8c03e8555bee6f",
+        "size": 34566
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/planner.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "56514ee1706de588922b54a0ac14a09fb4364a1a31130e7f55df4c3b48552c52",
+        "sha256": "56514ee1706de588922b54a0ac14a09fb4364a1a31130e7f55df4c3b48552c52",
+        "size": 5080
+      },
+      "local_worktree": {
+        "normalized_sha256": "56514ee1706de588922b54a0ac14a09fb4364a1a31130e7f55df4c3b48552c52",
+        "sha256": "07da02891c8c3e10ee1d7a2bfc1637994b992b772e2f8e0d0332fb1d3cde4aa7",
+        "size": 5226
+      },
+      "running_container": {
+        "normalized_sha256": "56514ee1706de588922b54a0ac14a09fb4364a1a31130e7f55df4c3b48552c52",
+        "sha256": "68a4979b2ee565a5f1ed67ea35616c1558971c2c029cd5df8bcf1ecbb5ca441f",
+        "size": 5231
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "56514ee1706de588922b54a0ac14a09fb4364a1a31130e7f55df4c3b48552c52",
+        "sha256": "68a4979b2ee565a5f1ed67ea35616c1558971c2c029cd5df8bcf1ecbb5ca441f",
+        "size": 5231
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/reconciler.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "size": 1704
+      },
+      "local_worktree": {
+        "normalized_sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "size": 1704
+      },
+      "running_container": {
+        "normalized_sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "sha256": "a57947b6f10e22e59965008967006e5935ef41510a25e263bbf8c9b2088c52de",
+        "size": 1757
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "da81b6779ece607fb218757cf31cf7db3fdfba1b773455a0089ec2b9a8e8d09a",
+        "sha256": "a57947b6f10e22e59965008967006e5935ef41510a25e263bbf8c9b2088c52de",
+        "size": 1757
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/redis_bus.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "abc0a7300fe1191938f37601e27ab24c34aaf274edc183bf7fb028f9dc9cf0e7",
+        "sha256": "abc0a7300fe1191938f37601e27ab24c34aaf274edc183bf7fb028f9dc9cf0e7",
+        "size": 17427
+      },
+      "local_worktree": {
+        "normalized_sha256": "abc0a7300fe1191938f37601e27ab24c34aaf274edc183bf7fb028f9dc9cf0e7",
+        "sha256": "99baea4323395ca8bc89c7f3fcbba3c450f050737e05129ee4598d2419dc14cd",
+        "size": 17913
+      },
+      "running_container": {
+        "normalized_sha256": "abc0a7300fe1191938f37601e27ab24c34aaf274edc183bf7fb028f9dc9cf0e7",
+        "sha256": "99baea4323395ca8bc89c7f3fcbba3c450f050737e05129ee4598d2419dc14cd",
+        "size": 17913
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "abc0a7300fe1191938f37601e27ab24c34aaf274edc183bf7fb028f9dc9cf0e7",
+        "sha256": "99baea4323395ca8bc89c7f3fcbba3c450f050737e05129ee4598d2419dc14cd",
+        "size": 17913
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/service.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d85890977110239cb30dd7db8f66e273b423e2919813d2798b3866ef0e85cf72",
+        "sha256": "d85890977110239cb30dd7db8f66e273b423e2919813d2798b3866ef0e85cf72",
+        "size": 114739
+      },
+      "local_worktree": {
+        "normalized_sha256": "d85890977110239cb30dd7db8f66e273b423e2919813d2798b3866ef0e85cf72",
+        "sha256": "ddabacbb0798ff206f9938804b1e29e627d279875d196b2ce264765ba24f27de",
+        "size": 117326
+      },
+      "running_container": {
+        "normalized_sha256": "d85890977110239cb30dd7db8f66e273b423e2919813d2798b3866ef0e85cf72",
+        "sha256": "95e314d6c9f7172a9b5d29bd8fd1f1347fa99705e4e0f493c2a19c7d0373eb38",
+        "size": 117628
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d85890977110239cb30dd7db8f66e273b423e2919813d2798b3866ef0e85cf72",
+        "sha256": "95e314d6c9f7172a9b5d29bd8fd1f1347fa99705e4e0f493c2a19c7d0373eb38",
+        "size": 117628
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/state_wal.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "21fe4b1fb89d51f3e22b2f6a4ca96e6ddaac475385b5507db365eb74695b5fba",
+        "sha256": "21fe4b1fb89d51f3e22b2f6a4ca96e6ddaac475385b5507db365eb74695b5fba",
+        "size": 11131
+      },
+      "local_worktree": {
+        "normalized_sha256": "21fe4b1fb89d51f3e22b2f6a4ca96e6ddaac475385b5507db365eb74695b5fba",
+        "sha256": "c9aee0d64dda324f61e5d6efc17005167ab5a7104f55747031d87d16cbb2303c",
+        "size": 11451
+      },
+      "running_container": {
+        "normalized_sha256": "21fe4b1fb89d51f3e22b2f6a4ca96e6ddaac475385b5507db365eb74695b5fba",
+        "sha256": "c9aee0d64dda324f61e5d6efc17005167ab5a7104f55747031d87d16cbb2303c",
+        "size": 11451
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "21fe4b1fb89d51f3e22b2f6a4ca96e6ddaac475385b5507db365eb74695b5fba",
+        "sha256": "c9aee0d64dda324f61e5d6efc17005167ab5a7104f55747031d87d16cbb2303c",
+        "size": 11451
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/execution/watchdog.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "5038abe0cc566c76ce269071f84d1bda3b8e5788da31c4ccb9f6ec6e1aa7d691",
+        "sha256": "5038abe0cc566c76ce269071f84d1bda3b8e5788da31c4ccb9f6ec6e1aa7d691",
+        "size": 9777
+      },
+      "local_worktree": {
+        "normalized_sha256": "5038abe0cc566c76ce269071f84d1bda3b8e5788da31c4ccb9f6ec6e1aa7d691",
+        "sha256": "9f20e4d3bb231ff7128e88f902811be3057486f90362bdb40fa14eb8af0cea69",
+        "size": 10040
+      },
+      "running_container": {
+        "normalized_sha256": "5038abe0cc566c76ce269071f84d1bda3b8e5788da31c4ccb9f6ec6e1aa7d691",
+        "sha256": "9f20e4d3bb231ff7128e88f902811be3057486f90362bdb40fa14eb8af0cea69",
+        "size": 10040
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "5038abe0cc566c76ce269071f84d1bda3b8e5788da31c4ccb9f6ec6e1aa7d691",
+        "sha256": "9f20e4d3bb231ff7128e88f902811be3057486f90362bdb40fa14eb8af0cea69",
+        "size": 10040
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/model_registry.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "size": 14019
+      },
+      "local_worktree": {
+        "normalized_sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "size": 14019
+      },
+      "running_container": {
+        "normalized_sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "sha256": "069321568301b932737f0508b62bd723fda6c2b7a352e6d44fb2c8324eb80f4d",
+        "size": 14402
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "dc3b45ffe154fb3dca3c0283932141363f9efe0b1668e278fe17ce242e52b949",
+        "sha256": "069321568301b932737f0508b62bd723fda6c2b7a352e6d44fb2c8324eb80f4d",
+        "size": 14402
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/models/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "size": 315
+      },
+      "local_worktree": {
+        "normalized_sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "size": 315
+      },
+      "running_container": {
+        "normalized_sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "sha256": "4b0973f504dd7655af4083ec848e2c55411103f7c98b5bbe674a494c6c1c9ebe",
+        "size": 326
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "8d79f0e8895c94d64a3ade89ae888ac6ab1df0cb857cfaa70c9fe11da089d82f",
+        "sha256": "4b0973f504dd7655af4083ec848e2c55411103f7c98b5bbe674a494c6c1c9ebe",
+        "size": 326
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/models/chronos_wrapper.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "size": 2468
+      },
+      "local_worktree": {
+        "normalized_sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "size": 2468
+      },
+      "running_container": {
+        "normalized_sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "sha256": "90e3aa3d8481269dc6fe961cd852e330193fb8553aeb6b396e1de857ccf9a664",
+        "size": 2553
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "24977483e5807ad98d64c2c31d3aae04d04e7848f29372d0540e745b01f2dec1",
+        "sha256": "90e3aa3d8481269dc6fe961cd852e330193fb8553aeb6b396e1de857ccf9a664",
+        "size": 2553
+      }
+    }
+  },
+  {
+    "classification": "unresolved_production_only_behavior",
+    "path": "quant_v2/models/confirmation.py",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": {
+        "normalized_sha256": "cb9b7336c3990f6cedf04359d806c4333f3983b08d1b2ac5f92a55d93fca77ff",
+        "sha256": "cb9b7336c3990f6cedf04359d806c4333f3983b08d1b2ac5f92a55d93fca77ff",
+        "size": 13144
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "cb9b7336c3990f6cedf04359d806c4333f3983b08d1b2ac5f92a55d93fca77ff",
+        "sha256": "cb9b7336c3990f6cedf04359d806c4333f3983b08d1b2ac5f92a55d93fca77ff",
+        "size": 13144
+      }
+    }
+  },
+  {
+    "classification": "unresolved_production_only_behavior",
+    "path": "quant_v2/models/confirmation_trainer.py",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": {
+        "normalized_sha256": "fc96be8296ebc67a59895564e22802bb9a7d6fa5d142e1c9c2ffd353ec1e71b9",
+        "sha256": "fc96be8296ebc67a59895564e22802bb9a7d6fa5d142e1c9c2ffd353ec1e71b9",
+        "size": 13544
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "fc96be8296ebc67a59895564e22802bb9a7d6fa5d142e1c9c2ffd353ec1e71b9",
+        "sha256": "fc96be8296ebc67a59895564e22802bb9a7d6fa5d142e1c9c2ffd353ec1e71b9",
+        "size": 13544
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/models/ensemble.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "size": 8371
+      },
+      "local_worktree": {
+        "normalized_sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "size": 8371
+      },
+      "running_container": {
+        "normalized_sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "sha256": "c97caa4a187f0fd9dbeb1f99b8e1fa3ae0c0a71e0de20eae0f1684dd963def3f",
+        "size": 8607
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "ef87644f6fb27c0c055e655d1f16b137f150881b33db135f697fc27e454ce864",
+        "sha256": "c97caa4a187f0fd9dbeb1f99b8e1fa3ae0c0a71e0de20eae0f1684dd963def3f",
+        "size": 8607
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/models/predictor.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "size": 2041
+      },
+      "local_worktree": {
+        "normalized_sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "size": 2041
+      },
+      "running_container": {
+        "normalized_sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "sha256": "ac5bf9ebfec5f7c515260b102419df87595ca65138f35282d4888348ca0990be",
+        "size": 2103
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "35a816dda0c171c378e079146394067509d0038e6b186044baaa8f22bbabd6fc",
+        "sha256": "ac5bf9ebfec5f7c515260b102419df87595ca65138f35282d4888348ca0990be",
+        "size": 2103
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/models/trainer.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "size": 6154
+      },
+      "local_worktree": {
+        "normalized_sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "size": 6154
+      },
+      "running_container": {
+        "normalized_sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "sha256": "8a3732dc3bfd4e2b782e30965a2153519db693c30c3b8e8fde20e27dd8bffaba",
+        "size": 6341
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "c524de1a51d7c1087acfd06cf14b835a0f42a5131d5e0672d01f5c8e2a17585a",
+        "sha256": "8a3732dc3bfd4e2b782e30965a2153519db693c30c3b8e8fde20e27dd8bffaba",
+        "size": 6341
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/monitoring/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "size": 784
+      },
+      "local_worktree": {
+        "normalized_sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "size": 784
+      },
+      "running_container": {
+        "normalized_sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "sha256": "90487cbf2c185323f4bbad076cbb04fba3eda55b924559e157a9b50c952b12dd",
+        "size": 812
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "5f1c65f1eec8d08f36701a53729dc6359e9e3822847caf4d4f4f79ff381e5ff1",
+        "sha256": "90487cbf2c185323f4bbad076cbb04fba3eda55b924559e157a9b50c952b12dd",
+        "size": 812
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/monitoring/health_dashboard.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "size": 4023
+      },
+      "local_worktree": {
+        "normalized_sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "size": 4023
+      },
+      "running_container": {
+        "normalized_sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "sha256": "09e0d9b99f99385edee5673497c9d51d08f297a949b53fd1c8ca9cfb0de64b6b",
+        "size": 4133
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "a3c88f683618c9d674374d54f07e0945714541f6656f91c5d541bc7eb898d59d",
+        "sha256": "09e0d9b99f99385edee5673497c9d51d08f297a949b53fd1c8ca9cfb0de64b6b",
+        "size": 4133
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/monitoring/kill_switch.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "size": 2463
+      },
+      "local_worktree": {
+        "normalized_sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "size": 2463
+      },
+      "running_container": {
+        "normalized_sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "sha256": "6df78c2954100a3dcd8938b6713fb722fdece8e608104f17aa337f28a847dabb",
+        "size": 2535
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "1bf47c5ac09e0dfed6e5260dffc0ad8e82edfdd708a16acfeca38cb7322be351",
+        "sha256": "6df78c2954100a3dcd8938b6713fb722fdece8e608104f17aa337f28a847dabb",
+        "size": 2535
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/monitoring/shadow_drift.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "size": 2394
+      },
+      "local_worktree": {
+        "normalized_sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "size": 2394
+      },
+      "running_container": {
+        "normalized_sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "sha256": "897e1c646722760e5d96698480e31a5ffb2d51ad86201ca2ba8c6baa79e589bb",
+        "size": 2468
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "0fb32e502b2c01db93bddcb75165b864969ea8b94b6e695a98aab9653443f291",
+        "sha256": "897e1c646722760e5d96698480e31a5ffb2d51ad86201ca2ba8c6baa79e589bb",
+        "size": 2468
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/portfolio/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "size": 328
+      },
+      "local_worktree": {
+        "normalized_sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "size": 328
+      },
+      "running_container": {
+        "normalized_sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "sha256": "694514c78809da79457c0278656d0cf5f2765b86838daddf72d79a1303b5bee6",
+        "size": 339
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "616cf7240f0142786d091f8e9618ebdd3b35d708af8e847431fe94a2a593aeab",
+        "sha256": "694514c78809da79457c0278656d0cf5f2765b86838daddf72d79a1303b5bee6",
+        "size": 339
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/portfolio/allocation.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "size": 23337
+      },
+      "local_worktree": {
+        "normalized_sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "size": 23337
+      },
+      "running_container": {
+        "normalized_sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "sha256": "308be736094689f64f47ebb7b9a702b7463ec869a2926d407440141149c4e226",
+        "size": 23901
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "95d0b5726e328d8bc59492eb5e3880933b0aa95308f792e0ca45c286be1a3c89",
+        "sha256": "308be736094689f64f47ebb7b9a702b7463ec869a2926d407440141149c4e226",
+        "size": 23901
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/portfolio/cost_model.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "size": 8535
+      },
+      "local_worktree": {
+        "normalized_sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "size": 8535
+      },
+      "running_container": {
+        "normalized_sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "sha256": "dc0bfa48a2eb2d4204b8342bcb72e16ed24aeb74fd85cdc65493b86d0dd9edf7",
+        "size": 8772
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "752889bead044efbc0c104608e3ebd70f74d15153e1cc23e0231a7b82edeac77",
+        "sha256": "dc0bfa48a2eb2d4204b8342bcb72e16ed24aeb74fd85cdc65493b86d0dd9edf7",
+        "size": 8772
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/portfolio/optimizer.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "b52578c40d4dd67b0b252db34ac2b135dec39356c549ddfb6ea3b81d99c8e32a",
+        "sha256": "b52578c40d4dd67b0b252db34ac2b135dec39356c549ddfb6ea3b81d99c8e32a",
+        "size": 10787
+      },
+      "local_worktree": {
+        "normalized_sha256": "b52578c40d4dd67b0b252db34ac2b135dec39356c549ddfb6ea3b81d99c8e32a",
+        "sha256": "c33ebe8bab1efeae94aeaf83269404bf3e1c5a97ffb5efea8eceb08589273406",
+        "size": 11054
+      },
+      "running_container": {
+        "normalized_sha256": "b52578c40d4dd67b0b252db34ac2b135dec39356c549ddfb6ea3b81d99c8e32a",
+        "sha256": "c33ebe8bab1efeae94aeaf83269404bf3e1c5a97ffb5efea8eceb08589273406",
+        "size": 11054
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "b52578c40d4dd67b0b252db34ac2b135dec39356c549ddfb6ea3b81d99c8e32a",
+        "sha256": "c33ebe8bab1efeae94aeaf83269404bf3e1c5a97ffb5efea8eceb08589273406",
+        "size": 11054
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/portfolio/risk_policy.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "size": 5070
+      },
+      "local_worktree": {
+        "normalized_sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "size": 5070
+      },
+      "running_container": {
+        "normalized_sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "sha256": "56e11685bc1c1e2dad920d8cab93f7f7f2fa5b2a27fe7f4acf7f2d86c355120f",
+        "size": 5188
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d69af08d982d8e61ab538269eb52813ef245dbc3e28973035dc084ca7da15087",
+        "sha256": "56e11685bc1c1e2dad920d8cab93f7f7f2fa5b2a27fe7f4acf7f2d86c355120f",
+        "size": 5188
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "size": 1234
+      },
+      "local_worktree": {
+        "normalized_sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "size": 1234
+      },
+      "running_container": {
+        "normalized_sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "sha256": "f5b098bb5794f9da2a72782ab3f767aab73b31fbe48b8796cc0fdc0556082aae",
+        "size": 1279
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e9863798ddd016d27b070101f31b10b292c85fb022a7e97811c09f851c2d6e15",
+        "sha256": "f5b098bb5794f9da2a72782ab3f767aab73b31fbe48b8796cc0fdc0556082aae",
+        "size": 1279
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/backtest_report.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "size": 12150
+      },
+      "local_worktree": {
+        "normalized_sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "size": 12150
+      },
+      "running_container": {
+        "normalized_sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "sha256": "526403c7a0bee3f3bab43ceb8442509499e1442bcd081ffefe634673715c883d",
+        "size": 12517
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "f26126114e2a0c08d933f6577073e9a2eec0a1d0f0789d6c0a54a80d65223ee5",
+        "sha256": "526403c7a0bee3f3bab43ceb8442509499e1442bcd081ffefe634673715c883d",
+        "size": 12517
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/backtester.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "size": 12590
+      },
+      "local_worktree": {
+        "normalized_sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "size": 12590
+      },
+      "running_container": {
+        "normalized_sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "sha256": "bc3bb8cacda77d25d8240d4fd775cb423d5da39471e082697ded5267746d08d6",
+        "size": 12939
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "52a0abf9c79507974db8631442d6dcd626340198bf4af8d2fd41759f2ea6f22d",
+        "sha256": "bc3bb8cacda77d25d8240d4fd775cb423d5da39471e082697ded5267746d08d6",
+        "size": 12939
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/build_universe_snapshot.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "size": 4579
+      },
+      "local_worktree": {
+        "normalized_sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "size": 4579
+      },
+      "running_container": {
+        "normalized_sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "sha256": "6a8fbe5951e52b855d22692487505aa9f11a01c5ba9ce9a3b9e8d7cf965481a6",
+        "size": 4721
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "37833e29f53db8b6ca309335559c66ca0fc08a3a4671db4de1dc99e9e34c9cee",
+        "sha256": "6a8fbe5951e52b855d22692487505aa9f11a01c5ba9ce9a3b9e8d7cf965481a6",
+        "size": 4721
+      }
+    }
+  },
+  {
+    "classification": "unresolved_production_only_behavior",
+    "path": "quant_v2/research/confirmation_shadow_export.py",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": {
+        "normalized_sha256": "5fc3b740446a4369f5d2cb7b13dd185a1105ce98b34c8da7a0fd43b4d8fccd14",
+        "sha256": "5fc3b740446a4369f5d2cb7b13dd185a1105ce98b34c8da7a0fd43b4d8fccd14",
+        "size": 8844
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "5fc3b740446a4369f5d2cb7b13dd185a1105ce98b34c8da7a0fd43b4d8fccd14",
+        "sha256": "5fc3b740446a4369f5d2cb7b13dd185a1105ce98b34c8da7a0fd43b4d8fccd14",
+        "size": 8844
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/cross_sectional_features.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "size": 2059
+      },
+      "local_worktree": {
+        "normalized_sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "size": 2059
+      },
+      "running_container": {
+        "normalized_sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "sha256": "66411b79755c9dac0cc5cd9e166d7ed84984f671a4ee8952b024a15027b7a628",
+        "size": 2107
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "80bc53cb5f9a8fdd51afcacb6c686e187c1abfad3e3a31a15f51365d045241f5",
+        "sha256": "66411b79755c9dac0cc5cd9e166d7ed84984f671a4ee8952b024a15027b7a628",
+        "size": 2107
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/event_labels.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "size": 2171
+      },
+      "local_worktree": {
+        "normalized_sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "size": 2171
+      },
+      "running_container": {
+        "normalized_sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "sha256": "f5143710a5efdfd601f8d200774a519626d7857987403f5bca6b9a17142ed771",
+        "size": 2231
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "07dbb3cbbf509d07bdb6c05df996e8556848c5aeba166c9b907f97e98369d309",
+        "sha256": "f5143710a5efdfd601f8d200774a519626d7857987403f5bca6b9a17142ed771",
+        "size": 2231
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/experiment_score.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "size": 6178
+      },
+      "local_worktree": {
+        "normalized_sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "size": 6178
+      },
+      "running_container": {
+        "normalized_sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "sha256": "8c50d07660bc5aa0b430003cc9f852387f2cdfce7842a9ca18f8182062942ab3",
+        "size": 6348
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "3698067bb83ae1477dfa12a25878e6afc9c53a02b2424a120a76ba605c9ef220",
+        "sha256": "8c50d07660bc5aa0b430003cc9f852387f2cdfce7842a9ca18f8182062942ab3",
+        "size": 6348
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/forward_live.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "size": 2148
+      },
+      "local_worktree": {
+        "normalized_sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "size": 2148
+      },
+      "running_container": {
+        "normalized_sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "sha256": "6854f94e4cbdf157c313bc53d736bfc2db840f32ab779418c4ee7e44d44d4999",
+        "size": 2207
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "73813985c955c947c7777e984677d1e9384a0b7b0ce625381cd391d833820ad6",
+        "sha256": "6854f94e4cbdf157c313bc53d736bfc2db840f32ab779418c4ee7e44d44d4999",
+        "size": 2207
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/group_validation.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "size": 9707
+      },
+      "local_worktree": {
+        "normalized_sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "size": 9707
+      },
+      "running_container": {
+        "normalized_sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "sha256": "9e89f7a5ed594e04419119ecdeb8f4de17196f0558d9cbb68db64c0dd2e41d2c",
+        "size": 10008
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "36f48b9c6a9dd54fdf1d7d0ffe7f4ebdb5c616a7c36f1da38d429f8fb3ca7b1f",
+        "sha256": "9e89f7a5ed594e04419119ecdeb8f4de17196f0558d9cbb68db64c0dd2e41d2c",
+        "size": 10008
+      }
+    }
+  },
+  {
+    "classification": "replace_with_reviewed_local_change",
+    "path": "quant_v2/research/model_evaluator.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "4bba7475214b695a34af32f9a41751ad8a9a0c34dedc588aeb9029c011300146",
+        "sha256": "4bba7475214b695a34af32f9a41751ad8a9a0c34dedc588aeb9029c011300146",
+        "size": 32394
+      },
+      "local_worktree": {
+        "normalized_sha256": "8a9c43c3971823b6e81cad18875cbe64e20c60e7f26ac3914c8a479dca59780c",
+        "sha256": "8a9c43c3971823b6e81cad18875cbe64e20c60e7f26ac3914c8a479dca59780c",
+        "size": 33222
+      },
+      "running_container": {
+        "normalized_sha256": "4bba7475214b695a34af32f9a41751ad8a9a0c34dedc588aeb9029c011300146",
+        "sha256": "eeb4b06d249f9732195a62ea41b1b7047abb675ffa88457f26523fb5d2984902",
+        "size": 33304
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "4bba7475214b695a34af32f9a41751ad8a9a0c34dedc588aeb9029c011300146",
+        "sha256": "eeb4b06d249f9732195a62ea41b1b7047abb675ffa88457f26523fb5d2984902",
+        "size": 33304
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/regime_context.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "size": 2673
+      },
+      "local_worktree": {
+        "normalized_sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "size": 2673
+      },
+      "running_container": {
+        "normalized_sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "sha256": "94eefe852f7aef63818e2c7ce71773fe4f3c4224f7d6c592b79472c8acfd4dc6",
+        "size": 2746
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "c592bf6189e98de22656ea8416eadac94f2bc6c03273e3c976978403ea5b303a",
+        "sha256": "94eefe852f7aef63818e2c7ce71773fe4f3c4224f7d6c592b79472c8acfd4dc6",
+        "size": 2746
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/replay_regression.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "size": 1897
+      },
+      "local_worktree": {
+        "normalized_sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "size": 1897
+      },
+      "running_container": {
+        "normalized_sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "sha256": "733455b4e7f815f76da07df0a2c63a395a353a47aedd5c1ffba8507fe350edea",
+        "size": 1952
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "6d3406c999cf50a519bde463abe05897b1cb58a3b88805af1398fae8a0c3a75c",
+        "sha256": "733455b4e7f815f76da07df0a2c63a395a353a47aedd5c1ffba8507fe350edea",
+        "size": 1952
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/retrain_pipeline.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "size": 2229
+      },
+      "local_worktree": {
+        "normalized_sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "size": 2229
+      },
+      "running_container": {
+        "normalized_sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "sha256": "08a7499ed89eff30b150eb04df7cefead8e81d151aa2ee6ede873ed694d59fc7",
+        "size": 2295
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "56468a6b072023bac3855d4b2ddf0dfd593ccef90f84636b75f53ea6ab76c377",
+        "sha256": "08a7499ed89eff30b150eb04df7cefead8e81d151aa2ee6ede873ed694d59fc7",
+        "size": 2295
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/run_group_validation.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "size": 9809
+      },
+      "local_worktree": {
+        "normalized_sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "size": 9809
+      },
+      "running_container": {
+        "normalized_sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "sha256": "95ff2369b018f693e073d5df63520c8783c5e7fae341771a269d340a2193ba3f",
+        "size": 10075
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "c34192b9c241149731c829e9325aeb575c5b575910a5c9b33df7104bc1b184b5",
+        "sha256": "95ff2369b018f693e073d5df63520c8783c5e7fae341771a269d340a2193ba3f",
+        "size": 10075
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/scheduled_retrain.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "size": 20695
+      },
+      "local_worktree": {
+        "normalized_sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "size": 20695
+      },
+      "running_container": {
+        "normalized_sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "sha256": "1dbdc2e4f235fdfb6391767997b0474aae0ad4645acb79958724e71e9e6bb593",
+        "size": 21210
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "03b4b3e58da4fb985b95c2cc1ba7576473887203ceacc9e5bd6d8cc7180607d9",
+        "sha256": "1dbdc2e4f235fdfb6391767997b0474aae0ad4645acb79958724e71e9e6bb593",
+        "size": 21210
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/scorecard.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "size": 2551
+      },
+      "local_worktree": {
+        "normalized_sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "size": 2551
+      },
+      "running_container": {
+        "normalized_sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "sha256": "785bdef8d87b0ff1e9add887d2bd9e60309cef54f0d7dc9d77858cd9fef11295",
+        "size": 2634
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "7a473f210df9e927f5a67eb2c487707d5cfa634df45a6b101abdcfb6e21fbe6d",
+        "sha256": "785bdef8d87b0ff1e9add887d2bd9e60309cef54f0d7dc9d77858cd9fef11295",
+        "size": 2634
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/research/stage1_pipeline.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "size": 3599
+      },
+      "local_worktree": {
+        "normalized_sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "size": 3599
+      },
+      "running_container": {
+        "normalized_sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "sha256": "04e33247c734eec92de08d6f4b563b779300614802f577d3520440b7fcf52384",
+        "size": 3723
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "b5ab5c1459eb006924a74ae0a480ab142f74eb202b420f673bbbfd0472247972",
+        "sha256": "04e33247c734eec92de08d6f4b563b779300614802f577d3520440b7fcf52384",
+        "size": 3723
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/strategy/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "local_worktree": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "running_container": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/strategy/event_gate.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "size": 3519
+      },
+      "local_worktree": {
+        "normalized_sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "size": 3519
+      },
+      "running_container": {
+        "normalized_sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "sha256": "029b101e4b4a6734ecf99e9c6b249d5002d1657fea104f6f5132101a33963037",
+        "size": 3624
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "3d1dbfd9bee1240829f13c00376a832b53f2fa5bc689e06f1f076707aa443383",
+        "sha256": "029b101e4b4a6734ecf99e9c6b249d5002d1657fea104f6f5132101a33963037",
+        "size": 3624
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/strategy/regime.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "size": 5071
+      },
+      "local_worktree": {
+        "normalized_sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "size": 5071
+      },
+      "running_container": {
+        "normalized_sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "sha256": "565708775d26615a9a69248720b52ada60944d0731b036bb6aab8ed308e60b06",
+        "size": 5240
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "57112aa48116313b48567b64ed1e38e2f6e2b100b6b80e53e723f72db80d7c0c",
+        "sha256": "565708775d26615a9a69248720b52ada60944d0731b036bb6aab8ed308e60b06",
+        "size": 5240
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/telebot/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "size": 386
+      },
+      "local_worktree": {
+        "normalized_sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "size": 386
+      },
+      "running_container": {
+        "normalized_sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "sha256": "2bd3404d196fdd932e1f6f81e44ac49ae1e588d36ce97422149f80024b50db64",
+        "size": 401
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "3db9174e6fed56eb8833813405e3ab316163d762506dc493e1b20a1f67181633",
+        "sha256": "2bd3404d196fdd932e1f6f81e44ac49ae1e588d36ce97422149f80024b50db64",
+        "size": 401
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/telebot/bridge.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "size": 10059
+      },
+      "local_worktree": {
+        "normalized_sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "size": 10059
+      },
+      "running_container": {
+        "normalized_sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "sha256": "5fefa6bcd1a7edb0c9a3dae5dd5996f11ea6eedb933f7b063ca27c72f7720532",
+        "size": 10348
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "65667067d41e803f795162e70adcffe703cbf3a7e886790e36d703c7e7882223",
+        "sha256": "5fefa6bcd1a7edb0c9a3dae5dd5996f11ea6eedb933f7b063ca27c72f7720532",
+        "size": 10348
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/telebot/signal_manager.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "a64b6cb9b0d1d3d1ba17de922f56d6ab04d558ef06b8a50ecb8796987e7622c1",
+        "sha256": "a64b6cb9b0d1d3d1ba17de922f56d6ab04d558ef06b8a50ecb8796987e7622c1",
+        "size": 80464
+      },
+      "local_worktree": {
+        "normalized_sha256": "a64b6cb9b0d1d3d1ba17de922f56d6ab04d558ef06b8a50ecb8796987e7622c1",
+        "sha256": "664b7d5afd925d71a6feb130ec692b556937ead1c278ab2f2f8f2b57474a1e26",
+        "size": 81977
+      },
+      "running_container": {
+        "normalized_sha256": "a64b6cb9b0d1d3d1ba17de922f56d6ab04d558ef06b8a50ecb8796987e7622c1",
+        "sha256": "45685112be047805ad7f41d87a7a1d287281e43e3e0e1aa6b9acf95ea3ba0791",
+        "size": 82409
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "a64b6cb9b0d1d3d1ba17de922f56d6ab04d558ef06b8a50ecb8796987e7622c1",
+        "sha256": "45685112be047805ad7f41d87a7a1d287281e43e3e0e1aa6b9acf95ea3ba0791",
+        "size": 82409
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/telebot/symbol_scorecard.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "size": 6428
+      },
+      "local_worktree": {
+        "normalized_sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "size": 6428
+      },
+      "running_container": {
+        "normalized_sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "sha256": "f4b4694c42f60821ed044f23526ba226ff3ecac0d077fbe0ada23d1e291145a1",
+        "size": 6618
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "b4f3c59ac206362980d422b9d0357d5dd11ce2d1c4ebed4fb19ee02b1bb96be3",
+        "sha256": "f4b4694c42f60821ed044f23526ba226ff3ecac0d077fbe0ada23d1e291145a1",
+        "size": 6618
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/validation/__init__.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "size": 352
+      },
+      "local_worktree": {
+        "normalized_sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "size": 352
+      },
+      "running_container": {
+        "normalized_sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "sha256": "828c7fa2bd1b44e8944f333afebe5c4787f8a1decb9a571bdb80140ef463c2e3",
+        "size": 367
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "e440c76973bfda13aa52781710484c01cfb3eb53500f36dd4db048e513595ac8",
+        "sha256": "828c7fa2bd1b44e8944f333afebe5c4787f8a1decb9a571bdb80140ef463c2e3",
+        "size": 367
+      }
+    }
+  },
+  {
+    "classification": "keep_verified_runtime_behavior",
+    "path": "quant_v2/validation/purged_group_cpcv.py",
+    "surfaces": {
+      "local_head": {
+        "normalized_sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "size": 4724
+      },
+      "local_worktree": {
+        "normalized_sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "size": 4724
+      },
+      "running_container": {
+        "normalized_sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "sha256": "c214669935ce34c643e964c887f7bc66a191b78d371c27d94b0a8be656a45dcf",
+        "size": 4860
+      },
+      "ubuntu_host": {
+        "normalized_sha256": "d356f81808d6e4f952ce5a04e9ff9bd4cfb033a4b4881b61de2d984010ea6aee",
+        "sha256": "c214669935ce34c643e964c887f7bc66a191b78d371c27d94b0a8be656a45dcf",
+        "size": 4860
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "requirements-ci.in",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "1f66a1b2d16b49ab67b5486efbe51237681c934b89d1079c03ef50b9e7cd0087",
+        "sha256": "1f66a1b2d16b49ab67b5486efbe51237681c934b89d1079c03ef50b9e7cd0087",
+        "size": 61
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "requirements-ci.lock",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "70e447e220c22758cbaca185e30067a4672e0ed5d3582846661d62edb13a0d36",
+        "sha256": "70e447e220c22758cbaca185e30067a4672e0ed5d3582846661d62edb13a0d36",
+        "size": 29146
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "requirements.in",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "9c33c8609221eb9633e6540ea1b03946a1650d3c22a0e33794a5ea8340967708",
+        "sha256": "9c33c8609221eb9633e6540ea1b03946a1650d3c22a0e33794a5ea8340967708",
+        "size": 429
+      }
+    }
+  },
+  {
+    "classification": "host_only_deployment_source",
+    "path": "requirements.lock",
+    "surfaces": {
+      "local_head": null,
+      "local_worktree": null,
+      "running_container": null,
+      "ubuntu_host": {
+        "normalized_sha256": "9f93f4be5263a1f8d4247024320b3d812ab5c3046b0a31bfd1d1f8a24bc7de10",
+        "sha256": "9f93f4be5263a1f8d4247024320b3d812ab5c3046b0a31bfd1d1f8a24bc7de10",
+        "size": 78661
+      }
+    }
+  }
+]

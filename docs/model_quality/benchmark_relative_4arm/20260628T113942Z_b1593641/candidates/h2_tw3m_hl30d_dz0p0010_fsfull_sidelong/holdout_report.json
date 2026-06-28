@@ -1,0 +1,296 @@
+{
+  "candidate_id": "h2_tw3m_hl30d_dz0p0010_fsfull_sidelong",
+  "cost_adjusted_expectancy_bps": 0.19588420650508506,
+  "decision_count": 55,
+  "feature_importance": {
+    "feature_count": 93,
+    "top_features": [
+      {
+        "feature": "garman_klass_vol",
+        "importance": 0.2003918945108843
+      },
+      {
+        "feature": "hour_sin",
+        "importance": 0.12312717482068991
+      },
+      {
+        "feature": "hour_cos",
+        "importance": 0.0959386037113737
+      },
+      {
+        "feature": "rolling_std_10",
+        "importance": 0.08163011550752236
+      },
+      {
+        "feature": "btc_return_4h",
+        "importance": 0.03930513384258466
+      },
+      {
+        "feature": "rolling_std_20",
+        "importance": 0.0292755666635291
+      },
+      {
+        "feature": "parkinson_vol",
+        "importance": 0.027363018609973696
+      },
+      {
+        "feature": "dist_ema_20_50",
+        "importance": 0.027249356922255427
+      },
+      {
+        "feature": "roc_1",
+        "importance": 0.026415505193470048
+      },
+      {
+        "feature": "roc_3",
+        "importance": 0.02047496348643779
+      },
+      {
+        "feature": "atr_ratio_60_14",
+        "importance": 0.018767086719917135
+      },
+      {
+        "feature": "hours_to_funding_sin",
+        "importance": 0.018143399797014063
+      },
+      {
+        "feature": "ema_slope_50",
+        "importance": 0.015745455008366206
+      },
+      {
+        "feature": "ema_slope_5",
+        "importance": 0.014535519429831912
+      },
+      {
+        "feature": "dow_sin",
+        "importance": 0.013312610453671209
+      },
+      {
+        "feature": "europe_session",
+        "importance": 0.013298397789485729
+      },
+      {
+        "feature": "vol_zscore",
+        "importance": 0.013050379955505318
+      },
+      {
+        "feature": "vol_ratio_20",
+        "importance": 0.013044488813557117
+      },
+      {
+        "feature": "roc_20",
+        "importance": 0.012904876373582716
+      },
+      {
+        "feature": "hours_to_funding",
+        "importance": 0.012723562914850717
+      }
+    ]
+  },
+  "gross_expectancy_bps": 0.19588420650508506,
+  "holdout_accuracy": 0.6395748160261652,
+  "holdout_end": "2026-06-26 12:00:00+00:00",
+  "holdout_start": "2026-06-01 00:00:00+00:00",
+  "label_mode": "trade_outcome",
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "predicted_buy_count": 55,
+  "predicted_hold_count": 6060,
+  "predicted_sell_count": 0,
+  "predicted_skip_count": 6060,
+  "predicted_take_count": 55,
+  "prediction_audit": {
+    "buy_share": 0.008994276369582993,
+    "by_month": {
+      "2026-06": {
+        "buy_share": 0.008994276369582993,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 55,
+        "predicted_sell_count": 6060,
+        "probability_summary": {
+          "mean": 0.4388856023132331,
+          "median": 0.43781643502478534,
+          "p05": 0.3630255902758517,
+          "p95": 0.5144482187176358
+        },
+        "sample_count": 6115,
+        "sell_share": 0.9910057236304171
+      }
+    },
+    "by_symbol": {
+      "ADAUSDT": {
+        "buy_share": 0.0016313213703099511,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 1,
+        "predicted_sell_count": 612,
+        "probability_summary": {
+          "mean": 0.41409166267549835,
+          "median": 0.41246316423263935,
+          "p05": 0.3523743573270466,
+          "p95": 0.4790958335013475
+        },
+        "sample_count": 613,
+        "sell_share": 0.99836867862969
+      },
+      "AVAXUSDT": {
+        "buy_share": 0.0,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 0,
+        "predicted_sell_count": 613,
+        "probability_summary": {
+          "mean": 0.4220585311545528,
+          "median": 0.4216403078591424,
+          "p05": 0.36118578183932337,
+          "p95": 0.47951374752642917
+        },
+        "sample_count": 613,
+        "sell_share": 1.0
+      },
+      "BNBUSDT": {
+        "buy_share": 0.01639344262295082,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 10,
+        "predicted_sell_count": 600,
+        "probability_summary": {
+          "mean": 0.46019055450188273,
+          "median": 0.4622823421229982,
+          "p05": 0.37977904735944945,
+          "p95": 0.5316944079448018
+        },
+        "sample_count": 610,
+        "sell_share": 0.9836065573770492
+      },
+      "BTCUSDT": {
+        "buy_share": 0.021487603305785124,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 13,
+        "predicted_sell_count": 592,
+        "probability_summary": {
+          "mean": 0.4644463099299158,
+          "median": 0.4683141116875932,
+          "p05": 0.3919201196932218,
+          "p95": 0.5318532619470067
+        },
+        "sample_count": 605,
+        "sell_share": 0.9785123966942149
+      },
+      "DOGEUSDT": {
+        "buy_share": 0.011419249592169658,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 7,
+        "predicted_sell_count": 606,
+        "probability_summary": {
+          "mean": 0.44201885936283714,
+          "median": 0.44206615856394127,
+          "p05": 0.36695040768102194,
+          "p95": 0.5119177454634365
+        },
+        "sample_count": 613,
+        "sell_share": 0.9885807504078303
+      },
+      "ETHUSDT": {
+        "buy_share": 0.011494252873563218,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 7,
+        "predicted_sell_count": 602,
+        "probability_summary": {
+          "mean": 0.44326957650300575,
+          "median": 0.44223226090838114,
+          "p05": 0.36093358872615877,
+          "p95": 0.51371546677288
+        },
+        "sample_count": 609,
+        "sell_share": 0.9885057471264368
+      },
+      "LINKUSDT": {
+        "buy_share": 0.0065252854812398045,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 4,
+        "predicted_sell_count": 609,
+        "probability_summary": {
+          "mean": 0.43164544304913477,
+          "median": 0.43087541131343887,
+          "p05": 0.3595274757255116,
+          "p95": 0.5016652643484754
+        },
+        "sample_count": 613,
+        "sell_share": 0.9934747145187602
+      },
+      "LTCUSDT": {
+        "buy_share": 0.0065252854812398045,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 4,
+        "predicted_sell_count": 609,
+        "probability_summary": {
+          "mean": 0.4483331099713638,
+          "median": 0.44957402751842346,
+          "p05": 0.3729642693758525,
+          "p95": 0.5159094769788286
+        },
+        "sample_count": 613,
+        "sell_share": 0.9934747145187602
+      },
+      "SOLUSDT": {
+        "buy_share": 0.0016313213703099511,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 1,
+        "predicted_sell_count": 612,
+        "probability_summary": {
+          "mean": 0.424772462883997,
+          "median": 0.42470581114325745,
+          "p05": 0.3564867067067544,
+          "p95": 0.4884905309664768
+        },
+        "sample_count": 613,
+        "sell_share": 0.99836867862969
+      },
+      "XRPUSDT": {
+        "buy_share": 0.013050570962479609,
+        "one_sided_collapse": true,
+        "predicted_buy_count": 8,
+        "predicted_sell_count": 605,
+        "probability_summary": {
+          "mean": 0.4384959672832731,
+          "median": 0.4390792418006225,
+          "p05": 0.36084806744836373,
+          "p95": 0.51425672995946
+        },
+        "sample_count": 613,
+        "sell_share": 0.9869494290375204
+      }
+    },
+    "label_mode": "trade_outcome",
+    "one_sided_collapse": true,
+    "one_sided_take_collapse": true,
+    "predicted_buy_count": 55,
+    "predicted_hold_count": 6060,
+    "predicted_sell_count": 0,
+    "predicted_skip_count": 6060,
+    "predicted_take_count": 55,
+    "probability_summary": {
+      "mean": 0.4388856023132331,
+      "median": 0.43781643502478534,
+      "p05": 0.3630255902758517,
+      "p95": 0.5144482187176358
+    },
+    "sample_count": 6115,
+    "sell_share": 0.9910057236304171,
+    "skip_share": 0.9910057236304171,
+    "take_share": 0.008994276369582993,
+    "trade_outcome_side": "long"
+  },
+  "sample_count": 6115,
+  "symbols": [
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "threshold": 0.55,
+  "trade_outcome_side": "long"
+}

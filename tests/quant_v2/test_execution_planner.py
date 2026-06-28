@@ -82,6 +82,36 @@ def test_intents_to_order_plans_validate_equity() -> None:
         intents_to_order_plans(plan.intents, prices={"BTCUSDT": 50000.0}, equity_usd=0.0)
 
 
+def test_build_execution_intents_applies_target_headroom_ratio() -> None:
+    signals = [_signal("BTCUSDT", "BUY", 0.95)]
+    policy = PortfolioRiskPolicy(
+        max_symbol_exposure_frac=0.10,
+        max_gross_exposure_frac=0.20,
+        max_net_exposure_frac=0.20,
+    )
+
+    plan = build_execution_intents(
+        signals,
+        policy=policy,
+        config=PlannerConfig(
+            total_risk_budget_frac=1.0,
+            max_symbol_exposure_frac=0.10,
+            min_confidence=0.0,
+            enable_optimizer=False,
+            equity_usd=10_000.0,
+            target_headroom_ratio=0.85,
+        ),
+    )
+
+    assert plan.policy_result.exposures["BTCUSDT"] == pytest.approx(0.085)
+    assert plan.policy_result.gross_exposure <= 0.085 + 1e-12
+
+
+def test_planner_config_defaults_to_conservative_headroom() -> None:
+    cfg = PlannerConfig()
+    assert cfg.target_headroom_ratio == pytest.approx(0.85)
+
+
 # ====================================================================
 # audit_20260423 P0-3b — current_positions plumbing into the optimizer
 # ====================================================================

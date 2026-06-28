@@ -1,0 +1,107 @@
+{
+  "accuracy_at_selected": 0.5379632146416599,
+  "accuracy_optimal_accuracy": 0.5567636133007158,
+  "accuracy_optimal_threshold": 0.5,
+  "config": {
+    "concentration_penalty_weight": 25.0,
+    "drawdown_penalty_weight": 1.0,
+    "instability_penalty_weight": 10.0,
+    "min_actionable": 100,
+    "round_trip_cost_bps": 8.0,
+    "threshold_max": 0.8,
+    "threshold_min": 0.5,
+    "threshold_step": 0.05,
+    "turnover_penalty_bps": 0.0
+  },
+  "selected_actionable": 2295,
+  "selected_expectancy_bps": -52.197448132208145,
+  "selected_score": -1250.3101141285888,
+  "selected_threshold": 0.55,
+  "source": "economic_utility",
+  "thresholds": [
+    {
+      "accuracy": 0.5567636133007158,
+      "action_rate": 0.4016489988221437,
+      "concentration_share": 0.13715316941123393,
+      "eligible": true,
+      "fold_expectancy_std": 13.016723426078068,
+      "max_drawdown_bps": -569006.465063038,
+      "selected_actionable": 8866,
+      "selected_expectancy_bps": -64.1894348356497,
+      "selected_score": -5755.555757808638,
+      "threshold": 0.5
+    },
+    {
+      "accuracy": 0.5379632146416599,
+      "action_rate": 0.10396846969285131,
+      "concentration_share": 0.17647058823529413,
+      "eligible": true,
+      "fold_expectancy_std": 10.333682095396927,
+      "max_drawdown_bps": -119707.92977868409,
+      "selected_actionable": 2295,
+      "selected_expectancy_bps": -52.197448132208145,
+      "selected_score": -1250.3101141285888,
+      "threshold": 0.55
+    },
+    {
+      "accuracy": 0.5250973996557036,
+      "action_rate": 0.0031258494156020658,
+      "concentration_share": 0.21739130434782608,
+      "eligible": false,
+      "fold_expectancy_std": 13.733833522169776,
+      "max_drawdown_bps": -2330.8996372213724,
+      "selected_actionable": 69,
+      "selected_expectancy_bps": -34.196828376223806,
+      "selected_score": -58.87920810065451,
+      "threshold": 0.6
+    },
+    {
+      "accuracy": 0.5240554498505029,
+      "action_rate": 0.0,
+      "concentration_share": 0.0,
+      "eligible": false,
+      "fold_expectancy_std": 0.0,
+      "max_drawdown_bps": 0.0,
+      "selected_actionable": 0,
+      "selected_expectancy_bps": 0.0,
+      "selected_score": 0.0,
+      "threshold": 0.65
+    },
+    {
+      "accuracy": 0.5240554498505029,
+      "action_rate": 0.0,
+      "concentration_share": 0.0,
+      "eligible": false,
+      "fold_expectancy_std": 0.0,
+      "max_drawdown_bps": 0.0,
+      "selected_actionable": 0,
+      "selected_expectancy_bps": 0.0,
+      "selected_score": 0.0,
+      "threshold": 0.7
+    },
+    {
+      "accuracy": 0.5240554498505029,
+      "action_rate": 0.0,
+      "concentration_share": 0.0,
+      "eligible": false,
+      "fold_expectancy_std": 0.0,
+      "max_drawdown_bps": 0.0,
+      "selected_actionable": 0,
+      "selected_expectancy_bps": 0.0,
+      "selected_score": 0.0,
+      "threshold": 0.75
+    },
+    {
+      "accuracy": 0.5240554498505029,
+      "action_rate": 0.0,
+      "concentration_share": 0.0,
+      "eligible": false,
+      "fold_expectancy_std": 0.0,
+      "max_drawdown_bps": 0.0,
+      "selected_actionable": 0,
+      "selected_expectancy_bps": 0.0,
+      "selected_score": 0.0,
+      "threshold": 0.8
+    }
+  ]
+}

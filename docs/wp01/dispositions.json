@@ -1,0 +1,104 @@
+{
+  "policy": {
+    "canonicality": "No retained production source is canonical until reviewed changes land on a clean recovery branch and its manifest is reproduced by two reviewers.",
+    "decisions": ["keep", "replace", "discard", "unresolved"]
+  },
+  "records": [
+    {
+      "audit_findings": ["F-05", "F-18"],
+      "citation": "docs/wp01/source_reconciliation.json#Dockerfile",
+      "decision": "keep",
+      "path": "Dockerfile",
+      "reason": "Host-only build source matches the local worktree after normalization; absence from the runtime filesystem is expected.",
+      "required_proof": "WP-02 exact-image build and test attestation"
+    },
+    {
+      "audit_findings": ["F-05"],
+      "citation": "docs/wp01/source_reconciliation.json#deploy/",
+      "decision": "keep",
+      "path": "deploy/*",
+      "reason": "The six retained deployment scripts/service files match the local worktree and remain source evidence, not runtime image content.",
+      "required_proof": "WP-15 deployment and rollback rehearsal"
+    },
+    {
+      "audit_findings": ["F-05", "F-07"],
+      "citation": "docs/wp01/source_reconciliation.json#docker-compose.yml",
+      "decision": "replace",
+      "path": "docker-compose.yml",
+      "reason": "The audited host version publishes unauthenticated Redis; the accepted WP-00 repository control removes publication and adds authenticated configuration. Production deployment and runtime validation remain open.",
+      "required_proof": "Accepted WP-00 repository tests plus pending Compose runtime validation"
+    },
+    {
+      "audit_findings": ["F-04", "F-05"],
+      "citation": "docs/wp01/source_reconciliation.json#docker-compose.override.yml",
+      "decision": "replace",
+      "path": "docker-compose.override.yml",
+      "reason": "The accepted WP-00 override enforces evaluator auto-promotion deployment policy. Production deployment and runtime validation remain open.",
+      "required_proof": "Accepted WP-00 evaluator tests plus pending Compose runtime validation"
+    },
+    {
+      "audit_findings": ["F-05"],
+      "citation": "docs/wp01/source_reconciliation.json#docker-compose.prod.yml",
+      "decision": "keep",
+      "path": "docker-compose.prod.yml",
+      "reason": "Host-only deployment source matches the local worktree after normalization.",
+      "required_proof": "WP-02 rendered Compose policy test"
+    },
+    {
+      "audit_findings": ["F-08", "F-18"],
+      "citation": "docs/wp01/source_reconciliation.json#requirements",
+      "decision": "unresolved",
+      "path": "requirements*",
+      "reason": "These four host-only files are absent from both the local checkout and runtime filesystem and are not bound to a clean source commit.",
+      "required_proof": "WP-02 must replace them with a reviewed Python 3.11 lock and bind its digest to the image"
+    },
+    {
+      "audit_findings": ["F-06"],
+      "citation": "docs/wp01/source_reconciliation.json#quant/telebot/main.py",
+      "decision": "replace",
+      "path": "quant/telebot/main.py",
+      "reason": "The audited runtime logs credential-bearing HTTP URLs; the accepted WP-00 repository control adds transport suppression and final-output redaction. Production deployment and credential rotation remain open.",
+      "required_proof": "Accepted WP-00 credential tests plus pending production operational closure"
+    },
+    {
+      "audit_findings": ["F-06"],
+      "citation": "docs/wp01/source_reconciliation.json#quant/telebot/redaction.py",
+      "decision": "discard",
+      "path": "quant/telebot/redaction.py",
+      "reason": "This untracked production-only helper is not imported by the audited runtime main module and is superseded by the accepted tested WP-00 repository implementation.",
+      "required_proof": "Credential canary test must pass without this file"
+    },
+    {
+      "audit_findings": ["F-04", "F-14"],
+      "citation": "docs/wp01/source_reconciliation.json#quant_v2/research/model_evaluator.py",
+      "decision": "replace",
+      "path": "quant_v2/research/model_evaluator.py",
+      "reason": "The accepted WP-00 repository policy prevents persistent or direct controls from exceeding deployment auto-promotion policy. Production deployment remains open.",
+      "required_proof": "Accepted WP-00 evaluator tests plus pending production operational closure"
+    },
+    {
+      "audit_findings": ["F-01", "F-10", "F-14", "F-15", "F-16"],
+      "citation": "docs/wp01/source_reconciliation.json#quant_v2/models/confirmation.py",
+      "decision": "discard",
+      "path": "quant_v2/models/confirmation.py",
+      "reason": "Untracked experimental production-only confirmation model code has no retained test provenance or clean commit binding and belongs behind the rebuilt data, feature, artifact, and replay contracts.",
+      "required_proof": "Any replacement must enter through WP-08, WP-10, and WP-11 contracts"
+    },
+    {
+      "audit_findings": ["F-01", "F-10", "F-14", "F-15", "F-16"],
+      "citation": "docs/wp01/source_reconciliation.json#quant_v2/models/confirmation_trainer.py",
+      "decision": "discard",
+      "path": "quant_v2/models/confirmation_trainer.py",
+      "reason": "Untracked experimental trainer uses a simple holdout and flat-cost directional evidence outside the required temporal and executable-portfolio evaluation design.",
+      "required_proof": "Rebuild only after WP-08 through WP-12 acceptance"
+    },
+    {
+      "audit_findings": ["F-01", "F-14", "F-15", "F-16"],
+      "citation": "docs/wp01/source_reconciliation.json#quant_v2/research/confirmation_shadow_export.py",
+      "decision": "discard",
+      "path": "quant_v2/research/confirmation_shadow_export.py",
+      "reason": "The untracked exporter repeats per-symbol concat(ignore_index=True), blanket fillna(0), and an 80/20 row split, directly reproducing audited research-invalidating behavior.",
+      "required_proof": "A successor must use the canonical panel, feature contract, purged temporal validation, and executable replay"
+    }
+  ]
+}

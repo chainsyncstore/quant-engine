@@ -1,0 +1,135 @@
+{
+  "bindings": {
+    "all_app_containers_use_inspected_image": true,
+    "critical_host_container_matches": {
+      "bootstrap_registry.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "pyproject.toml": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant/telebot/main.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/data/multi_symbol_dataset.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/execution/adapters.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/execution/service.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/model_registry.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/portfolio/risk_policy.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/research/model_evaluator.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      },
+      "quant_v2/research/scheduled_retrain.py": {
+        "quant_model_eval": true,
+        "quant_retrain": true,
+        "quant_telegram": true
+      }
+    }
+  },
+  "docker": {
+    "containers": [
+      {
+        "container_id": "4861e7cc0d5ae98fa7c1b8292c2195a88b923b483113f8371ca45a6e019888bf",
+        "image_id": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+        "labels": {
+          "com.docker.compose.config-hash": "204f631c1e8b3353dc0dd4622678a92c77b1dea6952d2eaad7590fccbf3066fe",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "redis:service_started:false",
+          "com.docker.compose.image": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "hypothesis-research-engine",
+          "com.docker.compose.project.config_files": "/home/admin-4arm/hypothesis-research-engine/docker-compose.yml,/home/admin-4arm/hypothesis-research-engine/docker-compose.override.yml",
+          "com.docker.compose.project.working_dir": "/home/admin-4arm/hypothesis-research-engine",
+          "com.docker.compose.service": "model_evaluator",
+          "com.docker.compose.version": "2.29.7"
+        },
+        "name": "quant_model_eval",
+        "workdir": "/app"
+      },
+      {
+        "container_id": "935470fbaef0ee64804b885151dfc0b0ea28f0b14ec38f7bdc0569e933eff5ea",
+        "image_id": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+        "labels": {
+          "com.docker.compose.config-hash": "13a17a6e20e4d32d710b489755ec0d539d8b45583170c0be3b2d49cb5e5edaee",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "redis:service_started:false",
+          "com.docker.compose.image": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "hypothesis-research-engine",
+          "com.docker.compose.project.config_files": "/home/admin-4arm/hypothesis-research-engine/docker-compose.yml,/home/admin-4arm/hypothesis-research-engine/docker-compose.override.yml",
+          "com.docker.compose.project.working_dir": "/home/admin-4arm/hypothesis-research-engine",
+          "com.docker.compose.service": "retrain_scheduler",
+          "com.docker.compose.version": "2.29.7"
+        },
+        "name": "quant_retrain",
+        "workdir": "/app"
+      },
+      {
+        "container_id": "9ab34e3f03e9989cc2461c38503efc0fec1b8609d130538735b1aa84da19d846",
+        "image_id": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+        "labels": {
+          "com.docker.compose.config-hash": "b5c9ff2febeb36259990cad0f8ad2896559b143b445fc9a1ec53ddb371769e36",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "redis:service_started:false",
+          "com.docker.compose.image": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "hypothesis-research-engine",
+          "com.docker.compose.project.config_files": "/home/admin-4arm/hypothesis-research-engine/docker-compose.yml,/home/admin-4arm/hypothesis-research-engine/docker-compose.override.yml",
+          "com.docker.compose.project.working_dir": "/home/admin-4arm/hypothesis-research-engine",
+          "com.docker.compose.service": "telegram_bot",
+          "com.docker.compose.version": "2.29.7"
+        },
+        "name": "quant_telegram",
+        "workdir": "/app"
+      }
+    ],
+    "image": {
+      "architecture": "amd64",
+      "created": "2026-06-12T18:38:15.67783002Z",
+      "id": "sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58",
+      "labels": {
+        "com.docker.compose.project": "hypothesis-research-engine",
+        "com.docker.compose.service": "telegram_bot",
+        "com.docker.compose.version": "2.29.7"
+      },
+      "os": "linux",
+      "repo_digests": [
+        "quant_bot@sha256:e85886744eaf85cb275c6cd1bd344b56fc1609482152743bb1d616ecbb0c7d58"
+      ],
+      "workdir": "/app"
+    }
+  },
+  "git": {
+    "branch": "main",
+    "local_head": "507d6218fa6ed3df5831c3d9f18ab0bfebb107a9",
+    "ubuntu_head": "6234aff58092458683125c8abcba333bbda99388"
+  }
+}

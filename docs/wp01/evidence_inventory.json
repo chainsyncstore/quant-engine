@@ -1,0 +1,26 @@
+{
+  "ubuntu_audit_20260622/source_provenance/collection_scope.json": {
+    "sha256": "bcbe693bc8e55acdb487f9bd678878271ceb600770afd360c6439db867daffe2",
+    "size": 1587
+  },
+  "ubuntu_audit_20260622/source_provenance/container_archive_manifest.json": {
+    "sha256": "16baaaef827281fbf38a6ab110bbdc0ecb56b4e9aa7c89a745f8ae4b01b11a7f",
+    "size": 17923
+  },
+  "ubuntu_audit_20260622/source_provenance/container_source.tar.gz": {
+    "sha256": "6e7329b12430788bac2235a50baab2f337cd1b113c072720ca6a710f8c9c3efd",
+    "size": 244249
+  },
+  "ubuntu_audit_20260622/source_provenance/host_archive_manifest.json": {
+    "sha256": "4ac461d615ee0dbba9b08021201ad554d83cb320952fd44c333e000ac35e232b",
+    "size": 19791
+  },
+  "ubuntu_audit_20260622/source_provenance/host_source.tar.gz": {
+    "sha256": "dcc098a8ab927b4ab7bd1e17dd789d2f732affc229e284b9f9c6ad66d4f0d297",
+    "size": 301732
+  },
+  "ubuntu_audit_20260622/source_provenance/production_metadata.txt": {
+    "sha256": "047c81887c1e159c5c9d785c845ec7a0389fe01ec18b39261d8f34aafc1b81cd",
+    "size": 31973
+  }
+}

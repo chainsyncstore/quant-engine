@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from quant_v2.models.ensemble import HorizonEnsemble, DEFAULT_HORIZON_WEIGHTS
+from quant_v2.models.ensemble import HorizonEnsemble
 
 
 def _mock_trained_model(feature_names: list[str], proba: float, uncertainty: float) -> MagicMock:
@@ -194,8 +194,8 @@ def test_horizon_ensemble_from_directory_with_models() -> None:
         assert 4 in ensemble.models
 
 
-def test_horizon_ensemble_feature_alignment() -> None:
-    """Test ensemble aligns missing features with 0.0."""
+def test_horizon_ensemble_rejects_missing_features() -> None:
+    """Test ensemble fails closed when a required feature is missing."""
     # Model expects feat1, feat2, feat3 but we only provide feat1, feat2
     mock_model = MagicMock()
     mock_model.feature_names = ["feat1", "feat2", "feat3"]
@@ -204,17 +204,9 @@ def test_horizon_ensemble_feature_alignment() -> None:
     models = {2: mock_model}
     ensemble = HorizonEnsemble(models)
 
-    def mock_predict(model, X):
-        # Check that feat3 was added
-        assert "feat3" in X.columns
-        assert (X["feat3"] == 0.0).all()
-        return np.array([0.6]), np.array([0.2])
-
-    with patch("quant_v2.models.ensemble.predict_proba_with_uncertainty", side_effect=mock_predict):
-        X = pd.DataFrame({"feat1": [1.0], "feat2": [2.0]})
-        proba, uncertainty = ensemble.predict(X)
-
-    assert proba == pytest.approx(0.6)
+    X = pd.DataFrame({"feat1": [1.0], "feat2": [2.0]})
+    with pytest.raises(ValueError, match="Missing feature columns"):
+        ensemble.predict(X)
 
 
 def test_horizon_ensemble_weights_normalization() -> None:

@@ -1,0 +1,269 @@
+{
+  "actual_time_range": {
+    "end": "2026-06-26 14:00:00+00:00",
+    "start": "2025-12-28 15:00:00+00:00"
+  },
+  "content_digests": {
+    "frame_sha256": "d6dda29e2563024b2ebb5477555d1a0e2e43e792bfab877c23979a792b15ca60"
+  },
+  "coverage_by_symbol": {
+    "ADAUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "AVAXUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "BNBUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "BTCUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "DOGEUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "ETHUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "LINKUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "LTCUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "SOLUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    },
+    "XRPUSDT": {
+      "close": 1.0,
+      "funding_rate_raw": 0.9997685185185186,
+      "high": 1.0,
+      "low": 1.0,
+      "open": 1.0,
+      "open_interest": 0.1157407407407407,
+      "open_interest_value": 0.1157407407407407,
+      "taker_buy_volume": 1.0,
+      "taker_sell_volume": 1.0,
+      "volume": 1.0
+    }
+  },
+  "created_at": "2026-06-28T12:34:30.028913+00:00",
+  "dataset_name": "model_recovery_h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+  "duplicate_rows_per_symbol": {
+    "ADAUSDT": 0,
+    "AVAXUSDT": 0,
+    "BNBUSDT": 0,
+    "BTCUSDT": 0,
+    "DOGEUSDT": 0,
+    "ETHUSDT": 0,
+    "LINKUSDT": 0,
+    "LTCUSDT": 0,
+    "SOLUSDT": 0,
+    "XRPUSDT": 0
+  },
+  "failed_symbols": {},
+  "fetched_symbols": [
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "gap_stats_per_symbol": {
+    "ADAUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "AVAXUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "BNBUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "BTCUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "DOGEUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "ETHUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "LINKUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "LTCUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "SOLUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    },
+    "XRPUSDT": {
+      "expected_step": "0 days 01:00:00",
+      "gap_count": 0,
+      "max_gap": "0 days 01:00:00"
+    }
+  },
+  "metadata": {
+    "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+    "dead_zone_bps": 0.001,
+    "feature_set": "full",
+    "horizon": 8,
+    "label_mode": "trade_outcome",
+    "recency_half_life_days": 30,
+    "trade_outcome_profit_target_bps": 20.0,
+    "trade_outcome_round_trip_cost_bps": 8.0,
+    "trade_outcome_side": "short",
+    "trade_outcome_stop_loss_bps": 30.0,
+    "training_window_applied_by_temporal_folds": true,
+    "training_window_months": 3
+  },
+  "n_rows": 43200,
+  "n_symbols": 10,
+  "raw_schema_version": "wp08-multi-symbol-raw-v1",
+  "requested_symbols": [
+    "ADAUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "LINKUSDT",
+    "LTCUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "requested_time_range": {
+    "end": null,
+    "start": null
+  },
+  "rows_per_symbol": {
+    "ADAUSDT": 4320,
+    "AVAXUSDT": 4320,
+    "BNBUSDT": 4320,
+    "BTCUSDT": 4320,
+    "DOGEUSDT": 4320,
+    "ETHUSDT": 4320,
+    "LINKUSDT": 4320,
+    "LTCUSDT": 4320,
+    "SOLUSDT": 4320,
+    "XRPUSDT": 4320
+  },
+  "source_retrieved_at": "2026-06-28T12:34:30.028931+00:00",
+  "transformed_schema_version": "wp08-multi-symbol-transformed-v1",
+  "unique_timestamps_per_symbol": {
+    "ADAUSDT": 4320,
+    "AVAXUSDT": 4320,
+    "BNBUSDT": 4320,
+    "BTCUSDT": 4320,
+    "DOGEUSDT": 4320,
+    "ETHUSDT": 4320,
+    "LINKUSDT": 4320,
+    "LTCUSDT": 4320,
+    "SOLUSDT": 4320,
+    "XRPUSDT": 4320
+  }
+}

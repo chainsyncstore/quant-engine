@@ -148,6 +148,7 @@ def _add_user(
     user_id: int,
     *,
     is_active: bool,
+    live_mode: bool = False,
     hard_paused: bool = False,
     maintenance_pending: bool = False,
 ) -> None:
@@ -156,7 +157,7 @@ def _add_user(
     user.context = UserContext(
         telegram_id=user_id,
         is_active=is_active,
-        live_mode=False,
+        live_mode=live_mode,
         hard_risk_paused=hard_paused,
         hard_risk_pause_reason="hard_risk_breach" if hard_paused else None,
         hard_risk_pause_triggered_at=datetime(2026, 5, 28, 12, 0, 0),
@@ -213,6 +214,100 @@ def test_persist_hard_risk_pause_event_writes_user_context(temp_db) -> None:
     session.close()
 
 
+def test_request_reviewed_lifecycle_transition_persists_metadata_without_flipping_active_flag(
+    temp_db,
+) -> None:
+    Session = temp_db
+    _add_user(Session, 9017, is_active=True)
+
+    with patch.object(telebot_main, "SessionLocal", Session):
+        transition = telebot_main._request_reviewed_lifecycle_transition(
+            9017,
+            state="review_requested",
+            owner="telegram_operator",
+            reason="operator_stop",
+            evidence_ref="telegram:/stop",
+        )
+
+    assert transition is not None
+    assert transition["state"] == "review_requested"
+    assert transition["owner"] == "telegram_operator"
+    assert transition["retry_count"] == 1
+    assert transition["policy_version"] == telebot_main.LIFECYCLE_TRANSITION_POLICY_VERSION
+    assert transition["reason"] == "operator_stop"
+    assert transition["evidence_ref"] == "telegram:/stop"
+
+    session = Session()
+    db_user = session.query(User).filter_by(telegram_id=9017).first()
+    assert db_user is not None
+    assert db_user.context is not None
+    assert db_user.context.is_active is True
+    assert db_user.context.lifecycle_transition_state == "review_requested"
+    assert db_user.context.lifecycle_transition_owner == "telegram_operator"
+    assert db_user.context.lifecycle_transition_retry_count == 1
+    assert db_user.context.lifecycle_transition_policy_version == telebot_main.LIFECYCLE_TRANSITION_POLICY_VERSION
+    assert db_user.context.lifecycle_transition_approval_count == 0
+    assert db_user.context.lifecycle_transition_approved_by in (None, "")
+    assert db_user.context.lifecycle_transition_reason == "operator_stop"
+    assert db_user.context.lifecycle_transition_evidence_ref == "telegram:/stop"
+    assert db_user.context.lifecycle_transition_reconciliation_ref in (None, "")
+    assert db_user.context.lifecycle_transition_clear_reason in (None, "")
+
+    allowed = telebot_main._v2_routing_allowed_from_db(
+        9017,
+        bridge=SimpleNamespace(get_session_mode=lambda user_id: "paper"),
+        signal=SimpleNamespace(symbol="BTCUSDT", signal="BUY"),
+    )
+    assert allowed is False
+    session.close()
+
+
+def test_resolve_reviewed_lifecycle_transition_requires_two_live_approvals(temp_db) -> None:
+    Session = temp_db
+    _add_user(Session, 9018, is_active=True, live_mode=True)
+
+    with patch.object(telebot_main, "SessionLocal", Session):
+        telebot_main._request_reviewed_lifecycle_transition(
+            9018,
+            state="review_requested",
+            owner="telegram_operator",
+            reason="operator_stop",
+            evidence_ref="telegram:/stop",
+        )
+        first = telebot_main._resolve_reviewed_lifecycle_transition(
+            9018,
+            reviewer_id=101,
+            live_mode=True,
+            flat_confirmed=True,
+            reconciliation_ref="recon:abc",
+            evidence_ref="telegram:/stop",
+        )
+        second = telebot_main._resolve_reviewed_lifecycle_transition(
+            9018,
+            reviewer_id=102,
+            live_mode=True,
+            flat_confirmed=True,
+            reconciliation_ref="recon:abc",
+            evidence_ref="telegram:/stop",
+        )
+
+    assert first is not None
+    assert first["state"] == "review_requested"
+    assert first["approval_count"] == 1
+    assert second is not None
+    assert second["state"] == "cleared"
+    assert second["approval_count"] == 2
+    assert set(second["approved_by"]) == {"101", "102"}
+
+    session = Session()
+    db_user = session.query(User).filter_by(telegram_id=9018).first()
+    assert db_user is not None and db_user.context is not None
+    assert db_user.context.lifecycle_transition_state == "cleared"
+    assert db_user.context.lifecycle_transition_reviewed_at is not None
+    assert db_user.context.lifecycle_transition_approval_count == 2
+    session.close()
+
+
 def test_persist_route_audit_event_writes_execution_route_event(temp_db) -> None:
     Session = temp_db
 
@@ -227,13 +322,32 @@ def test_persist_route_audit_event_writes_execution_route_event(temp_db) -> None
         quantity=0.1,
         before_position=0.0,
         after_position=0.1,
-        action_class="entry",
+        action_class="INCREASE",
         reason="order_accepted",
         accepted=True,
         status="filled",
         order_id="paper-1",
         idempotency_key="abc123",
         mark_price=50_000.0,
+        risk_policy_version="wp03-risk-v1",
+        hard_symbol_cap_frac=0.15,
+        hard_gross_cap_frac=0.50,
+        hard_net_cap_frac=0.20,
+        dynamic_symbol_cap_frac=0.12,
+        dynamic_gross_cap_frac=0.40,
+        dynamic_net_cap_frac=0.18,
+        operating_symbol_cap_frac=0.10,
+        operating_gross_cap_frac=0.34,
+        operating_net_cap_frac=0.15,
+        target_headroom_ratio=0.85,
+        reserve_capacity_frac=0.02,
+        current_symbol_exposure_frac=0.0,
+        projected_symbol_exposure_frac=0.10,
+        current_gross_exposure_frac=0.0,
+        projected_gross_exposure_frac=0.10,
+        current_net_exposure_frac=0.0,
+        projected_net_exposure_frac=0.10,
+        symbol_headroom_frac=0.0,
     )
 
     with patch.object(telebot_main, "SessionLocal", Session):
@@ -245,9 +359,12 @@ def test_persist_route_audit_event_writes_execution_route_event(temp_db) -> None
     assert row.symbol == "BTCUSDT"
     assert row.side == "BUY"
     assert row.accepted is True
-    assert row.action_class == "entry"
+    assert row.action_class == "INCREASE"
     assert row.reason == "order_accepted"
     assert row.mark_price == pytest.approx(50_000.0)
+    assert row.risk_policy_version == "wp03-risk-v1"
+    assert row.operating_symbol_cap_frac == pytest.approx(0.10)
+    assert row.projected_symbol_exposure_frac == pytest.approx(0.10)
     session.close()
 
 
@@ -264,7 +381,7 @@ def test_route_audit_event_evaluates_prior_blocked_shadow_return(temp_db) -> Non
         quantity=0.1,
         before_position=0.0,
         after_position=0.0,
-        action_class="blocked",
+        action_class="INCREASE",
         reason="skipped_by_deadband:cooldown",
         accepted=False,
         status="skipped",
@@ -281,7 +398,7 @@ def test_route_audit_event_evaluates_prior_blocked_shadow_return(temp_db) -> Non
         quantity=0.1,
         before_position=0.0,
         after_position=0.1,
-        action_class="entry",
+        action_class="INCREASE",
         reason="order_accepted",
         accepted=True,
         status="filled",
@@ -295,7 +412,7 @@ def test_route_audit_event_evaluates_prior_blocked_shadow_return(temp_db) -> Non
     session = Session()
     row = (
         session.query(ExecutionRouteEvent)
-        .filter_by(telegram_id=9015, action_class="blocked")
+        .filter_by(telegram_id=9015, action_class="INCREASE")
         .first()
     )
     assert row is not None

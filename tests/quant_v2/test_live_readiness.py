@@ -21,12 +21,11 @@ from quant_v2.execution.adapters import ExecutionResult
 from quant_v2.execution.redis_bus import (
     BusMessage,
     RedisStreamCommandBus,
-    STREAM_CMD_KEY,
 )
 from quant_v2.execution.service import RoutedExecutionService, SessionRequest
 from quant_v2.execution.state_wal import (
     InMemoryWAL,
-    WALEntry,
+    LifecycleStateRecord,
 )
 from quant_v2.execution.watchdog import LifecycleWatchdog
 
@@ -271,6 +270,60 @@ def test_fix3_wal_replay_skips_stopped_sessions():
     assert not service.is_running(303), "Stopped session was incorrectly rebuilt"
 
 
+def test_fix3_wal_replay_restores_lifecycle_state_transitions():
+    """FIX-3: lifecycle transitions should survive replay and restore the latest durable state."""
+    from quant_v2.execution.main import ExecutionEngineServer
+
+    async def _run():
+        wal = InMemoryWAL()
+        initial = LifecycleStateRecord(
+            state="ACTIVE",
+            owner="alpha_session",
+            retry_count=0,
+            reason="session_started",
+            policy_version="wp03-risk-v1",
+        )
+        incident = LifecycleStateRecord(
+            state="INCIDENT",
+            owner="liquidation_supervisor",
+            retry_count=1,
+            reason="heartbeat_stale",
+            policy_version="wp03-risk-v1",
+        )
+        confirmed = LifecycleStateRecord(
+            state="FLAT_CONFIRMED",
+            owner="liquidation_supervisor",
+            retry_count=1,
+            reason="flat_confirmed",
+            policy_version="wp03-risk-v1",
+        )
+
+        await wal.log_session_started(404, live=False, strategy_profile="core_v2", lifecycle_state=initial)
+        await wal.log_lifecycle_transition(404, record=incident)
+        await wal.log_lifecycle_transition(404, record=confirmed)
+
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stream_bus = MagicMock()
+        server._event_bus = MagicMock()
+        server._wal = wal
+        server._shutting_down = False
+        server._watchdog = LifecycleWatchdog()
+        server._service = RoutedExecutionService()
+
+        entries = await wal.replay("0-0")
+        await server._rebuild_state_from_wal(entries)
+        return server._service
+
+    service = asyncio.run(_run())
+    lifecycle = service.get_lifecycle_state(404)
+
+    assert service.is_running(404)
+    assert lifecycle is not None
+    assert lifecycle.state == "FLAT_CONFIRMED"
+    assert lifecycle.owner == "liquidation_supervisor"
+    assert lifecycle.reason == "flat_confirmed"
+
+
 # ─────────────────────────────────────────────────────────────────
 # FIX 4: Heartbeat-Stale Alert → Kill-Switch  (Tick Starvation)
 # ─────────────────────────────────────────────────────────────────
@@ -471,3 +524,210 @@ def test_fix4_route_signals_records_tick_on_market_data_pull():
     assert tick_call_count == 1
     assert isinstance(snapshot, MonitoringSnapshot)
     assert snapshot.connectivity_error_rate == 0.2
+
+
+def test_fix4_route_signals_emits_stage_telemetry_for_route_and_persistence():
+    """Command-path telemetry should expose parse, routing, ledger, and refresh stages."""
+    from quant_v2.execution.main import ExecutionEngineServer
+
+    async def _run():
+        stage_events = []
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stage_telemetry_callback = stage_events.append
+        server._stream_bus = MagicMock()
+        server._event_bus = AsyncMock()
+        server._wal = InMemoryWAL()
+        server._shutting_down = False
+        server._session_lock = asyncio.Lock()
+
+        server._watchdog = MagicMock()
+        server._watchdog.record_tick = MagicMock()
+        server._watchdog.update_mtm_equity = MagicMock()
+
+        server._service = MagicMock()
+        server._service.get_lifecycle_state = MagicMock(return_value=None)
+        server._service.route_signals = AsyncMock(
+            return_value=(
+                ExecutionResult(
+                    accepted=True,
+                    order_id="paper-2",
+                    idempotency_key="xyz",
+                    symbol="BTCUSDT",
+                    side="SELL",
+                    requested_qty=0.25,
+                    filled_qty=0.25,
+                    avg_price=50_000.0,
+                    status="filled",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    reason="bounded_limit_exit",
+                    risk_policy_version="wp03-risk-v1",
+                ),
+            )
+        )
+        server._service.get_portfolio_snapshot = MagicMock(return_value=None)
+        server._service.get_paper_state = MagicMock(
+            return_value={
+                "equity_baseline_usd": 10_000.0,
+                "open_positions": {"BTCUSDT": 0.25},
+                "paper_entry_prices": {"BTCUSDT": 50_000.0},
+            }
+        )
+
+        payload = {
+            "user_id": 124,
+            "prices": {"BTCUSDT": 50_123.4},
+            "signals": [
+                {
+                    "symbol": "BTCUSDT",
+                    "timeframe": "1h",
+                    "horizon_bars": 4,
+                    "signal": "SELL",
+                    "confidence": 0.8,
+                }
+            ],
+            "monitoring_snapshot": {
+                "connectivity_error_rate": 0.2,
+                "execution_anomaly_rate": 0.1,
+                "hard_risk_breach": False,
+            },
+        }
+
+        await server._cmd_route_signals(payload, correlation_id="corr-stage-124")
+        return stage_events
+
+    stage_events = asyncio.run(_run())
+    assert [event.stage for event in stage_events] == [
+        "command_parse",
+        "routing_call",
+        "ledger_commit",
+        "post_fill_refresh",
+    ]
+    assert all(event.correlation_id == "corr-stage-124" for event in stage_events)
+    assert all(event.duration_ms >= 0.0 for event in stage_events)
+    assert stage_events[-1].detail == "snapshot=False checkpoint=True"
+
+
+def test_fix4_route_signals_persists_risk_policy_version_to_wal():
+    """Accepted fills should carry the policy version into the WAL payload."""
+    from quant_v2.execution.main import ExecutionEngineServer
+
+    async def _run():
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stream_bus = MagicMock()
+        server._event_bus = AsyncMock()
+        server._wal = InMemoryWAL()
+        server._shutting_down = False
+        server._session_lock = asyncio.Lock()
+
+        server._watchdog = MagicMock()
+        server._watchdog.record_tick = MagicMock()
+        server._watchdog.update_mtm_equity = MagicMock()
+
+        server._service = MagicMock()
+        server._service.route_signals = AsyncMock(
+            return_value=(
+                ExecutionResult(
+                    accepted=True,
+                    order_id="paper-1",
+                    idempotency_key="abc",
+                    symbol="BTCUSDT",
+                    side="SELL",
+                    requested_qty=0.25,
+                    filled_qty=0.25,
+                    avg_price=50_000.0,
+                    status="filled",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    reason="bounded_limit_exit:supervised_residual_position_required:step_size",
+                    risk_policy_version="wp03-risk-v1",
+                ),
+            )
+        )
+        server._service.get_portfolio_snapshot = MagicMock(return_value=None)
+
+        payload = {
+            "user_id": 123,
+            "prices": {"BTCUSDT": 51_234.5},
+            "signals": [],
+            "monitoring_snapshot": {
+                "connectivity_error_rate": 0.2,
+                "execution_anomaly_rate": 0.1,
+                "hard_risk_breach": False,
+            },
+        }
+
+        await server._cmd_route_signals(payload, correlation_id="corr-live-123")
+        kwargs = server._service.route_signals.await_args.kwargs
+        entries = await server._wal.replay()
+        return entries, kwargs
+
+    entries, kwargs = asyncio.run(_run())
+    order_events = [entry for entry in entries if entry.event_type == "order_executed"]
+    assert order_events
+    assert order_events[0].payload["risk_policy_version"] == "wp03-risk-v1"
+    assert order_events[0].payload["correlation_id"] == "corr-live-123"
+    assert kwargs["correlation_id"] == "corr-live-123"
+
+
+def test_fix4_execution_operational_health_surfaces_queue_and_reconciliation_lag():
+    """ExecutionEngineServer should expose queue, WAL, and reconciliation health."""
+    from quant_v2.execution.main import ExecutionEngineServer
+
+    async def _run():
+        server = ExecutionEngineServer.__new__(ExecutionEngineServer)
+        server._stream_bus = MagicMock()
+        server._stream_bus.get_queue_health = AsyncMock(
+            return_value={
+                "status": "warning",
+                "stream_backlog_count": 3,
+                "pending_count": 2,
+                "lag_entries": 1,
+                "max_pending_age_seconds": 45.0,
+            }
+        )
+        server._stream_bus._redis = MagicMock()
+        server._stream_bus._redis.info = AsyncMock(
+            return_value={
+                "used_memory": 536_870_912,
+                "maxmemory": 1_073_741_824,
+            }
+        )
+        server._wal = MagicMock()
+        server._wal.get_stream_health = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "entry_count": 7,
+                "latest_entry_age_seconds": 12.0,
+            }
+        )
+        server._service = MagicMock()
+        server._service.get_live_session_ids = MagicMock(return_value=(10,))
+        server._last_reconciliation_started_at = datetime.now(timezone.utc) - timedelta(seconds=40)
+        server._last_reconciliation_completed_at = datetime.now(timezone.utc) - timedelta(seconds=35)
+        server._last_reconciliation_error_at = None
+        with patch("quant_v2.execution.main.build_runtime_resource_health", return_value={
+            "status": "healthy",
+            "project_root": "C:/tmp",
+            "cpu_percent": 10.0,
+            "memory_percent": 20.0,
+            "disk_percent": 30.0,
+            "rss_mb": 40.0,
+            "open_file_count": 2,
+            "load_avg_1m": None,
+            "process_uptime_seconds": 100.0,
+            "container_restart_count": 1,
+            "container_started_at": "2026-01-01T00:00:00+00:00",
+            "dns_probe": {"status": "healthy", "latency_ms": 2.0},
+            "database_lock_probe": {"status": "healthy", "lock_latency_ms": 1.0},
+        }):
+            return await server.get_operational_health()
+
+    health = asyncio.run(_run())
+
+    assert health["status"] == "warning"
+    assert health["live_session_count"] == 1
+    assert health["stream_bus"]["stream_backlog_count"] == 3
+    assert health["wal"]["entry_count"] == 7
+    assert health["reconciliation"]["lag_seconds"] is not None
+    assert health["redis_memory"]["status"] == "healthy"
+    assert health["redis_memory"]["used_memory_mb"] == 512.0
+    assert health["runtime_health"]["container_restart_count"] == 1

@@ -1,0 +1,31 @@
+{
+  "dataset": {
+    "end": "2026-06-26 14:00:00+00:00",
+    "frame_digest": "570a016fc2fb29694503cb8e6b37a27db571a30f42a3bb94e7890a630cd8f7e0",
+    "rows": 43200,
+    "start": "2025-12-28 15:00:00+00:00",
+    "symbols": [
+      "ADAUSDT",
+      "AVAXUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "LINKUSDT",
+      "LTCUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ]
+  },
+  "docs_output_dir": "docs/model_quality/recovery_sweep_top24",
+  "evaluated_candidates": 24,
+  "next_operator_action": "remain_no_trade_and_collect_more_data",
+  "output_dir": "/tmp/model_recovery_sweep_top24_e/20260627T073405Z_b1593641",
+  "passed_candidates": 0,
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "recommendation": "remain_no_trade",
+  "run_id": "20260627T073405Z_b1593641",
+  "selected_candidate_id": null,
+  "snapshot_path": "datasets/v2/snapshots/model_recovery_real_1h_20260626_20260626_141210.parquet",
+  "warnings": []
+}

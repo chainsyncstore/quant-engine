@@ -1,0 +1,44 @@
+{
+  "candidate_quality_summary": {
+    "evaluated_candidates": 4,
+    "failed_quality": 4,
+    "passed_quality": 0,
+    "top_failure_reasons": [
+      {
+        "count": 4,
+        "reason": "candidate_pnl_usd<=0"
+      },
+      {
+        "count": 4,
+        "reason": "candidate_minus_best_nonflat_pnl_usd<=threshold"
+      },
+      {
+        "count": 4,
+        "reason": "candidate_minus_same_side_pnl_usd<=threshold"
+      },
+      {
+        "count": 4,
+        "reason": "candidate_vs_benchmarks_margin_below_threshold"
+      },
+      {
+        "count": 4,
+        "reason": "insufficient_allowed_symbols_or_take_count"
+      },
+      {
+        "count": 4,
+        "reason": "regime_coverage_incomplete"
+      }
+    ],
+    "watch_quality": 0
+  },
+  "docs_output_dir": "docs/model_quality",
+  "evaluated_candidates": 4,
+  "next_operator_action": "remain_no_trade_and_collect_more_data",
+  "output_dir": "docs/model_quality/benchmark_relative_4arm/20260628T113942Z_b1593641",
+  "passed_candidates": 0,
+  "recommendation": "remain_no_trade",
+  "run_id": "20260628T113942Z_b1593641",
+  "selected_candidate_id": null,
+  "snapshot_path": "datasets/v2/snapshots/model_recovery_real_1h_20260626_20260626_141210.parquet",
+  "warnings": []
+}

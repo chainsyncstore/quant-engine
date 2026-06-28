@@ -21,6 +21,7 @@ experiments/
 *.egg-info/
 dist/
 build/
+.build/
 
 # OS
 Thumbs.db
@@ -36,6 +37,7 @@ Thumbs.db
 *.key
 *.p12
 .env*
+/secrets/
 
 # Database
 *.db
@@ -57,6 +59,7 @@ debug_credentials.py
 test_capital_auth.py
 
 # Local analysis / scratch artifacts
+.tmp/
 analyze_logs_local.py
 analyze_sqlite_local.py
 db_analysis_report.md
@@ -73,3 +76,10 @@ state/
 signal_log*.json
 .docker_write_probe
 .tmp_write_test
+check_breach.py
+check_decisions.py
+clear_all_breach.py
+clear_breach.py
+clear_breach.sql
+patch_eligible.py
+patch_status.py

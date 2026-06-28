@@ -1,0 +1,8 @@
+{
+  "candidate_id": "h2_tw3m_hl30d_dz5p2699_fsprice_volume_funding",
+  "error": "Not enough timestamps for temporal validation",
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "snapshot_path": "datasets/v2/snapshots/model_recovery_real_1h_20260626_20260626_141210.parquet",
+  "variant_id": "cost_aware_ternary",
+  "variant_kind": "cost_aware_ternary"
+}

@@ -10,21 +10,23 @@ Covers the four patches from the Day-2 Operations Chaos Audit:
 from __future__ import annotations
 
 import asyncio
-import time
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from quant.config import BinanceAPIConfig
 from quant.data.binance_client import BinanceClient
-from quant_v2.execution.state_wal import RedisWAL, WALEntry, WAL_STREAM_KEY
+from quant_v2.execution.state_wal import InMemoryWAL, RedisWAL, WALEntry, WAL_STREAM_KEY
 from quant_v2.execution.redis_bus import (
     BusMessage,
     RedisStreamCommandBus,
-    STREAM_CMD_KEY,
 )
 from quant_v2.execution.watchdog import LifecycleWatchdog
+from quant_v2.monitoring.runtime_probes import (
+    probe_dns_latency,
+    probe_sqlite_lock_latency,
+    read_runtime_boot_marker,
+    record_runtime_boot_marker,
+)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -89,6 +91,55 @@ class TestWALMaxlen:
         wal = RedisWAL("redis://localhost:6379", max_stream_len=50)
         assert wal._max_stream_len == 1000
 
+    def test_wal_stream_health_snapshot_reports_freshness(self) -> None:
+        wal = RedisWAL("redis://localhost:6379")
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000.0)
+        mock_redis = AsyncMock()
+        mock_redis.xinfo_stream = AsyncMock(
+            return_value={
+                "length": 4,
+                "first-entry": (f"{now_ms - 60000}-0", {"data": "{}"}),
+                "last-entry": (f"{now_ms - 5000}-0", {"data": "{}"}),
+            }
+        )
+        wal._redis = mock_redis
+
+        health = asyncio.run(wal.get_stream_health(stale_after_seconds=60.0))
+
+        assert health["status"] == "healthy"
+        assert health["entry_count"] == 4
+        assert health["latest_entry_id"] == f"{now_ms - 5000}-0"
+        assert health["oldest_entry_id"] == f"{now_ms - 60000}-0"
+        assert health["latest_entry_age_seconds"] is not None
+
+    def test_order_executed_payload_persists_risk_policy_version(self) -> None:
+        wal = InMemoryWAL()
+        entry_id = asyncio.run(
+            wal.log_order_executed(
+                42,
+                symbol="BTCUSDT",
+                side="SELL",
+                quantity=0.25,
+                avg_price=50_000.0,
+                status="filled",
+                risk_policy_version="wp03-risk-v1",
+                outcome="NEW_FILL",
+                newly_filled_qty=0.25,
+                request_id="req-42",
+                venue_order_id="venue-42",
+                fill_id="fill-42",
+                accounting_transaction_id="txn-42",
+                correlation_id="corr-42",
+            )
+        )
+        assert entry_id == "1-0"
+        replay = asyncio.run(wal.replay())
+        assert replay[0].payload["risk_policy_version"] == "wp03-risk-v1"
+        assert replay[0].payload["outcome"] == "NEW_FILL"
+        assert replay[0].payload["newly_filled_qty"] == 0.25
+        assert replay[0].payload["fill_id"] == "fill-42"
+        assert replay[0].payload["correlation_id"] == "corr-42"
+
 
 class TestStreamBusMaxlen:
     """Verify RedisStreamCommandBus.enqueue() passes MAXLEN to xadd."""
@@ -113,6 +164,78 @@ class TestStreamBusMaxlen:
     def test_stream_bus_default_maxlen_is_100k(self) -> None:
         bus = RedisStreamCommandBus("redis://localhost:6379")
         assert bus._max_stream_len == 100_000
+
+    def test_stream_bus_health_snapshot_reports_pending_backlog(self) -> None:
+        bus = RedisStreamCommandBus("redis://localhost:6379")
+        mock_redis = AsyncMock()
+        mock_redis.xinfo_stream = AsyncMock(
+            return_value={
+                "length": 12,
+                "last-generated-id": "1700000005000-0",
+            }
+        )
+        mock_redis.xinfo_groups = AsyncMock(
+            return_value=[
+                {
+                    "name": "execution_consumer_group",
+                    "pending": 2,
+                    "lag": 4,
+                    "consumers": 1,
+                    "entries-read": 8,
+                    "last-delivered-id": "1700000001000-0",
+                }
+            ]
+        )
+        mock_redis.xpending_range = AsyncMock(
+            return_value=[
+                {
+                    "message_id": "1700000001000-0",
+                    "consumer": "execution_engine",
+                    "time_since_delivered": 93000,
+                    "times_delivered": 2,
+                }
+            ]
+        )
+        bus._redis = mock_redis
+
+        health = asyncio.run(bus.get_queue_health(stale_after_seconds=60.0))
+
+        assert health["status"] == "degraded"
+        assert health["stream_backlog_count"] == 6
+        assert health["pending_count"] == 2
+        assert health["lag_entries"] == 4
+        assert health["max_pending_age_seconds"] == 93.0
+
+
+class TestRuntimeProbes:
+    def test_runtime_boot_marker_increments_restart_count(self, tmp_path) -> None:
+        marker_path = tmp_path / "runtime" / "boot.json"
+
+        first = record_runtime_boot_marker(marker_path)
+        second = record_runtime_boot_marker(marker_path)
+        stored = read_runtime_boot_marker(marker_path)
+
+        assert first["boot_count"] == 1
+        assert first["restart_count"] == 0
+        assert second["boot_count"] == 2
+        assert second["restart_count"] == 1
+        assert stored["boot_count"] == 2
+
+    def test_dns_latency_probe_reports_localhost_resolution(self) -> None:
+        probe = probe_dns_latency("localhost")
+
+        assert probe["target_host"] == "localhost"
+        assert probe["status"] in {"healthy", "warning"}
+        assert probe["latency_ms"] >= 0.0
+
+    def test_sqlite_lock_probe_handles_temp_db(self, tmp_path) -> None:
+        db_path = tmp_path / "runtime.sqlite"
+        db_path.write_text("", encoding="utf-8")
+
+        probe = probe_sqlite_lock_latency(db_path)
+
+        assert probe["db_path"] == str(db_path)
+        assert probe["status"] in {"healthy", "warning", "degraded", "unknown"}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -178,9 +301,6 @@ class TestBinanceClockSync:
         client = _make_client()
 
         call_order: list[str] = []
-
-        original_sync = client.sync_time
-        original_get_account = client.get_account_info
 
         def tracked_sync():
             call_order.append("sync_time")

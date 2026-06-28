@@ -1,0 +1,14 @@
+{
+  "dead_zone_bps": 0.001,
+  "feature_set": "full",
+  "horizon": 8,
+  "label_mode": "trade_outcome",
+  "recency_half_life_days": 30,
+  "trade_outcome_profit_target_bps": 20.0,
+  "trade_outcome_round_trip_cost_bps": 8.0,
+  "trade_outcome_side": "short",
+  "trade_outcome_stop_loss_bps": 30.0,
+  "training_window_months": 3,
+  "variant_id": "",
+  "variant_kind": "baseline"
+}

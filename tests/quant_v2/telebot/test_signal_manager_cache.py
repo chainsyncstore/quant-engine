@@ -37,6 +37,8 @@ def _sample_bars(*, trend_up: bool = True, n: int = 120) -> pd.DataFrame:
     df["high"] = df["close"] * 1.01
     df["low"] = df["close"] * 0.98
     df["volume"] = 1000.0
+    df["taker_buy_volume"] = df["volume"] * 0.55
+    df["taker_sell_volume"] = df["volume"] * 0.45
     return df
 
 
@@ -104,7 +106,27 @@ def test_cache_does_not_leak_per_user_mutations(tmp_path: Path) -> None:
 
         # Create a cache and run one cycle
         cycle_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
-        await manager._run_cycle(manager.sessions[201], cycle_cache=cycle_cache)
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "symbol": "BTCUSDT",
+            "close_price": 10_000.0,
+            "signal": "HOLD",
+            "probability": 0.5,
+            "regime": 3,
+            "regime_probability": 0.5,
+            "regime_tradeable": False,
+            "threshold": 0.65,
+            "reason": "stub",
+            "horizon": manager.horizon_bars,
+            "position": {},
+            "risk_status": {"can_trade": True},
+            "drift_alert": False,
+            "execution_anomaly_rate": 0.0,
+            "connectivity_error_rate": 0.0,
+        }
+        with patch.object(manager, "_build_signal_payload", return_value=payload):
+            with patch.object(manager, "_apply_market_short_guard", side_effect=lambda *args, **kwargs: None):
+                await manager._run_cycle(manager.sessions[201], cycle_cache=cycle_cache)
 
         await manager.stop_session(201)
 

@@ -1,0 +1,89 @@
+{
+  "actor_summaries": {
+    "candidate": {
+      "cost_adjusted_net_pnl_usd": 0.0,
+      "exposure_by_symbol_usd": {},
+      "fill_count": 0,
+      "max_drawdown_frac": 0.0
+    },
+    "flat": {
+      "cost_adjusted_net_pnl_usd": 0.0,
+      "exposure_by_symbol_usd": {},
+      "fill_count": 0,
+      "max_drawdown_frac": 0.0
+    }
+  },
+  "comparisons": {
+    "best_actor": "flat",
+    "candidate_minus_flat_cost_adjusted_net_pnl_bps": 0.0,
+    "candidate_minus_flat_cost_adjusted_net_pnl_usd": 0.0
+  },
+  "dataset": {
+    "end": null,
+    "max_bars_per_symbol": 240,
+    "rows": 0,
+    "source_rows": 0,
+    "start": null,
+    "symbols": [],
+    "truncated_for_replay": false
+  },
+  "generated_at": "2026-06-28T12:34:29.784318+00:00",
+  "holdout_benchmark_report": {
+    "actor_summaries": {
+      "flat": {
+        "cost_adjusted_net_pnl_usd": 0.0,
+        "exposure_by_symbol_usd": {},
+        "fill_count": 0,
+        "max_drawdown_frac": 0.0
+      }
+    },
+    "availability": {
+      "flat": {
+        "available": true,
+        "reason": "baseline"
+      }
+    },
+    "by_regime_best_actor": {},
+    "by_symbol_best_actor": {},
+    "comparisons": {
+      "best_actor": "flat",
+      "best_minus_flat_cost_adjusted_net_pnl_bps": 0.0,
+      "best_minus_flat_cost_adjusted_net_pnl_usd": 0.0,
+      "best_nonflat_actor": null,
+      "best_nonflat_cost_adjusted_net_pnl_usd": 0.0,
+      "flat_cost_adjusted_net_pnl_usd": 0.0
+    },
+    "dataset": {
+      "end": null,
+      "max_bars_per_symbol": 240,
+      "rows": 0,
+      "source_rows": 0,
+      "start": null,
+      "symbols": [],
+      "truncated_for_replay": false
+    },
+    "generated_at": "2026-06-28T12:34:29.784420+00:00",
+    "policy_version": "model_recovery_benchmark_replay_v1",
+    "replay": {
+      "actors": {},
+      "policy_version": "benchmark_empty_v1"
+    },
+    "replay_artifact_policy": {
+      "full_replay_embedded": false,
+      "max_report_fills_per_actor": 200,
+      "reason": "empty_final_frame_after_symbol_pruning"
+    },
+    "replay_digest": "27accca50fdf2dd2a13e9c4efb095970bb8a67cf24fe3cc8c0547d74dacce43a"
+  },
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "replay": {
+    "actors": {},
+    "policy_version": "replay_empty_v1"
+  },
+  "replay_artifact_policy": {
+    "full_replay_embedded": false,
+    "max_report_fills_per_actor": 200,
+    "reason": "empty_final_frame_after_symbol_pruning"
+  },
+  "replay_digest": "12e8bebb06c02bd52689e3501dabc724c2b9d18af651d7350c11ef9d941dbad3"
+}

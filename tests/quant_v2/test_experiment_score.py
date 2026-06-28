@@ -11,6 +11,8 @@ from quant_v2.research.experiment_score import (
 def test_build_report_from_experiment() -> None:
     experiment = {
         "config": {"validation_mode": "purged_kfold"},
+        "trial_count": 8,
+        "selection_risk": {"1": {"pbo_equivalent": 0.2}},
         "results": {
             "1": {
                 "overall": {
@@ -48,6 +50,8 @@ def test_build_report_from_experiment() -> None:
     assert report.score > 60.0
     assert report.score_inputs.robustness > 50.0
     assert report.gate_inputs.ruin_probability <= 0.25
+    assert report.trial_count == 8
+    assert report.selection_risk["1"]["pbo_equivalent"] == 0.2
 
 
 def test_build_report_from_path_on_existing_baseline() -> None:

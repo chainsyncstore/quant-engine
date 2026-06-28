@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -12,6 +13,7 @@ import pandas as pd
 
 from quant.features.pipeline import build_features, get_feature_columns
 from quant_v2.accounting import AccountingStore
+from quant_v2.accounting import LedgerDifference, LedgerReconciliationReport
 from quant_v2.contracts import MarketRiskSnapshot, StrategySignal
 from quant_v2.execution.cost_policy import ExecutionCostPolicy
 from quant_v2.execution.planner import PlannerConfig, build_execution_intents, intents_to_order_plans
@@ -19,6 +21,63 @@ from quant_v2.execution.reconciler import reconcile_ledger_state
 from quant_v2.models.predictor import predict_proba
 from quant_v2.models.trainer import TrainedModel
 from quant_v2.portfolio.risk_policy import HardRiskLimits, OperatingRiskLimits
+
+_REPLAY_LOGGER_NAMES = (
+    "quant_v2.portfolio.allocation",
+    "quant.features.pipeline",
+    "quant_v2.models.trainer",
+)
+
+
+class _ResearchAccountingRecorder:
+    """Fast no-op recorder for research replay runs.
+
+    The full SQLite-backed store remains the default path so existing tests and
+    production-style replay semantics stay unchanged.  Recovery experiments can
+    opt into this recorder to avoid per-event database overhead while still
+    driving the same signal, planner, order, fill, and equity logic.
+    """
+
+    def append_lifecycle_event(self, **_: Any) -> None:
+        return None
+
+    def append_order(self, **_: Any) -> None:
+        return None
+
+    def append_fill(self, **_: Any) -> None:
+        return None
+
+    def append_fee(self, **_: Any) -> None:
+        return None
+
+    def append_mark(self, **_: Any) -> None:
+        return None
+
+
+def _research_reconciliation_report(
+    *,
+    account_id: int,
+    positions: dict[str, float],
+    open_orders: dict[str, float],
+    cash_usd: float,
+    mark_prices: dict[str, float],
+    projection_sequence_no: int,
+) -> LedgerReconciliationReport:
+    ledger_positions = {symbol: float(qty) for symbol, qty in positions.items()}
+    equity_usd = float(cash_usd + sum(float(qty) * float(mark_prices.get(symbol, 0.0)) for symbol, qty in positions.items()))
+    return LedgerReconciliationReport(
+        account_id=account_id,
+        status="research_mode_skipped",
+        blocked_new_exposure=bool(open_orders),
+        ledger_positions=ledger_positions,
+        external_positions=dict(ledger_positions),
+        checkpoint_positions=dict(ledger_positions),
+        cash_delta_usd=0.0,
+        equity_delta_usd=0.0,
+        differences=(),
+        legacy_unverifiable_count=0,
+        projection_sequence_no=projection_sequence_no,
+    )
 
 
 def _model_threshold_floor(model: TrainedModel | None) -> float | None:
@@ -371,6 +430,24 @@ def _load_event_sequence(dataset: pd.DataFrame) -> tuple[list[pd.Timestamp], lis
     return timestamps, symbols
 
 
+def _build_replay_frame_cache(
+    dataset: pd.DataFrame,
+) -> tuple[dict[str, pd.DataFrame], dict[pd.Timestamp, pd.DataFrame]]:
+    symbol_frames: dict[str, pd.DataFrame] = {}
+    for symbol in dataset.index.get_level_values("symbol").unique():
+        symbol_frame = dataset.xs(symbol, level="symbol").sort_index()
+        symbol_frame.index = pd.DatetimeIndex(symbol_frame.index)
+        symbol_frames[str(symbol)] = symbol_frame
+
+    timestamp_rows: dict[pd.Timestamp, pd.DataFrame] = {}
+    for timestamp in dataset.index.get_level_values("timestamp").unique():
+        timestamp_frame = dataset.xs(timestamp, level="timestamp").sort_index()
+        timestamp_frame.index = pd.Index(timestamp_frame.index)
+        timestamp_rows[pd.Timestamp(timestamp)] = timestamp_frame
+
+    return symbol_frames, timestamp_rows
+
+
 def _asof_symbol_history(history: pd.DataFrame, *, timestamp: pd.Timestamp) -> pd.DataFrame:
     if history.empty:
         return history
@@ -429,15 +506,22 @@ def _replay_actor(
     *,
     actor: ReplayActorConfig,
     dataset: pd.DataFrame,
+    symbol_frames: dict[str, pd.DataFrame] | None,
+    timestamp_rows: dict[pd.Timestamp, pd.DataFrame] | None,
     scenario: ReplayScenario,
     timestamps: list[pd.Timestamp],
     symbols: list[str],
     cost_policy: ExecutionCostPolicy,
     policy: OperatingRiskLimits,
     initial_equity: float,
+    research_mode: bool = False,
     signal_resolver: SignalResolver | None = None,
 ) -> ReplayActorResult:
-    store = AccountingStore("sqlite:///:memory:")
+    store: AccountingStore | _ResearchAccountingRecorder
+    if research_mode:
+        store = _ResearchAccountingRecorder()
+    else:
+        store = AccountingStore("sqlite:///:memory:")
     account_id = abs(hash(actor.name)) % 2_000_000_000 + 1
     reject_symbols = set(scenario.reject_symbols)
     data_gaps = {symbol: set(gaps) for symbol, gaps in scenario.data_gaps.items()}
@@ -449,7 +533,15 @@ def _replay_actor(
     fills: list[ReplayFill] = []
     blocked_intents: list[dict[str, Any]] = []
     risk_transitions: list[dict[str, Any]] = []
-    histories: dict[str, pd.DataFrame] = {symbol: pd.DataFrame() for symbol in symbols}
+    symbol_frames = symbol_frames or {
+        str(symbol): dataset.xs(symbol, level="symbol").sort_index()
+        for symbol in dataset.index.get_level_values("symbol").unique()
+    }
+    timestamp_rows = timestamp_rows or {
+        pd.Timestamp(ts): dataset.xs(ts, level="timestamp").sort_index()
+        for ts in dataset.index.get_level_values("timestamp").unique()
+    }
+    history_lengths: dict[str, int] = {symbol: 0 for symbol in symbols}
     mark_prices: dict[str, float] = {symbol: 0.0 for symbol in symbols}
     last_risk_state = "ACTIVE"
     event_count = 0
@@ -476,7 +568,9 @@ def _replay_actor(
             )
             event_count += 1
 
-        rows = dataset.loc[pd.IndexSlice[timestamp, :]].sort_index()
+        rows = timestamp_rows.get(timestamp)
+        if rows is None:
+            rows = dataset.loc[pd.IndexSlice[timestamp, :]].sort_index()
         if isinstance(rows, pd.Series):
             rows = rows.to_frame().T
 
@@ -486,9 +580,7 @@ def _replay_actor(
             if symbol in data_gaps and timestamp.isoformat() in data_gaps[symbol]:
                 continue
             row = rows.loc[symbol]
-            row_frame = row.to_frame().T
-            row_frame.index = pd.DatetimeIndex([timestamp])
-            histories[symbol] = pd.concat([histories[symbol], row_frame], axis=0)
+            history_lengths[symbol] = history_lengths.get(symbol, 0) + 1
 
             if open_orders.get(symbol):
                 pending_qty = open_orders[symbol]
@@ -570,21 +662,27 @@ def _replay_actor(
             if symbol not in rows.index:
                 continue
 
-        market_risk = _build_market_risk_snapshot(histories)
+        current_histories = {
+            symbol: symbol_frames[symbol].iloc[:history_lengths[symbol]]
+            for symbol in symbols
+            if history_lengths.get(symbol, 0) > 0 and symbol in symbol_frames
+        }
+
+        market_risk = _build_market_risk_snapshot(current_histories)
         featured_by_symbol: dict[str, pd.DataFrame] = {}
         for symbol in symbols:
-            hist = histories.get(symbol)
+            hist = current_histories.get(symbol)
             if hist is None or hist.empty:
                 continue
             hist = _asof_symbol_history(hist, timestamp=timestamp)
             if hist.empty:
                 continue
-            if actor.kind == "model":
+            if actor.kind == "model" and signal_resolver is None:
                 featured_by_symbol[symbol] = build_features(hist.copy())
 
         signals: list[StrategySignal] = []
         for symbol in symbols:
-            hist = histories.get(symbol)
+            hist = current_histories.get(symbol)
             if hist is None or hist.empty:
                 continue
             hist = _asof_symbol_history(hist, timestamp=timestamp)
@@ -636,8 +734,8 @@ def _replay_actor(
 
         planner_config = PlannerConfig(
             equity_usd=max(cash_usd + sum(
-                float(position_qty) * _safe_price(histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
-                if not histories[symbol].empty else 0.0
+                float(position_qty) * _safe_price(current_histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
+                if symbol in current_histories and not current_histories[symbol].empty else 0.0
                 for symbol, position_qty in projected_positions.items()
             ), 1.0),
             min_confidence=actor.min_confidence,
@@ -651,9 +749,9 @@ def _replay_actor(
             current_positions=projected_positions,
         )
         prices = {
-            symbol: _safe_price(histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
+            symbol: _safe_price(current_histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
             for symbol in symbols
-            if symbol in histories and not histories[symbol].empty
+            if symbol in current_histories and not current_histories[symbol].empty
         }
         order_plans = intents_to_order_plans(
             intent_plan.intents,
@@ -744,7 +842,7 @@ def _replay_actor(
                 order.symbol,
                 order.side,
                 notional,
-                adv_usd=float(histories[order.symbol].iloc[-1].get("quote_volume", 0.0) or 0.0) or None,
+                adv_usd=float(current_histories[order.symbol].iloc[-1].get("quote_volume", 0.0) or 0.0) or None,
                 latency_bars=scenario.latency_bars,
                 scenario="base",
             )
@@ -813,9 +911,9 @@ def _replay_actor(
             event_count += 3
 
         for symbol in symbols:
-            if symbol not in histories or histories[symbol].empty:
+            if symbol not in current_histories or current_histories[symbol].empty:
                 continue
-            price = _safe_price(histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
+            price = _safe_price(current_histories[symbol].iloc[-1], mark_jump_bps=scenario.mark_jump_bps)
             mark_prices[symbol] = price
             store.append_mark(
                 account_id=account_id,
@@ -840,12 +938,22 @@ def _replay_actor(
             }
         )
 
-    reconciliation = reconcile_ledger_state(
-        account_id,
-        store=store,
-        adapter_positions={symbol: float(qty) for symbol, qty in positions.items()},
-        open_orders=dict(open_orders),
-    )
+    if research_mode:
+        reconciliation = _research_reconciliation_report(
+            account_id=account_id,
+            positions=positions,
+            open_orders=open_orders,
+            cash_usd=cash_usd,
+            mark_prices=mark_prices,
+            projection_sequence_no=event_count,
+        )
+    else:
+        reconciliation = reconcile_ledger_state(
+            account_id,
+            store=store,
+            adapter_positions={symbol: float(qty) for symbol, qty in positions.items()},
+            open_orders=dict(open_orders),
+        )
 
     equity_series = pd.Series(
         [float(point["equity_usd"]) for point in equity_curve],
@@ -914,6 +1022,8 @@ def run_portfolio_replay(
     cost_policy: ExecutionCostPolicy | None = None,
     hard_limits: HardRiskLimits | None = None,
     signal_resolver: SignalResolver | None = None,
+    throttle_allocation_logs: bool = False,
+    research_mode: bool = False,
 ) -> ReplayResult:
     """Replay a multi-symbol event stream with isolated actor state."""
 
@@ -933,6 +1043,7 @@ def run_portfolio_replay(
     )
     sorted_dataset = dataset.sort_index()
     timestamps, symbols = _load_event_sequence(sorted_dataset)
+    symbol_frames, timestamp_rows = _build_replay_frame_cache(sorted_dataset)
     code_sha = _git_sha()
     manifest = _build_replay_manifest(
         dataset=dataset,
@@ -949,20 +1060,33 @@ def run_portfolio_replay(
     stable_manifest = dict(manifest)
     stable_manifest.pop("generated_at", None)
 
-    actor_results = {
-        name: _replay_actor(
-            actor=actor,
-            dataset=sorted_dataset,
-            scenario=scenario,
-            timestamps=timestamps,
-            symbols=symbols,
-            cost_policy=cost_policy,
-            policy=operating_limits,
-            initial_equity=initial_equity,
-            signal_resolver=signal_resolver,
-        )
-        for name, actor in sorted(actors.items())
-    }
+    replay_loggers = {name: logging.getLogger(name) for name in _REPLAY_LOGGER_NAMES}
+    replay_previous_levels = {name: logger.level for name, logger in replay_loggers.items()}
+    if throttle_allocation_logs:
+        for logger in replay_loggers.values():
+            logger.setLevel(logging.WARNING)
+    try:
+        actor_results = {
+            name: _replay_actor(
+                actor=actor,
+                dataset=sorted_dataset,
+                scenario=scenario,
+                timestamps=timestamps,
+                symbols=symbols,
+                symbol_frames=symbol_frames,
+                timestamp_rows=timestamp_rows,
+                cost_policy=cost_policy,
+                policy=operating_limits,
+                initial_equity=initial_equity,
+                research_mode=research_mode,
+                signal_resolver=signal_resolver,
+            )
+            for name, actor in sorted(actors.items())
+        }
+    finally:
+        if throttle_allocation_logs:
+            for name, logger in replay_loggers.items():
+                logger.setLevel(replay_previous_levels[name])
 
     payload = {
         "manifest": stable_manifest,

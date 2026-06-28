@@ -112,6 +112,15 @@ def test_v2_signal_manager_emits_signal_and_tracks_lifecycle(tmp_path: Path) -> 
     assert first_signal["v2_prices"] == {"BTCUSDT": float(first_signal["close_price"])}
 
 
+def test_extract_model_row_rejects_missing_model_features(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    manager.active_model = SimpleNamespace(feature_names=["feature_a", "feature_b"])
+    featured = pd.DataFrame({"feature_a": [1.0], "close": [100.0]})
+
+    with pytest.raises(ValueError, match="Missing model feature columns"):
+        manager._extract_model_row(featured)
+
+
 def test_v2_signal_manager_live_requires_credentials(tmp_path: Path) -> None:
     bars = _sample_bars(trend_up=True)
     manager = V2SignalManager(
@@ -252,6 +261,27 @@ def test_regime_thresholds_keep_regime3_and_4_existing_shape(tmp_path: Path) -> 
     assert buy4 == pytest.approx(0.63)
     assert sell4 == pytest.approx(0.37)
     assert note4 == ""
+
+
+def test_regime_thresholds_use_artifact_threshold_floor_when_present(tmp_path: Path) -> None:
+    manager = V2SignalManager(model_dir=tmp_path, symbols=("BTCUSDT",))
+    manager.active_model = SimpleNamespace(
+        artifact_manifest={
+            "training": {
+                "threshold": 0.60,
+                "threshold_policy": {
+                    "source": "oof_dev_predictions",
+                    "selected_threshold": 0.60,
+                },
+            }
+        }
+    )
+
+    buy1, sell1, note1 = manager._resolve_regime_thresholds(regime=1, regime_risk=0.0)
+
+    assert buy1 == pytest.approx(0.60)
+    assert sell1 == pytest.approx(0.40)
+    assert note1 == ""
 
 
 def test_regime2_threshold_env_overrides_defaults(tmp_path: Path, monkeypatch) -> None:

@@ -1,0 +1,32 @@
+{
+  "benchmark_like_behavior": null,
+  "best_nonflat_benchmark": "flat",
+  "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+  "candidate_minus_best_nonflat_cost_adjusted_net_pnl_usd": 0.0,
+  "candidate_minus_flat_cost_adjusted_net_pnl_usd": 0.0,
+  "failure_reasons": [
+    "holdout_accuracy<0.60",
+    "non_positive_cost_adjusted_expectancy",
+    "candidate_did_not_beat_flat",
+    "candidate_did_not_beat_nonflat_benchmark",
+    "quality_positive_absolute_expectancy",
+    "quality_best_nonflat_benchmark_delta",
+    "quality_same_side_benchmark_delta",
+    "quality_minimum_benchmark_margin",
+    "quality_symbol_coverage"
+  ],
+  "fold_accuracy_std": 0.025415470738317555,
+  "label_mode": "trade_outcome",
+  "max_drawdown_frac": 0.0,
+  "one_sided_take_collapse": false,
+  "passed": false,
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "score": 563.9394108389939,
+  "score_percentile_hint": null,
+  "skip_share": 0.8634266886326194,
+  "symbol_concentration_share": 0.0,
+  "take_share": 0.13657331136738057,
+  "trade_outcome_side": "short",
+  "variant_id": "",
+  "variant_kind": "baseline"
+}

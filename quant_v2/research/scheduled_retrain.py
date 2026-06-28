@@ -36,7 +36,7 @@ from quant.config import get_research_config
 from quant.data.binance_client import BinanceClient
 from quant.features.pipeline import build_features, get_feature_columns
 from quant_v2.config import default_universe_symbols
-from quant_v2.data.multi_symbol_dataset import fetch_universe_dataset
+from quant_v2.data.multi_symbol_dataset import fetch_symbol_dataset, fetch_universe_dataset
 from quant_v2.data.storage import build_dataset_manifest, validate_multi_symbol_ohlcv
 from quant_v2.model_registry import ModelRegistry
 from quant_v2.research.model_quality_recovery import (

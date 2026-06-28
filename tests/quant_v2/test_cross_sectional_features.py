@@ -40,10 +40,10 @@ def test_add_cross_sectional_features_appends_expected_columns() -> None:
         "xs_breadth_up_ret_1h",
     }
     assert expected.issubset(set(out.columns))
-    assert out["xs_ret_1h_z"].isna().sum() == 0
-    assert out["xs_volume_z"].isna().sum() == 0
-    assert ((out["xs_ret_1h_rank"] >= 0.0) & (out["xs_ret_1h_rank"] <= 1.0)).all()
-    assert ((out["xs_breadth_up_ret_1h"] >= 0.0) & (out["xs_breadth_up_ret_1h"] <= 1.0)).all()
+    assert out.iloc[:3][["xs_ret_1h_z", "xs_ret_1h_rank", "xs_dispersion_ret_1h", "xs_breadth_up_ret_1h"]].isna().any().any()
+    assert out.iloc[3:][["xs_ret_1h_z", "xs_ret_1h_rank", "xs_volume_z", "xs_volume_rank", "xs_dispersion_ret_1h", "xs_breadth_up_ret_1h"]].notna().all().all()
+    assert ((out["xs_ret_1h_rank"].dropna() >= 0.0) & (out["xs_ret_1h_rank"].dropna() <= 1.0)).all()
+    assert ((out["xs_breadth_up_ret_1h"].dropna() >= 0.0) & (out["xs_breadth_up_ret_1h"].dropna() <= 1.0)).all()
 
 
 def test_add_cross_sectional_features_validates_index_shape() -> None:

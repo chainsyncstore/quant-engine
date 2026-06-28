@@ -1,0 +1,1708 @@
+{
+  "accuracy_threshold_policy": {
+    "samples": 22074,
+    "selected_accuracy": 0.5567636133007158,
+    "selected_threshold": 0.5,
+    "source": "oof_dev_predictions",
+    "threshold_max": 0.8,
+    "threshold_min": 0.5,
+    "threshold_step": 0.05
+  },
+  "artifact_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+  "benchmark_delta_report": {
+    "by_regime": {},
+    "by_symbol": {
+      "ADAUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 447.716985061521,
+        "candidate_minus_best_nonflat_bps": -4364.2258789700845,
+        "candidate_minus_best_nonflat_pnl_usd": -436.4225878970085,
+        "candidate_minus_flat_pnl_usd": 11.294397164512475,
+        "candidate_minus_same_side_bps": -1941.4668763929035,
+        "candidate_minus_same_side_pnl_usd": -194.14668763929035,
+        "candidate_pnl_usd": 11.294397164512475,
+        "decision": "reject",
+        "fill_count": 7,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -62.89995896960444,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 205.44108480380282,
+        "symbols": [
+          "ADAUSDT"
+        ],
+        "take_count": 7
+      },
+      "AVAXUSDT": {
+        "available": true,
+        "best_nonflat_actor": "mean_reversion",
+        "best_nonflat_pnl_usd": 73.54063044542227,
+        "candidate_minus_best_nonflat_bps": -740.3668792885833,
+        "candidate_minus_best_nonflat_pnl_usd": -74.03668792885833,
+        "candidate_minus_flat_pnl_usd": -0.4960574834360614,
+        "candidate_minus_same_side_bps": -611.5648616876911,
+        "candidate_minus_same_side_pnl_usd": -61.156486168769106,
+        "candidate_pnl_usd": -0.4960574834360614,
+        "decision": "reject",
+        "fill_count": 2,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -23.16590312713783,
+        "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 60.660428685333045,
+        "symbols": [
+          "AVAXUSDT"
+        ],
+        "take_count": 2
+      },
+      "BNBUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 105.46413326564198,
+        "candidate_minus_best_nonflat_bps": -655.5370997668979,
+        "candidate_minus_best_nonflat_pnl_usd": -65.55370997668979,
+        "candidate_minus_flat_pnl_usd": 39.91042328895219,
+        "candidate_minus_same_side_bps": -655.5370997668979,
+        "candidate_minus_same_side_pnl_usd": -65.55370997668979,
+        "candidate_pnl_usd": 39.91042328895219,
+        "decision": "reject",
+        "fill_count": 63,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -347.0235256780174,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 105.46413326564198,
+        "symbols": [
+          "BNBUSDT"
+        ],
+        "take_count": 63
+      },
+      "BTCUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 145.3687786281812,
+        "candidate_minus_best_nonflat_bps": -977.2222093824303,
+        "candidate_minus_best_nonflat_pnl_usd": -97.72222093824303,
+        "candidate_minus_flat_pnl_usd": 47.64655768993816,
+        "candidate_minus_same_side_bps": -977.2222093824303,
+        "candidate_minus_same_side_pnl_usd": -97.72222093824303,
+        "candidate_pnl_usd": 47.64655768993816,
+        "decision": "reject",
+        "fill_count": 55,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -300.4708922796062,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 145.3687786281812,
+        "symbols": [
+          "BTCUSDT"
+        ],
+        "take_count": 55
+      },
+      "DOGEUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 311.2682257335291,
+        "candidate_minus_best_nonflat_bps": -2590.1624819342055,
+        "candidate_minus_best_nonflat_pnl_usd": -259.01624819342055,
+        "candidate_minus_flat_pnl_usd": 52.251977540108555,
+        "candidate_minus_same_side_bps": -1816.4407786169,
+        "candidate_minus_same_side_pnl_usd": -181.64407786169,
+        "candidate_pnl_usd": 52.251977540108555,
+        "decision": "reject",
+        "fill_count": 30,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -238.9810419453804,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 233.89605540179855,
+        "symbols": [
+          "DOGEUSDT"
+        ],
+        "take_count": 30
+      },
+      "ETHUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 211.281619535584,
+        "candidate_minus_best_nonflat_bps": -1677.3852847286344,
+        "candidate_minus_best_nonflat_pnl_usd": -167.73852847286344,
+        "candidate_minus_flat_pnl_usd": 43.54309106272058,
+        "candidate_minus_same_side_bps": -1677.3852847286344,
+        "candidate_minus_same_side_pnl_usd": -167.73852847286344,
+        "candidate_pnl_usd": 43.54309106272058,
+        "decision": "reject",
+        "fill_count": 28,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -260.72539532954664,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 211.281619535584,
+        "symbols": [
+          "ETHUSDT"
+        ],
+        "take_count": 28
+      },
+      "LINKUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 200.4096500046462,
+        "candidate_minus_best_nonflat_bps": -1743.0738186623194,
+        "candidate_minus_best_nonflat_pnl_usd": -174.30738186623194,
+        "candidate_minus_flat_pnl_usd": 26.102268138414274,
+        "candidate_minus_same_side_bps": -1743.0738186623194,
+        "candidate_minus_same_side_pnl_usd": -174.30738186623194,
+        "candidate_pnl_usd": 26.102268138414274,
+        "decision": "reject",
+        "fill_count": 21,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -153.00771549998836,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 200.4096500046462,
+        "symbols": [
+          "LINKUSDT"
+        ],
+        "take_count": 21
+      },
+      "LTCUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 136.06463126078052,
+        "candidate_minus_best_nonflat_bps": -1002.4491944873057,
+        "candidate_minus_best_nonflat_pnl_usd": -100.24491944873057,
+        "candidate_minus_flat_pnl_usd": 35.819711812049945,
+        "candidate_minus_same_side_bps": -1002.4491944873057,
+        "candidate_minus_same_side_pnl_usd": -100.24491944873057,
+        "candidate_pnl_usd": 35.819711812049945,
+        "decision": "reject",
+        "fill_count": 34,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -317.2682936930194,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 136.06463126078052,
+        "symbols": [
+          "LTCUSDT"
+        ],
+        "take_count": 34
+      },
+      "SOLUSDT": {
+        "available": true,
+        "best_nonflat_actor": "mean_reversion",
+        "best_nonflat_pnl_usd": 78.99827332332279,
+        "candidate_minus_best_nonflat_bps": -767.4636384738403,
+        "candidate_minus_best_nonflat_pnl_usd": -76.74636384738403,
+        "candidate_minus_flat_pnl_usd": 2.25190947593876,
+        "candidate_minus_same_side_bps": -506.4489835327948,
+        "candidate_minus_same_side_pnl_usd": -50.64489835327947,
+        "candidate_pnl_usd": 2.25190947593876,
+        "decision": "reject",
+        "fill_count": 6,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -55.70857169663163,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 52.89680782921823,
+        "symbols": [
+          "SOLUSDT"
+        ],
+        "take_count": 6
+      },
+      "XRPUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 356.8800202587872,
+        "candidate_minus_best_nonflat_bps": -3153.79169498799,
+        "candidate_minus_best_nonflat_pnl_usd": -315.379169498799,
+        "candidate_minus_flat_pnl_usd": 41.500850759988225,
+        "candidate_minus_same_side_bps": -1531.6471301524848,
+        "candidate_minus_same_side_pnl_usd": -153.16471301524848,
+        "candidate_pnl_usd": 41.500850759988225,
+        "decision": "reject",
+        "fill_count": 29,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -159.48818316442743,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 194.6655637752367,
+        "symbols": [
+          "XRPUSDT"
+        ],
+        "take_count": 29
+      }
+    },
+    "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+    "candidate_side": "short",
+    "candidate_side_reference": "short",
+    "overall": {
+      "allowed_symbol_count": 0,
+      "best_nonflat_actor": "flat",
+      "best_nonflat_pnl_usd": 0.0,
+      "candidate_minus_best_nonflat_bps": 0.0,
+      "candidate_minus_best_nonflat_pnl_usd": 0.0,
+      "candidate_minus_flat_pnl_usd": 0.0,
+      "candidate_minus_same_side_bps": 0.0,
+      "candidate_minus_same_side_pnl_usd": 0.0,
+      "candidate_pnl_usd": 0.0,
+      "candidate_return_bps": 0.0,
+      "fill_count": 0,
+      "flat_pnl_usd": 0.0,
+      "max_drawdown_bps": 0.0,
+      "rejected_symbol_count": 10,
+      "same_side_actor": "flat",
+      "same_side_pnl_usd": 0.0,
+      "take_count": 0
+    },
+    "policy_version": "benchmark_delta_v1",
+    "post_prune": {
+      "benchmark_report": {
+        "actor_summaries": {
+          "flat": {
+            "cost_adjusted_net_pnl_usd": 0.0,
+            "exposure_by_symbol_usd": {},
+            "fill_count": 0,
+            "max_drawdown_frac": 0.0
+          }
+        },
+        "availability": {
+          "flat": {
+            "available": true,
+            "reason": "baseline"
+          }
+        },
+        "by_regime_best_actor": {},
+        "by_symbol_best_actor": {},
+        "comparisons": {
+          "best_actor": "flat",
+          "best_minus_flat_cost_adjusted_net_pnl_bps": 0.0,
+          "best_minus_flat_cost_adjusted_net_pnl_usd": 0.0,
+          "best_nonflat_actor": null,
+          "best_nonflat_cost_adjusted_net_pnl_usd": 0.0,
+          "flat_cost_adjusted_net_pnl_usd": 0.0
+        },
+        "dataset": {
+          "end": null,
+          "max_bars_per_symbol": 240,
+          "rows": 0,
+          "source_rows": 0,
+          "start": null,
+          "symbols": [],
+          "truncated_for_replay": false
+        },
+        "generated_at": "2026-06-28T12:51:00.873383+00:00",
+        "policy_version": "model_recovery_benchmark_replay_v1",
+        "replay": {
+          "actors": {},
+          "policy_version": "benchmark_empty_v1"
+        },
+        "replay_artifact_policy": {
+          "full_replay_embedded": false,
+          "max_report_fills_per_actor": 200,
+          "reason": "empty_final_frame_after_symbol_pruning"
+        },
+        "replay_digest": "27accca50fdf2dd2a13e9c4efb095970bb8a67cf24fe3cc8c0547d74dacce43a"
+      },
+      "regime_section": {
+        "available": false,
+        "by_dimension": {},
+        "coverage": {
+          "available_bucket_count": 0,
+          "total_bucket_count": 0,
+          "unknown_bucket_count": 0
+        }
+      },
+      "replay_report": {
+        "actor_summaries": {
+          "candidate": {
+            "cost_adjusted_net_pnl_usd": 0.0,
+            "exposure_by_symbol_usd": {},
+            "fill_count": 0,
+            "max_drawdown_frac": 0.0
+          },
+          "flat": {
+            "cost_adjusted_net_pnl_usd": 0.0,
+            "exposure_by_symbol_usd": {},
+            "fill_count": 0,
+            "max_drawdown_frac": 0.0
+          }
+        },
+        "comparisons": {
+          "best_actor": "flat",
+          "candidate_minus_flat_cost_adjusted_net_pnl_bps": 0.0,
+          "candidate_minus_flat_cost_adjusted_net_pnl_usd": 0.0
+        },
+        "dataset": {
+          "end": null,
+          "max_bars_per_symbol": 240,
+          "rows": 0,
+          "source_rows": 0,
+          "start": null,
+          "symbols": [],
+          "truncated_for_replay": false
+        },
+        "generated_at": "2026-06-28T12:51:00.873282+00:00",
+        "holdout_benchmark_report": {
+          "actor_summaries": {
+            "flat": {
+              "cost_adjusted_net_pnl_usd": 0.0,
+              "exposure_by_symbol_usd": {},
+              "fill_count": 0,
+              "max_drawdown_frac": 0.0
+            }
+          },
+          "availability": {
+            "flat": {
+              "available": true,
+              "reason": "baseline"
+            }
+          },
+          "by_regime_best_actor": {},
+          "by_symbol_best_actor": {},
+          "comparisons": {
+            "best_actor": "flat",
+            "best_minus_flat_cost_adjusted_net_pnl_bps": 0.0,
+            "best_minus_flat_cost_adjusted_net_pnl_usd": 0.0,
+            "best_nonflat_actor": null,
+            "best_nonflat_cost_adjusted_net_pnl_usd": 0.0,
+            "flat_cost_adjusted_net_pnl_usd": 0.0
+          },
+          "dataset": {
+            "end": null,
+            "max_bars_per_symbol": 240,
+            "rows": 0,
+            "source_rows": 0,
+            "start": null,
+            "symbols": [],
+            "truncated_for_replay": false
+          },
+          "generated_at": "2026-06-28T12:51:00.873383+00:00",
+          "policy_version": "model_recovery_benchmark_replay_v1",
+          "replay": {
+            "actors": {},
+            "policy_version": "benchmark_empty_v1"
+          },
+          "replay_artifact_policy": {
+            "full_replay_embedded": false,
+            "max_report_fills_per_actor": 200,
+            "reason": "empty_final_frame_after_symbol_pruning"
+          },
+          "replay_digest": "27accca50fdf2dd2a13e9c4efb095970bb8a67cf24fe3cc8c0547d74dacce43a"
+        },
+        "policy_version": "model_recovery_experiment_runner_v1",
+        "replay": {
+          "actors": {},
+          "policy_version": "replay_empty_v1"
+        },
+        "replay_artifact_policy": {
+          "full_replay_embedded": false,
+          "max_report_fills_per_actor": 200,
+          "reason": "empty_final_frame_after_symbol_pruning"
+        },
+        "replay_digest": "12e8bebb06c02bd52689e3501dabc724c2b9d18af651d7350c11ef9d941dbad3"
+      },
+      "symbol_pruning": {
+        "allowed_symbol_count": 0,
+        "allowed_symbols": [],
+        "available": false,
+        "by_symbol": {},
+        "rejected_symbol_count": 0,
+        "rejected_symbols": []
+      }
+    },
+    "pre_prune": {
+      "symbol_pruning": {
+        "allowed_symbol_count": 0,
+        "allowed_symbols": [],
+        "available": true,
+        "by_symbol": {
+          "ADAUSDT": {
+            "available": true,
+            "best_nonflat_actor": "moving_average_trend",
+            "best_nonflat_pnl_usd": 447.716985061521,
+            "candidate_minus_best_nonflat_bps": -4364.2258789700845,
+            "candidate_minus_best_nonflat_pnl_usd": -436.4225878970085,
+            "candidate_minus_flat_pnl_usd": 11.294397164512475,
+            "candidate_minus_same_side_bps": -1941.4668763929035,
+            "candidate_minus_same_side_pnl_usd": -194.14668763929035,
+            "candidate_pnl_usd": 11.294397164512475,
+            "decision": "reject",
+            "fill_count": 7,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -62.89995896960444,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 205.44108480380282,
+            "symbols": [
+              "ADAUSDT"
+            ],
+            "take_count": 7
+          },
+          "AVAXUSDT": {
+            "available": true,
+            "best_nonflat_actor": "mean_reversion",
+            "best_nonflat_pnl_usd": 73.54063044542227,
+            "candidate_minus_best_nonflat_bps": -740.3668792885833,
+            "candidate_minus_best_nonflat_pnl_usd": -74.03668792885833,
+            "candidate_minus_flat_pnl_usd": -0.4960574834360614,
+            "candidate_minus_same_side_bps": -611.5648616876911,
+            "candidate_minus_same_side_pnl_usd": -61.156486168769106,
+            "candidate_pnl_usd": -0.4960574834360614,
+            "decision": "reject",
+            "fill_count": 2,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -23.16590312713783,
+            "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 60.660428685333045,
+            "symbols": [
+              "AVAXUSDT"
+            ],
+            "take_count": 2
+          },
+          "BNBUSDT": {
+            "available": true,
+            "best_nonflat_actor": "short_only",
+            "best_nonflat_pnl_usd": 105.46413326564198,
+            "candidate_minus_best_nonflat_bps": -655.5370997668979,
+            "candidate_minus_best_nonflat_pnl_usd": -65.55370997668979,
+            "candidate_minus_flat_pnl_usd": 39.91042328895219,
+            "candidate_minus_same_side_bps": -655.5370997668979,
+            "candidate_minus_same_side_pnl_usd": -65.55370997668979,
+            "candidate_pnl_usd": 39.91042328895219,
+            "decision": "reject",
+            "fill_count": 63,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -347.0235256780174,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 105.46413326564198,
+            "symbols": [
+              "BNBUSDT"
+            ],
+            "take_count": 63
+          },
+          "BTCUSDT": {
+            "available": true,
+            "best_nonflat_actor": "short_only",
+            "best_nonflat_pnl_usd": 145.3687786281812,
+            "candidate_minus_best_nonflat_bps": -977.2222093824303,
+            "candidate_minus_best_nonflat_pnl_usd": -97.72222093824303,
+            "candidate_minus_flat_pnl_usd": 47.64655768993816,
+            "candidate_minus_same_side_bps": -977.2222093824303,
+            "candidate_minus_same_side_pnl_usd": -97.72222093824303,
+            "candidate_pnl_usd": 47.64655768993816,
+            "decision": "reject",
+            "fill_count": 55,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -300.4708922796062,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 145.3687786281812,
+            "symbols": [
+              "BTCUSDT"
+            ],
+            "take_count": 55
+          },
+          "DOGEUSDT": {
+            "available": true,
+            "best_nonflat_actor": "moving_average_trend",
+            "best_nonflat_pnl_usd": 311.2682257335291,
+            "candidate_minus_best_nonflat_bps": -2590.1624819342055,
+            "candidate_minus_best_nonflat_pnl_usd": -259.01624819342055,
+            "candidate_minus_flat_pnl_usd": 52.251977540108555,
+            "candidate_minus_same_side_bps": -1816.4407786169,
+            "candidate_minus_same_side_pnl_usd": -181.64407786169,
+            "candidate_pnl_usd": 52.251977540108555,
+            "decision": "reject",
+            "fill_count": 30,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -238.9810419453804,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 233.89605540179855,
+            "symbols": [
+              "DOGEUSDT"
+            ],
+            "take_count": 30
+          },
+          "ETHUSDT": {
+            "available": true,
+            "best_nonflat_actor": "short_only",
+            "best_nonflat_pnl_usd": 211.281619535584,
+            "candidate_minus_best_nonflat_bps": -1677.3852847286344,
+            "candidate_minus_best_nonflat_pnl_usd": -167.73852847286344,
+            "candidate_minus_flat_pnl_usd": 43.54309106272058,
+            "candidate_minus_same_side_bps": -1677.3852847286344,
+            "candidate_minus_same_side_pnl_usd": -167.73852847286344,
+            "candidate_pnl_usd": 43.54309106272058,
+            "decision": "reject",
+            "fill_count": 28,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -260.72539532954664,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 211.281619535584,
+            "symbols": [
+              "ETHUSDT"
+            ],
+            "take_count": 28
+          },
+          "LINKUSDT": {
+            "available": true,
+            "best_nonflat_actor": "short_only",
+            "best_nonflat_pnl_usd": 200.4096500046462,
+            "candidate_minus_best_nonflat_bps": -1743.0738186623194,
+            "candidate_minus_best_nonflat_pnl_usd": -174.30738186623194,
+            "candidate_minus_flat_pnl_usd": 26.102268138414274,
+            "candidate_minus_same_side_bps": -1743.0738186623194,
+            "candidate_minus_same_side_pnl_usd": -174.30738186623194,
+            "candidate_pnl_usd": 26.102268138414274,
+            "decision": "reject",
+            "fill_count": 21,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -153.00771549998836,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 200.4096500046462,
+            "symbols": [
+              "LINKUSDT"
+            ],
+            "take_count": 21
+          },
+          "LTCUSDT": {
+            "available": true,
+            "best_nonflat_actor": "short_only",
+            "best_nonflat_pnl_usd": 136.06463126078052,
+            "candidate_minus_best_nonflat_bps": -1002.4491944873057,
+            "candidate_minus_best_nonflat_pnl_usd": -100.24491944873057,
+            "candidate_minus_flat_pnl_usd": 35.819711812049945,
+            "candidate_minus_same_side_bps": -1002.4491944873057,
+            "candidate_minus_same_side_pnl_usd": -100.24491944873057,
+            "candidate_pnl_usd": 35.819711812049945,
+            "decision": "reject",
+            "fill_count": 34,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -317.2682936930194,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 136.06463126078052,
+            "symbols": [
+              "LTCUSDT"
+            ],
+            "take_count": 34
+          },
+          "SOLUSDT": {
+            "available": true,
+            "best_nonflat_actor": "mean_reversion",
+            "best_nonflat_pnl_usd": 78.99827332332279,
+            "candidate_minus_best_nonflat_bps": -767.4636384738403,
+            "candidate_minus_best_nonflat_pnl_usd": -76.74636384738403,
+            "candidate_minus_flat_pnl_usd": 2.25190947593876,
+            "candidate_minus_same_side_bps": -506.4489835327948,
+            "candidate_minus_same_side_pnl_usd": -50.64489835327947,
+            "candidate_pnl_usd": 2.25190947593876,
+            "decision": "reject",
+            "fill_count": 6,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -55.70857169663163,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 52.89680782921823,
+            "symbols": [
+              "SOLUSDT"
+            ],
+            "take_count": 6
+          },
+          "XRPUSDT": {
+            "available": true,
+            "best_nonflat_actor": "moving_average_trend",
+            "best_nonflat_pnl_usd": 356.8800202587872,
+            "candidate_minus_best_nonflat_bps": -3153.79169498799,
+            "candidate_minus_best_nonflat_pnl_usd": -315.379169498799,
+            "candidate_minus_flat_pnl_usd": 41.500850759988225,
+            "candidate_minus_same_side_bps": -1531.6471301524848,
+            "candidate_minus_same_side_pnl_usd": -153.16471301524848,
+            "candidate_pnl_usd": 41.500850759988225,
+            "decision": "reject",
+            "fill_count": 29,
+            "flat_pnl_usd": 0.0,
+            "max_drawdown_bps": -159.48818316442743,
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "rows": 607,
+            "same_side_actor": "short_only",
+            "same_side_pnl_usd": 194.6655637752367,
+            "symbols": [
+              "XRPUSDT"
+            ],
+            "take_count": 29
+          }
+        },
+        "rejected_symbol_count": 10,
+        "rejected_symbols": [
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "symbol": "ADAUSDT"
+          },
+          {
+            "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "symbol": "AVAXUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "BNBUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "BTCUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "DOGEUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "ETHUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "LINKUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "LTCUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+            "symbol": "SOLUSDT"
+          },
+          {
+            "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+            "symbol": "XRPUSDT"
+          }
+        ]
+      }
+    },
+    "regime_coverage": {
+      "available_bucket_count": 0,
+      "total_bucket_count": 0,
+      "unknown_bucket_count": 0
+    },
+    "regime_section": {
+      "available": false,
+      "by_dimension": {},
+      "coverage": {
+        "available_bucket_count": 0,
+        "total_bucket_count": 0,
+        "unknown_bucket_count": 0
+      }
+    },
+    "rejected_symbols": [
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "ADAUSDT"
+      },
+      {
+        "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "AVAXUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "BNBUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "BTCUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "DOGEUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "ETHUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "LINKUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "LTCUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "SOLUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "XRPUSDT"
+      }
+    ],
+    "symbol_pruning": {
+      "allowed_symbol_count": 0,
+      "allowed_symbols": [],
+      "available": true,
+      "by_symbol": {
+        "ADAUSDT": {
+          "available": true,
+          "best_nonflat_actor": "moving_average_trend",
+          "best_nonflat_pnl_usd": 447.716985061521,
+          "candidate_minus_best_nonflat_bps": -4364.2258789700845,
+          "candidate_minus_best_nonflat_pnl_usd": -436.4225878970085,
+          "candidate_minus_flat_pnl_usd": 11.294397164512475,
+          "candidate_minus_same_side_bps": -1941.4668763929035,
+          "candidate_minus_same_side_pnl_usd": -194.14668763929035,
+          "candidate_pnl_usd": 11.294397164512475,
+          "decision": "reject",
+          "fill_count": 7,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -62.89995896960444,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 205.44108480380282,
+          "symbols": [
+            "ADAUSDT"
+          ],
+          "take_count": 7
+        },
+        "AVAXUSDT": {
+          "available": true,
+          "best_nonflat_actor": "mean_reversion",
+          "best_nonflat_pnl_usd": 73.54063044542227,
+          "candidate_minus_best_nonflat_bps": -740.3668792885833,
+          "candidate_minus_best_nonflat_pnl_usd": -74.03668792885833,
+          "candidate_minus_flat_pnl_usd": -0.4960574834360614,
+          "candidate_minus_same_side_bps": -611.5648616876911,
+          "candidate_minus_same_side_pnl_usd": -61.156486168769106,
+          "candidate_pnl_usd": -0.4960574834360614,
+          "decision": "reject",
+          "fill_count": 2,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -23.16590312713783,
+          "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 60.660428685333045,
+          "symbols": [
+            "AVAXUSDT"
+          ],
+          "take_count": 2
+        },
+        "BNBUSDT": {
+          "available": true,
+          "best_nonflat_actor": "short_only",
+          "best_nonflat_pnl_usd": 105.46413326564198,
+          "candidate_minus_best_nonflat_bps": -655.5370997668979,
+          "candidate_minus_best_nonflat_pnl_usd": -65.55370997668979,
+          "candidate_minus_flat_pnl_usd": 39.91042328895219,
+          "candidate_minus_same_side_bps": -655.5370997668979,
+          "candidate_minus_same_side_pnl_usd": -65.55370997668979,
+          "candidate_pnl_usd": 39.91042328895219,
+          "decision": "reject",
+          "fill_count": 63,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -347.0235256780174,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 105.46413326564198,
+          "symbols": [
+            "BNBUSDT"
+          ],
+          "take_count": 63
+        },
+        "BTCUSDT": {
+          "available": true,
+          "best_nonflat_actor": "short_only",
+          "best_nonflat_pnl_usd": 145.3687786281812,
+          "candidate_minus_best_nonflat_bps": -977.2222093824303,
+          "candidate_minus_best_nonflat_pnl_usd": -97.72222093824303,
+          "candidate_minus_flat_pnl_usd": 47.64655768993816,
+          "candidate_minus_same_side_bps": -977.2222093824303,
+          "candidate_minus_same_side_pnl_usd": -97.72222093824303,
+          "candidate_pnl_usd": 47.64655768993816,
+          "decision": "reject",
+          "fill_count": 55,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -300.4708922796062,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 145.3687786281812,
+          "symbols": [
+            "BTCUSDT"
+          ],
+          "take_count": 55
+        },
+        "DOGEUSDT": {
+          "available": true,
+          "best_nonflat_actor": "moving_average_trend",
+          "best_nonflat_pnl_usd": 311.2682257335291,
+          "candidate_minus_best_nonflat_bps": -2590.1624819342055,
+          "candidate_minus_best_nonflat_pnl_usd": -259.01624819342055,
+          "candidate_minus_flat_pnl_usd": 52.251977540108555,
+          "candidate_minus_same_side_bps": -1816.4407786169,
+          "candidate_minus_same_side_pnl_usd": -181.64407786169,
+          "candidate_pnl_usd": 52.251977540108555,
+          "decision": "reject",
+          "fill_count": 30,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -238.9810419453804,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 233.89605540179855,
+          "symbols": [
+            "DOGEUSDT"
+          ],
+          "take_count": 30
+        },
+        "ETHUSDT": {
+          "available": true,
+          "best_nonflat_actor": "short_only",
+          "best_nonflat_pnl_usd": 211.281619535584,
+          "candidate_minus_best_nonflat_bps": -1677.3852847286344,
+          "candidate_minus_best_nonflat_pnl_usd": -167.73852847286344,
+          "candidate_minus_flat_pnl_usd": 43.54309106272058,
+          "candidate_minus_same_side_bps": -1677.3852847286344,
+          "candidate_minus_same_side_pnl_usd": -167.73852847286344,
+          "candidate_pnl_usd": 43.54309106272058,
+          "decision": "reject",
+          "fill_count": 28,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -260.72539532954664,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 211.281619535584,
+          "symbols": [
+            "ETHUSDT"
+          ],
+          "take_count": 28
+        },
+        "LINKUSDT": {
+          "available": true,
+          "best_nonflat_actor": "short_only",
+          "best_nonflat_pnl_usd": 200.4096500046462,
+          "candidate_minus_best_nonflat_bps": -1743.0738186623194,
+          "candidate_minus_best_nonflat_pnl_usd": -174.30738186623194,
+          "candidate_minus_flat_pnl_usd": 26.102268138414274,
+          "candidate_minus_same_side_bps": -1743.0738186623194,
+          "candidate_minus_same_side_pnl_usd": -174.30738186623194,
+          "candidate_pnl_usd": 26.102268138414274,
+          "decision": "reject",
+          "fill_count": 21,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -153.00771549998836,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 200.4096500046462,
+          "symbols": [
+            "LINKUSDT"
+          ],
+          "take_count": 21
+        },
+        "LTCUSDT": {
+          "available": true,
+          "best_nonflat_actor": "short_only",
+          "best_nonflat_pnl_usd": 136.06463126078052,
+          "candidate_minus_best_nonflat_bps": -1002.4491944873057,
+          "candidate_minus_best_nonflat_pnl_usd": -100.24491944873057,
+          "candidate_minus_flat_pnl_usd": 35.819711812049945,
+          "candidate_minus_same_side_bps": -1002.4491944873057,
+          "candidate_minus_same_side_pnl_usd": -100.24491944873057,
+          "candidate_pnl_usd": 35.819711812049945,
+          "decision": "reject",
+          "fill_count": 34,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -317.2682936930194,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 136.06463126078052,
+          "symbols": [
+            "LTCUSDT"
+          ],
+          "take_count": 34
+        },
+        "SOLUSDT": {
+          "available": true,
+          "best_nonflat_actor": "mean_reversion",
+          "best_nonflat_pnl_usd": 78.99827332332279,
+          "candidate_minus_best_nonflat_bps": -767.4636384738403,
+          "candidate_minus_best_nonflat_pnl_usd": -76.74636384738403,
+          "candidate_minus_flat_pnl_usd": 2.25190947593876,
+          "candidate_minus_same_side_bps": -506.4489835327948,
+          "candidate_minus_same_side_pnl_usd": -50.64489835327947,
+          "candidate_pnl_usd": 2.25190947593876,
+          "decision": "reject",
+          "fill_count": 6,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -55.70857169663163,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 52.89680782921823,
+          "symbols": [
+            "SOLUSDT"
+          ],
+          "take_count": 6
+        },
+        "XRPUSDT": {
+          "available": true,
+          "best_nonflat_actor": "moving_average_trend",
+          "best_nonflat_pnl_usd": 356.8800202587872,
+          "candidate_minus_best_nonflat_bps": -3153.79169498799,
+          "candidate_minus_best_nonflat_pnl_usd": -315.379169498799,
+          "candidate_minus_flat_pnl_usd": 41.500850759988225,
+          "candidate_minus_same_side_bps": -1531.6471301524848,
+          "candidate_minus_same_side_pnl_usd": -153.16471301524848,
+          "candidate_pnl_usd": 41.500850759988225,
+          "decision": "reject",
+          "fill_count": 29,
+          "flat_pnl_usd": 0.0,
+          "max_drawdown_bps": -159.48818316442743,
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "rows": 607,
+          "same_side_actor": "short_only",
+          "same_side_pnl_usd": 194.6655637752367,
+          "symbols": [
+            "XRPUSDT"
+          ],
+          "take_count": 29
+        }
+      },
+      "rejected_symbol_count": 10,
+      "rejected_symbols": [
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "symbol": "ADAUSDT"
+        },
+        {
+          "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "symbol": "AVAXUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "BNBUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "BTCUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "DOGEUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "ETHUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "LINKUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "LTCUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+          "symbol": "SOLUSDT"
+        },
+        {
+          "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+          "symbol": "XRPUSDT"
+        }
+      ]
+    },
+    "symbol_pruning_post_replay": {
+      "allowed_symbol_count": 0,
+      "allowed_symbols": [],
+      "available": false,
+      "by_symbol": {},
+      "rejected_symbol_count": 0,
+      "rejected_symbols": []
+    },
+    "threshold_source": "economic_utility",
+    "warnings": [
+      "missing_best_nonflat_benchmark",
+      "missing_same_side_benchmark:short_only"
+    ]
+  },
+  "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+  "candidate_quality_report": {
+    "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+    "evidence_digest": "7a114920a3fee5702a3cfc7e67eaa571c00b605666fdcf2ce01b1b16462b89be",
+    "overall_decision": "fail",
+    "passed": false,
+    "rule_results": [
+      {
+        "metrics": {
+          "candidate_pnl_usd": 0.0
+        },
+        "passed": false,
+        "reason": "candidate_pnl_usd<=0",
+        "rule_name": "positive_absolute_expectancy",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "candidate_minus_best_nonflat_pnl_usd": 0.0,
+          "min_delta_pnl_usd": 0.0
+        },
+        "passed": false,
+        "reason": "candidate_minus_best_nonflat_pnl_usd<=threshold",
+        "rule_name": "best_nonflat_benchmark_delta",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "candidate_minus_same_side_pnl_usd": 0.0,
+          "min_delta_pnl_usd": 0.0
+        },
+        "passed": false,
+        "reason": "candidate_minus_same_side_pnl_usd<=threshold",
+        "rule_name": "same_side_benchmark_delta",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "candidate_minus_best_nonflat_bps": 0.0,
+          "candidate_minus_same_side_bps": 0.0,
+          "min_margin_bps": 5.0
+        },
+        "passed": false,
+        "reason": "candidate_vs_benchmarks_margin_below_threshold",
+        "rule_name": "minimum_benchmark_margin",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "allowed_symbol_count": 0,
+          "min_allowed_symbols": 1,
+          "min_allowed_take_count": 0,
+          "min_take_count": 10,
+          "rejected_symbol_count": 10
+        },
+        "passed": false,
+        "reason": "insufficient_allowed_symbols_or_take_count",
+        "rule_name": "symbol_coverage",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "available_bucket_count": 0,
+          "max_unknown_bucket_share": 0.35,
+          "min_available_buckets": 3,
+          "total_bucket_count": 0,
+          "unknown_bucket_count": 0,
+          "unknown_bucket_share": 1.0
+        },
+        "passed": false,
+        "reason": "regime_coverage_incomplete",
+        "rule_name": "regime_coverage",
+        "severity": "soft"
+      },
+      {
+        "metrics": {
+          "blockers": [],
+          "fold_accuracy_std": 0.025415470738317555,
+          "passed": true,
+          "pbo_proxy": 0.0,
+          "symbol_concentration_share": 0.0
+        },
+        "passed": true,
+        "reason": "selection_risk_passed",
+        "rule_name": "selection_risk",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "gap_bps": 2.7821707096056825,
+          "max_abs_gap_bps": 25.0,
+          "replay_net_return_bps": 0.0,
+          "row_level_expectancy_bps": -2.7821707096056825
+        },
+        "passed": true,
+        "reason": "replay_gap_within_tolerance",
+        "rule_name": "replay_agreement",
+        "severity": "hard"
+      },
+      {
+        "metrics": {
+          "blockers": [],
+          "decayed": false,
+          "no_trade_required": false,
+          "proven_shadow_version_id": null
+        },
+        "passed": true,
+        "reason": "maintenance_ok",
+        "rule_name": "decay_maintenance",
+        "severity": "hard"
+      }
+    ],
+    "summary": {
+      "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+      "failed_rules": [
+        "positive_absolute_expectancy",
+        "best_nonflat_benchmark_delta",
+        "same_side_benchmark_delta",
+        "minimum_benchmark_margin",
+        "symbol_coverage",
+        "regime_coverage"
+      ],
+      "hard_failed_rules": [
+        "positive_absolute_expectancy",
+        "best_nonflat_benchmark_delta",
+        "same_side_benchmark_delta",
+        "minimum_benchmark_margin",
+        "symbol_coverage"
+      ],
+      "hard_failure_count": 5,
+      "overall_decision": "fail",
+      "passed": false,
+      "rule_names": [
+        "positive_absolute_expectancy",
+        "best_nonflat_benchmark_delta",
+        "same_side_benchmark_delta",
+        "minimum_benchmark_margin",
+        "symbol_coverage",
+        "regime_coverage",
+        "selection_risk",
+        "replay_agreement",
+        "decay_maintenance"
+      ],
+      "soft_failed_rules": [
+        "regime_coverage"
+      ],
+      "soft_failure_count": 1,
+      "top_failure_reasons": [
+        "candidate_pnl_usd<=0",
+        "candidate_minus_best_nonflat_pnl_usd<=threshold",
+        "candidate_minus_same_side_pnl_usd<=threshold",
+        "candidate_vs_benchmarks_margin_below_threshold",
+        "insufficient_allowed_symbols_or_take_count"
+      ]
+    }
+  },
+  "created_at": "2026-06-28T12:51:00.887368+00:00",
+  "dead_zone_bps": 0.001,
+  "failure_reasons": [
+    "holdout_accuracy<0.60",
+    "non_positive_cost_adjusted_expectancy",
+    "candidate_did_not_beat_flat",
+    "candidate_did_not_beat_nonflat_benchmark",
+    "quality_positive_absolute_expectancy",
+    "quality_best_nonflat_benchmark_delta",
+    "quality_same_side_benchmark_delta",
+    "quality_minimum_benchmark_margin",
+    "quality_symbol_coverage"
+  ],
+  "feature_set": "full",
+  "horizon": 8,
+  "label_mode": "trade_outcome",
+  "maintenance_report": {
+    "blockers": [],
+    "candidate_is_active_model": false,
+    "decayed": false,
+    "no_trade_required": false,
+    "proven_shadow_version_id": null,
+    "recommended_action": "candidate_recovery_only"
+  },
+  "model_artifact_path": null,
+  "model_type": "lgbm_classifier",
+  "pass_status": false,
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "quality_gates": {
+    "max_drawdown_frac": 0.25,
+    "min_accuracy": 0.6,
+    "min_actionable_decisions": 100
+  },
+  "recency_half_life_days": 30,
+  "replay_gap_diagnostics": {
+    "adverse_excursion_summary": {
+      "max_drawdown_frac": 0.0
+    },
+    "benchmark_delta_hint": {
+      "candidate_minus_best_nonflat_bps": 0.0,
+      "candidate_minus_same_side_bps": 0.0
+    },
+    "cost_drag_bps": 2.7821707096056825,
+    "gap_bps": 2.7821707096056825,
+    "gap_tolerance_bps": 25.0,
+    "hold_duration_summary": {
+      "predicted_hold_count": 5241,
+      "predicted_skip_count": 5241,
+      "predicted_take_count": 829
+    },
+    "policy_version": "replay_gap_v1",
+    "replay_net_return_bps": 0.0,
+    "row_level_expectancy_bps": -2.7821707096056825,
+    "symbol_concentration": {},
+    "top_gap_reasons": [
+      "gap_within_tolerance"
+    ]
+  },
+  "run_id": "20260628T113942Z_b1593641",
+  "selection_risk_summary": {
+    "benchmark_like_behavior": null,
+    "best_nonflat_benchmark": "flat",
+    "candidate_id": "h8_tw3m_hl30d_dz0p0010_fsfull_sideshort",
+    "candidate_minus_best_nonflat_cost_adjusted_net_pnl_usd": 0.0,
+    "candidate_minus_flat_cost_adjusted_net_pnl_usd": 0.0,
+    "failure_reasons": [
+      "holdout_accuracy<0.60",
+      "non_positive_cost_adjusted_expectancy",
+      "candidate_did_not_beat_flat",
+      "candidate_did_not_beat_nonflat_benchmark",
+      "quality_positive_absolute_expectancy",
+      "quality_best_nonflat_benchmark_delta",
+      "quality_same_side_benchmark_delta",
+      "quality_minimum_benchmark_margin",
+      "quality_symbol_coverage"
+    ],
+    "fold_accuracy_std": 0.025415470738317555,
+    "label_mode": "trade_outcome",
+    "max_drawdown_frac": 0.0,
+    "one_sided_take_collapse": false,
+    "passed": false,
+    "policy_version": "model_recovery_experiment_runner_v1",
+    "score": 563.9394108389939,
+    "score_percentile_hint": null,
+    "skip_share": 0.8634266886326194,
+    "symbol_concentration_share": 0.0,
+    "take_share": 0.13657331136738057,
+    "trade_outcome_side": "short",
+    "variant_id": "",
+    "variant_kind": "baseline"
+  },
+  "snapshot_digest": "d6dda29e2563024b2ebb5477555d1a0e2e43e792bfab877c23979a792b15ca60",
+  "symbol_pruning_report": {
+    "allowed_symbol_count": 0,
+    "allowed_symbols": [],
+    "available": true,
+    "by_symbol": {
+      "ADAUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 447.716985061521,
+        "candidate_minus_best_nonflat_bps": -4364.2258789700845,
+        "candidate_minus_best_nonflat_pnl_usd": -436.4225878970085,
+        "candidate_minus_flat_pnl_usd": 11.294397164512475,
+        "candidate_minus_same_side_bps": -1941.4668763929035,
+        "candidate_minus_same_side_pnl_usd": -194.14668763929035,
+        "candidate_pnl_usd": 11.294397164512475,
+        "decision": "reject",
+        "fill_count": 7,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -62.89995896960444,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 205.44108480380282,
+        "symbols": [
+          "ADAUSDT"
+        ],
+        "take_count": 7
+      },
+      "AVAXUSDT": {
+        "available": true,
+        "best_nonflat_actor": "mean_reversion",
+        "best_nonflat_pnl_usd": 73.54063044542227,
+        "candidate_minus_best_nonflat_bps": -740.3668792885833,
+        "candidate_minus_best_nonflat_pnl_usd": -74.03668792885833,
+        "candidate_minus_flat_pnl_usd": -0.4960574834360614,
+        "candidate_minus_same_side_bps": -611.5648616876911,
+        "candidate_minus_same_side_pnl_usd": -61.156486168769106,
+        "candidate_pnl_usd": -0.4960574834360614,
+        "decision": "reject",
+        "fill_count": 2,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -23.16590312713783,
+        "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 60.660428685333045,
+        "symbols": [
+          "AVAXUSDT"
+        ],
+        "take_count": 2
+      },
+      "BNBUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 105.46413326564198,
+        "candidate_minus_best_nonflat_bps": -655.5370997668979,
+        "candidate_minus_best_nonflat_pnl_usd": -65.55370997668979,
+        "candidate_minus_flat_pnl_usd": 39.91042328895219,
+        "candidate_minus_same_side_bps": -655.5370997668979,
+        "candidate_minus_same_side_pnl_usd": -65.55370997668979,
+        "candidate_pnl_usd": 39.91042328895219,
+        "decision": "reject",
+        "fill_count": 63,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -347.0235256780174,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 105.46413326564198,
+        "symbols": [
+          "BNBUSDT"
+        ],
+        "take_count": 63
+      },
+      "BTCUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 145.3687786281812,
+        "candidate_minus_best_nonflat_bps": -977.2222093824303,
+        "candidate_minus_best_nonflat_pnl_usd": -97.72222093824303,
+        "candidate_minus_flat_pnl_usd": 47.64655768993816,
+        "candidate_minus_same_side_bps": -977.2222093824303,
+        "candidate_minus_same_side_pnl_usd": -97.72222093824303,
+        "candidate_pnl_usd": 47.64655768993816,
+        "decision": "reject",
+        "fill_count": 55,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -300.4708922796062,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 145.3687786281812,
+        "symbols": [
+          "BTCUSDT"
+        ],
+        "take_count": 55
+      },
+      "DOGEUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 311.2682257335291,
+        "candidate_minus_best_nonflat_bps": -2590.1624819342055,
+        "candidate_minus_best_nonflat_pnl_usd": -259.01624819342055,
+        "candidate_minus_flat_pnl_usd": 52.251977540108555,
+        "candidate_minus_same_side_bps": -1816.4407786169,
+        "candidate_minus_same_side_pnl_usd": -181.64407786169,
+        "candidate_pnl_usd": 52.251977540108555,
+        "decision": "reject",
+        "fill_count": 30,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -238.9810419453804,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 233.89605540179855,
+        "symbols": [
+          "DOGEUSDT"
+        ],
+        "take_count": 30
+      },
+      "ETHUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 211.281619535584,
+        "candidate_minus_best_nonflat_bps": -1677.3852847286344,
+        "candidate_minus_best_nonflat_pnl_usd": -167.73852847286344,
+        "candidate_minus_flat_pnl_usd": 43.54309106272058,
+        "candidate_minus_same_side_bps": -1677.3852847286344,
+        "candidate_minus_same_side_pnl_usd": -167.73852847286344,
+        "candidate_pnl_usd": 43.54309106272058,
+        "decision": "reject",
+        "fill_count": 28,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -260.72539532954664,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 211.281619535584,
+        "symbols": [
+          "ETHUSDT"
+        ],
+        "take_count": 28
+      },
+      "LINKUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 200.4096500046462,
+        "candidate_minus_best_nonflat_bps": -1743.0738186623194,
+        "candidate_minus_best_nonflat_pnl_usd": -174.30738186623194,
+        "candidate_minus_flat_pnl_usd": 26.102268138414274,
+        "candidate_minus_same_side_bps": -1743.0738186623194,
+        "candidate_minus_same_side_pnl_usd": -174.30738186623194,
+        "candidate_pnl_usd": 26.102268138414274,
+        "decision": "reject",
+        "fill_count": 21,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -153.00771549998836,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 200.4096500046462,
+        "symbols": [
+          "LINKUSDT"
+        ],
+        "take_count": 21
+      },
+      "LTCUSDT": {
+        "available": true,
+        "best_nonflat_actor": "short_only",
+        "best_nonflat_pnl_usd": 136.06463126078052,
+        "candidate_minus_best_nonflat_bps": -1002.4491944873057,
+        "candidate_minus_best_nonflat_pnl_usd": -100.24491944873057,
+        "candidate_minus_flat_pnl_usd": 35.819711812049945,
+        "candidate_minus_same_side_bps": -1002.4491944873057,
+        "candidate_minus_same_side_pnl_usd": -100.24491944873057,
+        "candidate_pnl_usd": 35.819711812049945,
+        "decision": "reject",
+        "fill_count": 34,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -317.2682936930194,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 136.06463126078052,
+        "symbols": [
+          "LTCUSDT"
+        ],
+        "take_count": 34
+      },
+      "SOLUSDT": {
+        "available": true,
+        "best_nonflat_actor": "mean_reversion",
+        "best_nonflat_pnl_usd": 78.99827332332279,
+        "candidate_minus_best_nonflat_bps": -767.4636384738403,
+        "candidate_minus_best_nonflat_pnl_usd": -76.74636384738403,
+        "candidate_minus_flat_pnl_usd": 2.25190947593876,
+        "candidate_minus_same_side_bps": -506.4489835327948,
+        "candidate_minus_same_side_pnl_usd": -50.64489835327947,
+        "candidate_pnl_usd": 2.25190947593876,
+        "decision": "reject",
+        "fill_count": 6,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -55.70857169663163,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 52.89680782921823,
+        "symbols": [
+          "SOLUSDT"
+        ],
+        "take_count": 6
+      },
+      "XRPUSDT": {
+        "available": true,
+        "best_nonflat_actor": "moving_average_trend",
+        "best_nonflat_pnl_usd": 356.8800202587872,
+        "candidate_minus_best_nonflat_bps": -3153.79169498799,
+        "candidate_minus_best_nonflat_pnl_usd": -315.379169498799,
+        "candidate_minus_flat_pnl_usd": 41.500850759988225,
+        "candidate_minus_same_side_bps": -1531.6471301524848,
+        "candidate_minus_same_side_pnl_usd": -153.16471301524848,
+        "candidate_pnl_usd": 41.500850759988225,
+        "decision": "reject",
+        "fill_count": 29,
+        "flat_pnl_usd": 0.0,
+        "max_drawdown_bps": -159.48818316442743,
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "rows": 607,
+        "same_side_actor": "short_only",
+        "same_side_pnl_usd": 194.6655637752367,
+        "symbols": [
+          "XRPUSDT"
+        ],
+        "take_count": 29
+      }
+    },
+    "rejected_symbol_count": 10,
+    "rejected_symbols": [
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "ADAUSDT"
+      },
+      {
+        "reason": "does_not_beat_flat,does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "AVAXUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "BNBUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "BTCUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "DOGEUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "ETHUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "LINKUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "LTCUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin,insufficient_take_count",
+        "symbol": "SOLUSDT"
+      },
+      {
+        "reason": "does_not_beat_best_nonflat,does_not_beat_same_side,insufficient_best_nonflat_margin,insufficient_same_side_margin",
+        "symbol": "XRPUSDT"
+      }
+    ]
+  },
+  "threshold_policy": {
+    "accuracy_at_selected": 0.5379632146416599,
+    "accuracy_optimal_accuracy": 0.5567636133007158,
+    "accuracy_optimal_threshold": 0.5,
+    "config": {
+      "concentration_penalty_weight": 25.0,
+      "drawdown_penalty_weight": 1.0,
+      "instability_penalty_weight": 10.0,
+      "min_actionable": 100,
+      "round_trip_cost_bps": 8.0,
+      "threshold_max": 0.8,
+      "threshold_min": 0.5,
+      "threshold_step": 0.05,
+      "turnover_penalty_bps": 0.0
+    },
+    "selected_actionable": 2295,
+    "selected_expectancy_bps": -52.197448132208145,
+    "selected_score": -1250.3101141285888,
+    "selected_threshold": 0.55,
+    "source": "economic_utility",
+    "thresholds": [
+      {
+        "accuracy": 0.5567636133007158,
+        "action_rate": 0.4016489988221437,
+        "concentration_share": 0.13715316941123393,
+        "eligible": true,
+        "fold_expectancy_std": 13.016723426078068,
+        "max_drawdown_bps": -569006.465063038,
+        "selected_actionable": 8866,
+        "selected_expectancy_bps": -64.1894348356497,
+        "selected_score": -5755.555757808638,
+        "threshold": 0.5
+      },
+      {
+        "accuracy": 0.5379632146416599,
+        "action_rate": 0.10396846969285131,
+        "concentration_share": 0.17647058823529413,
+        "eligible": true,
+        "fold_expectancy_std": 10.333682095396927,
+        "max_drawdown_bps": -119707.92977868409,
+        "selected_actionable": 2295,
+        "selected_expectancy_bps": -52.197448132208145,
+        "selected_score": -1250.3101141285888,
+        "threshold": 0.55
+      },
+      {
+        "accuracy": 0.5250973996557036,
+        "action_rate": 0.0031258494156020658,
+        "concentration_share": 0.21739130434782608,
+        "eligible": false,
+        "fold_expectancy_std": 13.733833522169776,
+        "max_drawdown_bps": -2330.8996372213724,
+        "selected_actionable": 69,
+        "selected_expectancy_bps": -34.196828376223806,
+        "selected_score": -58.87920810065451,
+        "threshold": 0.6
+      },
+      {
+        "accuracy": 0.5240554498505029,
+        "action_rate": 0.0,
+        "concentration_share": 0.0,
+        "eligible": false,
+        "fold_expectancy_std": 0.0,
+        "max_drawdown_bps": 0.0,
+        "selected_actionable": 0,
+        "selected_expectancy_bps": 0.0,
+        "selected_score": 0.0,
+        "threshold": 0.65
+      },
+      {
+        "accuracy": 0.5240554498505029,
+        "action_rate": 0.0,
+        "concentration_share": 0.0,
+        "eligible": false,
+        "fold_expectancy_std": 0.0,
+        "max_drawdown_bps": 0.0,
+        "selected_actionable": 0,
+        "selected_expectancy_bps": 0.0,
+        "selected_score": 0.0,
+        "threshold": 0.7
+      },
+      {
+        "accuracy": 0.5240554498505029,
+        "action_rate": 0.0,
+        "concentration_share": 0.0,
+        "eligible": false,
+        "fold_expectancy_std": 0.0,
+        "max_drawdown_bps": 0.0,
+        "selected_actionable": 0,
+        "selected_expectancy_bps": 0.0,
+        "selected_score": 0.0,
+        "threshold": 0.75
+      },
+      {
+        "accuracy": 0.5240554498505029,
+        "action_rate": 0.0,
+        "concentration_share": 0.0,
+        "eligible": false,
+        "fold_expectancy_std": 0.0,
+        "max_drawdown_bps": 0.0,
+        "selected_actionable": 0,
+        "selected_expectancy_bps": 0.0,
+        "selected_score": 0.0,
+        "threshold": 0.8
+      }
+    ]
+  },
+  "trade_outcome_profit_target_bps": 20.0,
+  "trade_outcome_round_trip_cost_bps": 8.0,
+  "trade_outcome_stop_loss_bps": 30.0,
+  "train_params": {
+    "colsample_bytree": 0.7,
+    "learning_rate": 0.05,
+    "max_depth": 4,
+    "min_child_samples": 25,
+    "n_estimators": 120,
+    "n_jobs": 1,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "subsample": 0.7
+  },
+  "training_window_months": 3,
+  "variant_id": "",
+  "variant_kind": "baseline"
+}

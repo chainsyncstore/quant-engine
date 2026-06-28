@@ -1,0 +1,38 @@
+{
+  "policy_version": "model_recovery_experiment_runner_v1",
+  "run_id": "20260627T093327Z_b1593641",
+  "variants": [
+    {
+      "artifact_dir": "docs/model_quality/phase4/20260627T093327Z_b1593641/phase4_repair/candidates/h2_tw3m_hl30d_dz5p2699_fsprice_volume_funding__cost_aware_ternary",
+      "artifact_id": "h2_tw3m_hl30d_dz5p2699_fsprice_volume_funding__cost_aware_ternary",
+      "candidate_id": "h2_tw3m_hl30d_dz5p2699_fsprice_volume_funding",
+      "passed": false,
+      "score": -Infinity,
+      "variant_id": "cost_aware_ternary"
+    },
+    {
+      "artifact_dir": "docs/model_quality/phase4/20260627T093327Z_b1593641/phase4_repair/candidates/h2_tw3m_hl30d_dz5p2699_fsno_open_interest__horizon_specific_features",
+      "artifact_id": "h2_tw3m_hl30d_dz5p2699_fsno_open_interest__horizon_specific_features",
+      "candidate_id": "h2_tw3m_hl30d_dz5p2699_fsno_open_interest",
+      "passed": false,
+      "score": -Infinity,
+      "variant_id": "horizon_specific_features"
+    },
+    {
+      "artifact_dir": "docs/model_quality/phase4/20260627T093327Z_b1593641/phase4_repair/candidates/h2_tw3m_hl30d_dz5p2699_fsfull__symbol_group_calibration",
+      "artifact_id": "h2_tw3m_hl30d_dz5p2699_fsfull__symbol_group_calibration",
+      "candidate_id": "h2_tw3m_hl30d_dz5p2699_fsfull",
+      "passed": false,
+      "score": -Infinity,
+      "variant_id": "symbol_group_calibration"
+    },
+    {
+      "artifact_dir": "docs/model_quality/phase4/20260627T093327Z_b1593641/phase4_repair/candidates/h2_tw3m_hl30d_dz5p2699_fsno_orderbook_placeholders__regime_gated_abstain",
+      "artifact_id": "h2_tw3m_hl30d_dz5p2699_fsno_orderbook_placeholders__regime_gated_abstain",
+      "candidate_id": "h2_tw3m_hl30d_dz5p2699_fsno_orderbook_placeholders",
+      "passed": false,
+      "score": -Infinity,
+      "variant_id": "regime_gated_abstain"
+    }
+  ]
+}

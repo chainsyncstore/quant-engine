@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
@@ -88,6 +88,24 @@ def test_fetch_universe_dataset_builds_multi_index() -> None:
     assert symbols == ["BTCUSDT", "ETHUSDT"]
 
 
+def test_fetch_universe_dataset_is_canonical_independent_of_symbol_order() -> None:
+    date_from, date_to = _date_bounds()
+    forward = fetch_universe_dataset(
+        ["BTCUSDT", "ETHUSDT"],
+        date_from=date_from,
+        date_to=date_to,
+        client=FakeClient(),
+    ).sort_index()
+    reversed_order = fetch_universe_dataset(
+        ["ETHUSDT", "BTCUSDT"],
+        date_from=date_from,
+        date_to=date_to,
+        client=FakeClient(),
+    ).sort_index()
+
+    pd.testing.assert_frame_equal(forward, reversed_order)
+
+
 def test_fetch_universe_dataset_skips_failed_symbol_when_not_fail_fast() -> None:
     date_from, date_to = _date_bounds()
     df = fetch_universe_dataset(
@@ -140,6 +158,12 @@ def test_validate_and_save_load_multi_symbol_snapshot(tmp_path) -> None:
     assert manifest["dataset_name"] == "universe_1h"
     assert manifest["n_symbols"] == 2
     assert manifest["metadata"]["source"] == "unit_test"
+    assert manifest["raw_schema_version"] == "wp08-multi-symbol-raw-v1"
+    assert manifest["transformed_schema_version"] == "wp08-multi-symbol-transformed-v1"
+    assert "content_digests" in manifest
+    assert "frame_sha256" in manifest["content_digests"]
+    assert "coverage_by_symbol" in manifest
+    assert set(manifest["coverage_by_symbol"]) == {"BTCUSDT", "ETHUSDT"}
 
 
 def test_validate_multi_symbol_ohlcv_rejects_missing_columns() -> None:
@@ -211,6 +235,71 @@ def test_validate_multi_symbol_ohlcv_rejects_stale_open_interest_series() -> Non
             "volume": [1000.0 + i for i in range(30)],
             "open_interest": [100_000.0] * 30,
             "open_interest_value": [10_000_000.0] * 30,
+        },
+        index=idx,
+    )
+
+    with pytest.raises(DataQualityError):
+        validate_multi_symbol_ohlcv(df)
+
+
+def test_validate_multi_symbol_ohlcv_allows_repeated_funding_values() -> None:
+    idx = pd.MultiIndex.from_product(
+        [pd.date_range("2025-01-01", periods=90, freq="1h", tz="UTC"), ["BTCUSDT"]],
+        names=["timestamp", "symbol"],
+    )
+    df = pd.DataFrame(
+        {
+            "open": [100.0 + i for i in range(90)],
+            "high": [101.0 + i for i in range(90)],
+            "low": [99.0 + i for i in range(90)],
+            "close": [100.5 + i for i in range(90)],
+            "volume": [1000.0 + i for i in range(90)],
+            "funding_rate_raw": [0.0] * 90,
+            "open_interest": [100_000.0 + i for i in range(90)],
+            "open_interest_value": [10_000_000.0 + i for i in range(90)],
+        },
+        index=idx,
+    )
+
+    validate_multi_symbol_ohlcv(df)
+
+
+def test_validate_multi_symbol_ohlcv_rejects_sparse_funding_coverage() -> None:
+    idx = pd.MultiIndex.from_product(
+        [pd.date_range("2025-01-01", periods=100, freq="1h", tz="UTC"), ["BTCUSDT"]],
+        names=["timestamp", "symbol"],
+    )
+    df = pd.DataFrame(
+        {
+            "open": [100.0 + i for i in range(100)],
+            "high": [101.0 + i for i in range(100)],
+            "low": [99.0 + i for i in range(100)],
+            "close": [100.5 + i for i in range(100)],
+            "volume": [1000.0 + i for i in range(100)],
+            "funding_rate_raw": [None] * 3 + [0.0] * 97,
+            "open_interest": [100_000.0 + i for i in range(100)],
+            "open_interest_value": [10_000_000.0 + i for i in range(100)],
+        },
+        index=idx,
+    )
+
+    with pytest.raises(DataQualityError):
+        validate_multi_symbol_ohlcv(df)
+
+
+def test_validate_multi_symbol_ohlcv_rejects_non_utc_timestamps() -> None:
+    idx = pd.MultiIndex.from_product(
+        [pd.date_range("2025-01-01", periods=2, freq="1h", tz=timezone(timedelta(hours=1))), ["BTCUSDT"]],
+        names=["timestamp", "symbol"],
+    )
+    df = pd.DataFrame(
+        {
+            "open": [1.0, 2.0],
+            "high": [1.1, 2.1],
+            "low": [0.9, 1.9],
+            "close": [1.05, 2.05],
+            "volume": [1000.0, 1001.0],
         },
         index=idx,
     )

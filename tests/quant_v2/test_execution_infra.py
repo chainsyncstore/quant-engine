@@ -3,6 +3,7 @@ from __future__ import annotations
 from quant_v2.contracts import OrderPlan
 from quant_v2.execution.adapters import InMemoryPaperAdapter
 from quant_v2.execution.idempotency import InMemoryIdempotencyJournal, build_idempotency_key
+from quant_v2.execution.outcomes import ExecutionOutcome
 from quant_v2.execution.reconciler import reconcile_target_exposures
 
 
@@ -36,6 +37,9 @@ def test_inmemory_paper_adapter_idempotent_place_order() -> None:
 
     assert first.order_id == second.order_id
     assert first.filled_qty == second.filled_qty
+    assert first.newly_filled_qty == first.filled_qty
+    assert second.outcome == ExecutionOutcome.IDEMPOTENT_REPLAY
+    assert second.newly_filled_qty == 0.0
     assert adapter.get_positions()["BTCUSDT"] == 0.02
 
 

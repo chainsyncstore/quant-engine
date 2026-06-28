@@ -685,6 +685,8 @@ def build_benchmark_replay_report(
         },
         cost_policy=ExecutionCostPolicy(),
         signal_resolver=_benchmark_signal_resolver,
+        throttle_allocation_logs=True,
+        research_mode=True,
     )
 
     actor_summaries = {
